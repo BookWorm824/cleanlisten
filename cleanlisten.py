@@ -1,0 +1,878 @@
+#!/usr/bin/env python3
+"""
+CleanListen engine — mute language and cut sexual content from audiobooks
+you own. Used by the CleanListen app; can also run from a command line:
+
+  python cleanlisten.py analyze WORKDIR AUDIO [AUDIO ...] [--ebook BOOK.epub]
+  python cleanlisten.py render  WORKDIR [--out OUTDIR]
+"""
+import argparse
+import bisect
+import difflib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
+from pathlib import Path
+from urllib.parse import unquote
+
+import numpy as np
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_MODEL = HERE / "models" / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+SR = 16000
+AUDIO_EXTS = (".mp3", ".m4b", ".m4a", ".aac", ".mp4", ".ogg", ".opus", ".flac", ".wav", ".wma")
+
+
+# ---------------------------------------------------------------------------
+# Running ffmpeg quietly (no console windows flashing on Windows)
+# ---------------------------------------------------------------------------
+def _tool(name):
+    local = HERE / "bin" / (name + (".exe" if os.name == "nt" else ""))
+    if local.exists():
+        return str(local)
+    found = shutil.which(name)
+    if not found:
+        raise RuntimeError(f"{name} is missing. Re-run the CleanListen installer.")
+    return found
+
+
+_NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, **_NOWIN, **kw)
+
+
+def popen(cmd, **kw):
+    return subprocess.Popen(cmd, **_NOWIN, **kw)
+
+
+def probe_duration(path):
+    out = run([_tool("ffprobe"), "-v", "error", "-show_entries", "format=duration",
+               "-of", "default=nw=1:nk=1", str(path)], capture_output=True, text=True).stdout
+    try:
+        return float(out.strip())
+    except ValueError:
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Word lists
+# ---------------------------------------------------------------------------
+STRONG = [r".*fuck.*", r"cunts?", r"motherf.*", r"fk", r"effing"]
+MODERATE = [
+    r".*shit.*", r"bitch.*", r"ass", r"asses", r"ass(hole|holes|wipe)", r"arse",
+    r"arsehole.*", r"jackass.*", r"dumbass.*", r"badass.*", r"smartass.*",
+    r"bastard.*", r"piss.*", r"dicks?", r"dickhead.*", r"pricks?", r"bollocks",
+    r"bugger.*", r"wanker.*", r"twats?", r"sluts?", r"slutty", r"whores?",
+    r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*",
+]
+MILD = [r"damn.*", r"dammit", r"goddamn.*", r"goddam", r"hell", r"hellhole",
+        r"crap", r"crappy", r"craps", r"sod", r"sodding", r"bloody"]
+MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"jeez", r"geez",
+          r"gosh", r"darn.*", r"heck", r"dang"]
+DEITY_PHRASES = [
+    ("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"),
+    ("dear", "god"), ("god", "almighty"), ("for", "god's", "sake"),
+    ("for", "gods", "sake"), ("god", "knows"), ("thank", "god"), ("god", "damn"),
+    ("god", "dammit"), ("oh", "lord"), ("good", "lord"), ("dear", "lord"),
+    ("lord", "almighty"), ("sweet", "jesus"), ("jesus", "christ"),
+    ("for", "christ's", "sake"), ("for", "christs", "sake"),
+]
+DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"goddamn.*"]
+BLOODY_SWEAR_NEXT = {
+    "hell", "well", "idiot", "fool", "fools", "stupid", "ridiculous", "nuisance",
+    "nonsense", "cheek", "marvellous", "marvelous", "brilliant", "awful", "good",
+    "great", "mess", "typical", "lucky", "useless", "thing", "things", "obvious",
+    "right", "freezing", "sure", "christ", "god", "minded",
+}
+SEX_TERMS = {
+    3: [r"orgasm.*", r"climax(ed|ing)?", r"erection", r"arous(ed|al|ing)",
+        r"nipples?", r"naked", r"nude", r"groin", r"thrust(s|ed|ing)?",
+        r"moan(s|ed|ing)?", r"undress(ed|ing)?", r"panties", r"lingerie",
+        r"straddl(e|ed|ing)", r"breasts?", r"sex", r"sexual(ly)?", r"lust(ed|ful|ing)?",
+        r"unzip(ped|s)?", r"unbutton(ed|ing)?", r"bra", r"intercourse",
+        r"pleasure", r"writh(e|ed|ing)", r"hardness", r"condoms?", r"foreplay",
+        r"bedded", r"seduc(e|ed|ing|tion)"],
+    1: [r"kiss(ed|es|ing)?", r"thighs?", r"hips?", r"caress(ed|es|ing)?",
+        r"tongue", r"sheets", r"bed", r"bedroom", r"skin", r"shirt", r"blouse",
+        r"gasp(ed)?", r"desire", r"body", r"bodies", r"touch(ed|ing)?", r"lips",
+        r"stroked?", r"breath(less)?", r"shiver(ed)?", r"zipper", r"husky", r"hungrily"],
+}
+SEX_WINDOW_SCORE = 9   # a stretch of ~3 paragraphs (or ~60s) scoring this much gets flagged
+SEX_PARA_SCORE = 3     # a single paragraph inside such a stretch must score this to be cut
+
+# Checkbox groups shown in the app → word-list categories
+GROUPS = {
+    "swearing": ["strong", "moderate"],
+    "mild": ["mild"],
+    "deity": ["deity"],
+    "minced": ["minced"],
+}
+
+
+def norm(w):
+    w = w.lower().replace("’", "'").replace("‘", "'")
+    w = re.sub(r"[^a-z0-9']", "", w)
+    return w.strip("'")
+
+
+def _c(pats):
+    return [re.compile(p + r"$") for p in pats]
+
+
+CATS = {"strong": _c(STRONG), "moderate": _c(MODERATE), "mild": _c(MILD),
+        "minced": _c(MINCED), "deity": _c(DEITY_WORDS)}
+SEX_C = {w: _c(p) for w, p in SEX_TERMS.items()}
+
+
+def find_language(words, cats):
+    """Return (i, j, category) spans of words[i:j] to mute."""
+    hits, n, i = [], len(words), 0
+    while i < n:
+        if "deity" in cats:
+            ph = next((p for p in sorted(DEITY_PHRASES, key=len, reverse=True)
+                       if tuple(words[i:i + len(p)]) == p), None)
+            if ph:
+                hits.append((i, i + len(ph), "deity"))
+                i += len(ph)
+                continue
+        w = words[i]
+        for cat in cats:
+            if any(p.match(w) for p in CATS[cat]):
+                if w == "bloody" and (words[i + 1] if i + 1 < n else "") not in BLOODY_SWEAR_NEXT:
+                    break
+                hits.append((i, i + 1, cat))
+                break
+        i += 1
+    return hits
+
+
+def sex_score(words):
+    """Score a stretch of text. Only stretches with at least two explicit
+    words count at all: kissing, beds and sheets alone never flag a scene
+    (romance without explicit content is left alone)."""
+    s, explicit = 0, 0
+    for w in words:
+        for weight, pats in SEX_C.items():
+            if any(p.match(w) for p in pats):
+                s += weight
+                explicit += weight == 3
+                break
+    return s if explicit >= 2 else 0
+
+
+def is_explicit(words):
+    return any(p.match(w) for w in words for p in SEX_C[3])
+
+
+def mask(word):
+    core = re.sub(r"[^A-Za-z]", "", word)
+    return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
+
+
+def fmt_t(t):
+    t = int(t)
+    return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}"
+
+
+# ---------------------------------------------------------------------------
+# Speech recognition
+# ---------------------------------------------------------------------------
+def load_recognizer(model_dir=DEFAULT_MODEL, threads=None):
+    import sherpa_onnx
+    d = Path(model_dir)
+    threads = threads or max(1, min(8, (os.cpu_count() or 2)))
+    return sherpa_onnx.OfflineRecognizer.from_transducer(
+        encoder=str(d / "encoder.int8.onnx"), decoder=str(d / "decoder.int8.onnx"),
+        joiner=str(d / "joiner.int8.onnx"), tokens=str(d / "tokens.txt"),
+        num_threads=threads, model_type="nemo_transducer")
+
+
+def tokens_to_words(res, offset):
+    words = []
+    durs = list(res.durations) if res.durations else [0.08] * len(res.tokens)
+    for tok, ts, du in zip(res.tokens, res.timestamps, durs):
+        start, end = offset + ts, offset + ts + max(du, 0.08)
+        if tok.startswith(" ") or not words:
+            words.append({"t": tok.strip(), "s": start, "e": end})
+        else:
+            words[-1]["t"] += tok
+            words[-1]["e"] = max(words[-1]["e"], end)
+    for w in words:
+        w["s"], w["e"] = round(w["s"], 3), round(w["e"], 3)
+    return [w for w in words if w["t"]]
+
+
+def transcribe(path, rec, progress=None, chunk=30.0, overlap=2.0, cancel=None):
+    """Stream audio through ffmpeg in overlapping chunks (long books never
+    need to fit in memory)."""
+    proc = popen([_tool("ffmpeg"), "-v", "error", "-i", str(path), "-ac", "1",
+                  "-ar", str(SR), "-f", "f32le", "-"], stdout=subprocess.PIPE)
+    C, O = int(chunk * SR), int(overlap * SR)
+    buf, offset, first, eof, out = np.zeros(0, dtype=np.float32), 0.0, True, False, []
+    try:
+        while True:
+            if cancel and cancel():
+                raise KeyboardInterrupt
+            while not eof and len(buf) < C:
+                data = proc.stdout.read((C - len(buf)) * 4)
+                if not data:
+                    eof = True
+                    break
+                buf = np.concatenate([buf, np.frombuffer(data, dtype=np.float32)])
+            last = eof and len(buf) <= C
+            seg = buf[:C]
+            if len(seg) > SR * 0.2:
+                s = rec.create_stream()
+                s.accept_waveform(SR, seg)
+                rec.decode_stream(s)
+                lo = offset + (overlap / 2 if not first else -1)
+                hi = offset + chunk - overlap / 2 if not last else 1e12
+                out.extend(w for w in tokens_to_words(s.result, offset) if lo <= w["s"] < hi)
+            if progress:
+                progress(offset + len(seg) / SR)
+            if last:
+                break
+            buf = buf[C - O:]
+            offset += (C - O) / SR
+            first = False
+    finally:
+        proc.kill()
+        proc.wait()
+    return out
+
+
+def snap_edges(path, s, e, wide=False):
+    """Timestamps are only accurate to ~80ms. Look at the real audio and move
+    each edge out to true silence; if speech is continuous, pad generously
+    (better to clip a tiny neighbouring word than leak part of a swear)."""
+    reach = 0.3 if wide else 0.18
+    t0 = max(0.0, s - reach - 0.05)
+    dur = (e + reach + 0.05) - t0
+    raw = run([_tool("ffmpeg"), "-v", "error", "-ss", f"{t0:.3f}", "-t", f"{dur:.3f}",
+               "-i", str(path), "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
+              capture_output=True).stdout
+    a = np.frombuffer(raw, dtype=np.float32)
+    hop = SR // 100
+    if len(a) < hop * 5:
+        return round(max(0, s - 0.12), 3), round(e + 0.12, 3)
+    en = np.array([np.sqrt(np.mean(a[k:k + hop] ** 2)) for k in range(0, len(a) - hop, hop)])
+    en = np.convolve(en, np.ones(3) / 3, mode="same")
+    tt = t0 + np.arange(len(en)) * 0.01
+    floor = 0.06 * float(en.max())
+
+    def silent(lo, hi):
+        idx = np.where((tt >= lo) & (tt <= hi) & (en < floor))[0]
+        return idx if len(idx) else None
+
+    lo, hi = silent(s - reach, s), silent(e, e + reach)
+    ns = float(tt[lo[-1]]) if lo is not None else s - 0.12
+    ne = float(tt[hi[0]] + 0.01) if hi is not None else e + 0.12
+    return round(max(0, ns), 3), round(max(ne, e), 3)
+
+
+# ---------------------------------------------------------------------------
+# Ebook
+# ---------------------------------------------------------------------------
+def _html_paragraphs(markup):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(markup, "html.parser")
+    for t in soup(["script", "style"]):
+        t.decompose()
+    paras = []
+    for b in soup.find_all(["p", "h1", "h2", "h3", "h4", "li", "blockquote", "div"]):
+        if b.find(["p", "div", "li"]):
+            continue
+        txt = " ".join(b.get_text(" ").split())
+        if txt:
+            paras.append(txt)
+    return paras or [p for p in soup.get_text("\n").split("\n") if p.strip()]
+
+
+class EbookError(Exception):
+    pass
+
+
+def read_ebook(path):
+    p = Path(path)
+    ext = p.suffix.lower()
+    if ext == ".epub":
+        z = zipfile.ZipFile(p)
+        names = z.namelist()
+        enc = [n for n in names if n.endswith("encryption.xml")]
+        if enc:
+            data = z.read(enc[0])
+            if b"EncryptedData" in data and data.count(b"EncryptedData") > data.lower().count(b"font"):
+                raise EbookError("This ebook is copy-protected (DRM), so it can't be read. "
+                                 "You can still clean the audiobook without it.")
+        container = z.read("META-INF/container.xml").decode("utf8", "ignore")
+        opf_path = re.search(r'full-path="([^"]+)"', container).group(1)
+        opf = z.read(opf_path).decode("utf8", "ignore")
+        base = opf_path.rsplit("/", 1)[0] + "/" if "/" in opf_path else ""
+        manifest = {}
+        for item in re.findall(r"<item\b[^>]*>", opf):
+            i = re.search(r'\bid="([^"]+)"', item)
+            h = re.search(r'\bhref="([^"]+)"', item)
+            if i and h:
+                manifest[i.group(1)] = h.group(1)
+        paras = []
+        for idref in re.findall(r'<itemref\b[^>]*?idref="([^"]+)"', opf):
+            href = manifest.get(idref)
+            if href and (base + unquote(href)) in names:
+                paras.extend(_html_paragraphs(z.read(base + unquote(href)).decode("utf8", "ignore")))
+        return paras
+    if ext == ".pdf":
+        exe = shutil.which("pdftotext") or (str(HERE / "bin" / "pdftotext.exe")
+                                           if (HERE / "bin" / "pdftotext.exe").exists() else None)
+        if exe:
+            txt = run([exe, str(p), "-"], capture_output=True, text=True).stdout
+        else:
+            try:
+                from pypdf import PdfReader
+            except ImportError:
+                raise EbookError("PDF support isn't installed. Use the EPUB version if you have it.")
+            txt = "\n\n".join((pg.extract_text() or "") for pg in PdfReader(str(p)).pages)
+        return [" ".join(b.split()) for b in re.split(r"\n\s*\n", txt) if b.strip()]
+    if ext in (".html", ".htm", ".xhtml"):
+        return _html_paragraphs(p.read_text("utf8", "ignore"))
+    if ext in (".txt", ".md"):
+        return [" ".join(b.split()) for b in re.split(r"\n\s*\n", p.read_text("utf8", "ignore")) if b.strip()]
+    if ext in (".azw", ".azw3", ".kfx", ".mobi"):
+        raise EbookError("Kindle books are copy-protected and can't be read. "
+                         "You can still clean the audiobook without it.")
+    raise EbookError(f"Can't read {ext} files. Use EPUB, PDF or TXT.")
+
+
+def align(eb, asr_n, gram=4):
+    """Map each ebook word index to an ASR word index (or None)."""
+    def uniq(seq):
+        seen = {}
+        for i in range(len(seq) - gram + 1):
+            g = tuple(seq[i:i + gram])
+            seen[g] = None if g in seen else i
+        return {g: i for g, i in seen.items() if i is not None}
+
+    ge, ga = uniq(eb), uniq(asr_n)
+    pairs = sorted((ge[g], ga[g]) for g in ge.keys() & ga.keys())
+    tails, tidx, prev = [], [], [None] * len(pairs)
+    for k, (_, a) in enumerate(pairs):
+        pos = bisect.bisect_left(tails, a)
+        if pos == len(tails):
+            tails.append(a)
+            tidx.append(k)
+        else:
+            tails[pos], tidx[pos] = a, k
+        prev[k] = tidx[pos - 1] if pos > 0 else None
+    chain, k = [], (tidx[-1] if tidx else None)
+    while k is not None:
+        chain.append(pairs[k])
+        k = prev[k]
+    chain.reverse()
+    mapping = [None] * len(eb)
+    for e, a in chain:
+        for d in range(gram):
+            mapping[e + d] = a + d
+    bounds = [(-gram, -gram)] + chain + [(len(eb), len(asr_n))]
+    for (e0, a0), (e1, a1) in zip(bounds, bounds[1:]):
+        es, ee, as_, ae = e0 + gram, e1, a0 + gram, a1
+        if es >= ee or as_ >= ae or (e0 < 0 and e1 == len(eb)):
+            continue
+        if e0 < 0:
+            es, as_ = max(es, ee - 400), max(as_, ae - 400)
+        elif e1 == len(eb):
+            ee, ae = min(ee, es + 400), min(ae, as_ + 400)
+        sm = difflib.SequenceMatcher(None, eb[es:ee], asr_n[as_:ae], autojunk=False)
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag == "equal" or (tag == "replace" and i2 - i1 == j2 - j1):
+                for d in range(i2 - i1):
+                    mapping[es + i1 + d] = as_ + j1 + d
+    return mapping
+
+
+def est_time(idx, mapping, asr):
+    a = mapping[idx]
+    if a is not None:
+        return asr[a]["s"], asr[a]["e"], True, asr[a]["part"]
+    lo = hi = None
+    for d in range(1, 40):
+        if lo is None and idx - d >= 0 and mapping[idx - d] is not None:
+            lo = (idx - d, mapping[idx - d])
+        if hi is None and idx + d < len(mapping) and mapping[idx + d] is not None:
+            hi = (idx + d, mapping[idx + d])
+        if lo and hi:
+            break
+    if not lo or not hi:
+        return None
+    t0, t1 = asr[lo[1]]["e"], asr[hi[1]]["s"]
+    if asr[lo[1]]["part"] != asr[hi[1]]["part"] or t1 < t0 or t1 - t0 > 8:
+        return None
+    mid = t0 + (t1 - t0) * (idx - lo[0]) / (hi[0] - lo[0])
+    return max(t0, mid - 0.45), min(t1, mid + 0.45), False, asr[lo[1]]["part"]
+
+
+def span_times(asr, i, j):
+    """Cut boundaries for ASR words i..j inclusive: from just before word i to
+    just before the word after j."""
+    part = asr[i]["part"]
+    prev_e = asr[i - 1]["e"] if i > 0 and asr[i - 1]["part"] == part else 0
+    s = max(asr[i]["s"] - 0.15, prev_e)
+    e = asr[j]["e"]
+    if j + 1 < len(asr) and asr[j + 1]["part"] == part and asr[j + 1]["s"] - e < 0.6:
+        e = asr[j + 1]["s"] - 0.03
+    else:
+        e += 0.25
+    return round(max(0, s), 3), round(e, 3)
+
+
+# ---------------------------------------------------------------------------
+# Analyze
+# ---------------------------------------------------------------------------
+def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity"),
+            find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
+            threads=None, cancel=None):
+    """progress(fraction 0..1, message). Returns the analysis dict (also saved
+    to workdir/analysis.json)."""
+    work = Path(workdir)
+    work.mkdir(parents=True, exist_ok=True)
+    parts = [str(Path(p).resolve()) for p in parts]
+    cats = [c for g in groups for c in GROUPS[g]]
+    say = progress or (lambda f, m: None)
+
+    tfile = work / "transcript.json"
+    done = json.loads(tfile.read_text()) if tfile.exists() else {}
+    durs = {p: probe_duration(p) for p in parts}
+    total = sum(durs.values()) or 1.0
+    todo = [p for p in parts if p not in done]
+    if todo:
+        say(0.0, "Loading the listening model…")
+        rec = load_recognizer(model_dir, threads)
+        t0 = time.time()
+        before = sum(durs[p] for p in parts if p in done)
+        heard = 0.0
+        for n, p in enumerate(todo, 1):
+            def prog(sec, p=p, n=n):
+                got = heard + sec
+                rate = got / max(time.time() - t0, 1e-6)
+                left = (total - before - got) / max(rate, 1e-6)
+                frac = (before + got) / total
+                eta = f"about {left / 60:.0f} min left" if got > 60 else "estimating time…"
+                say(0.92 * frac, f"Listening to part {n} of {len(todo)} · {eta}")
+            done[p] = transcribe(p, rec, prog, cancel=cancel)
+            heard += durs[p]
+            tfile.write_text(json.dumps(done))
+            log(f"Listened to {Path(p).name}: {len(done[p])} words")
+
+    asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(parts) for w in done[p]]
+    asr_n = [w["n"] for w in asr]
+
+    say(0.93, "Finding language…")
+    mutes = [{"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
+              "src": "audio", "word": " ".join(mask(asr[k]["t"]) for k in range(i, j)),
+              "ctx": " ".join(asr[k]["t"] for k in range(max(0, i - 6), i))}
+             for i, j, cat in find_language(asr_n, cats)]
+
+    paras = mapping = None
+    ebook_note = ""
+    if ebook:
+        say(0.94, "Checking against the ebook…")
+        try:
+            paras = read_ebook(ebook)
+        except EbookError as ex:
+            ebook_note = str(ex)
+            log(ebook_note)
+            paras = None
+    if paras:
+        eb_words, eb_para = [], []
+        for pi_, para in enumerate(paras):
+            for w in para.split():
+                if norm(w):
+                    eb_words.append(w)
+                    eb_para.append(pi_)
+        eb_n = [norm(w) for w in eb_words]
+        mapping = align(eb_n, asr_n)
+        aligned = sum(m is not None for m in mapping)
+        pct = 100 * aligned / max(len(eb_n), 1)
+        if pct < 30:
+            ebook_note = (f"Only {pct:.0f}% of the ebook matched the audio — "
+                          "is it the same book? Ebook check skipped.")
+            log(ebook_note)
+            paras = mapping = None
+        else:
+            added = 0
+            for i, j, cat in find_language(eb_n, cats):
+                t = est_time(i, mapping, asr)
+                if not t:
+                    continue
+                s, e, exact, part = t
+                if j - i > 1:
+                    t2 = est_time(j - 1, mapping, asr)
+                    if t2:
+                        e = max(e, t2[1])
+                if any(m["part"] == part and m["s"] - 0.8 <= s <= m["e"] + 0.8 for m in mutes):
+                    continue
+                mutes.append({"part": part, "s": round(s, 3), "e": round(e, 3), "cat": cat,
+                              "src": "ebook" if exact else "ebook-estimated",
+                              "word": " ".join(mask(w) for w in eb_words[i:j]),
+                              "ctx": " ".join(eb_words[max(0, i - 6):i])})
+                added += 1
+            ebook_note = f"Ebook matched {pct:.0f}% of the audio and caught {added} extra word(s)."
+            log(ebook_note)
+
+    mutes.sort(key=lambda m: (m["part"], m["s"]))
+    say(0.96, "Fine-tuning mute timing…")
+    for m in mutes:
+        m["s"], m["e"] = snap_edges(parts[m["part"]], m["s"], m["e"], m["src"] == "ebook-estimated")
+
+    scenes = []
+    if find_sex:
+        say(0.98, "Looking for sex scenes…")
+        if paras:
+            pscore = {}
+            pwords = {}
+            for k, pi_ in enumerate(eb_para):
+                pwords.setdefault(pi_, []).append(k)
+            pexp = {}
+            for pi_, ks in pwords.items():
+                ws = [eb_n[k] for k in ks]
+                pscore[pi_] = sum(wt for w in ws for wt, pats in SEX_C.items()
+                                  if any(p.match(w) for p in pats))
+                pexp[pi_] = is_explicit(ws)
+            ids = sorted(pwords)
+            hot = set()
+            for x, pi_ in enumerate(ids):
+                win = ids[x:x + 3]
+                if sex_score([eb_n[k] for q in win for k in pwords[q]]) >= SEX_WINDOW_SCORE:
+                    # only paragraphs that themselves contain explicit words get cut
+                    hot.update(q for q in win if pexp[q])
+            runs = []
+            for pi_ in sorted(hot):
+                if runs and ids.index(pi_) - ids.index(runs[-1][-1]) <= 2:
+                    runs[-1].extend(q for q in ids[ids.index(runs[-1][-1]) + 1: ids.index(pi_) + 1])
+                else:
+                    runs.append([pi_])
+            for run_ in runs:
+                al = [mapping[k] for q in run_ for k in pwords[q] if mapping[k] is not None]
+                if len(al) < 5:
+                    continue
+                i0, i1 = min(al), max(al)
+                if asr[i0]["part"] != asr[i1]["part"]:
+                    i1 = max(a for a in al if asr[a]["part"] == asr[i0]["part"])
+                s, e = span_times(asr, i0, i1)
+                scenes.append({"part": asr[i0]["part"], "s": s, "e": e,
+                               "score": sum(pscore[q] for q in run_),
+                               "text": "\n\n".join(paras[q] for q in run_)})
+        else:
+            # No ebook: 60-second windows, trimmed to whole sentences
+            ends = {k for k, w in enumerate(asr) if re.search(r"[.?!][\"'”’]?$", w["t"])}
+            k, flagged = 0, []
+            while k < len(asr):
+                j = k
+                while j < len(asr) and asr[j]["part"] == asr[k]["part"] and asr[j]["s"] - asr[k]["s"] < 60:
+                    j += 1
+                if sex_score(asr_n[k:j]) >= SEX_WINDOW_SCORE:
+                    flagged.append([k, j - 1])
+                step = k
+                while step < len(asr) and asr[step]["part"] == asr[k]["part"] and asr[step]["s"] - asr[k]["s"] < 20:
+                    step += 1
+                k = max(step, k + 1)
+            merged = []
+            for a_, b_ in flagged:
+                if merged and asr[a_]["part"] == asr[merged[-1][0]]["part"] and a_ <= merged[-1][1] + 1:
+                    merged[-1][1] = max(merged[-1][1], b_)
+                else:
+                    merged.append([a_, b_])
+            for a_, b_ in merged:
+                # trim to first/last words with real sexual vocabulary, then out to sentence edges
+                hits = [x for x in range(a_, b_ + 1) if is_explicit([asr_n[x]])] or [a_, b_]
+                a_, b_ = hits[0], hits[-1]
+                while a_ > 0 and (a_ - 1) not in ends and asr[a_ - 1]["part"] == asr[a_]["part"]:
+                    a_ -= 1
+                while b_ + 1 < len(asr) and b_ not in ends and asr[b_ + 1]["part"] == asr[b_]["part"]:
+                    b_ += 1
+                s, e = span_times(asr, a_, b_)
+                scenes.append({"part": asr[a_]["part"], "s": s, "e": e,
+                               "score": sex_score(asr_n[a_:b_ + 1]),
+                               "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+        for n, sc in enumerate(scenes, 1):
+            sc["id"], sc["cut"] = n, True
+
+    st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
+          "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr)}
+    (work / "analysis.json").write_text(json.dumps(st, indent=1))
+    say(1.0, "Done listening.")
+    return st
+
+
+# ---------------------------------------------------------------------------
+# Chapters (for Yoto and players that can't skip inside one long file)
+# ---------------------------------------------------------------------------
+NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+             "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+             "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+             "nineteen": 19, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+             "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100}
+CHAPTER_WORDS = {"prologue", "epilogue", "interlude", "introduction", "afterword", "foreword"}
+TRACK_MAX = 58 * 60  # Yoto allows 60 min per track; leave a little room
+
+
+def _chapter_number(words, k):
+    """Read a chapter number starting at words[k] ("one", "twenty-three", "12")."""
+    w = words[k] if k < len(words) else ""
+    if w.isdigit():
+        return int(w), k + 1
+    parts = w.replace("-", " ").split()
+    if parts and all(p in NUM_WORDS for p in parts):
+        n, j = sum(NUM_WORDS[p] for p in parts), k + 1
+        # "twenty three" spoken as two words
+        if n % 10 == 0 and n >= 20 and j < len(words) and words[j] in NUM_WORDS and NUM_WORDS[words[j]] < 10:
+            n += NUM_WORDS[words[j]]
+            j += 1
+        return n, j
+    return None, k
+
+
+def find_chapters(asr):
+    """Chapter starts the narrator announces after a pause: 'Chapter One',
+    'Chapter 12', 'Prologue'. Returns [{part, t, title}]."""
+    out = []
+    for k, w in enumerate(asr):
+        n = w["n"]
+        prev = asr[k - 1] if k > 0 and asr[k - 1]["part"] == w["part"] else None
+        gap = (w["s"] - prev["e"]) if prev else 99
+        sentence_start = prev is None or gap >= 0.45 or re.search(r"[.?!:;\"”]$", prev["t"])
+        if not sentence_start:
+            continue  # "...as she read in chapter two..." is not a heading
+        if n == "chapter":
+            num, _ = _chapter_number([x["n"] for x in asr[k + 1:k + 4]], 0)
+            if num is not None:
+                out.append({"part": w["part"], "t": max(0.0, w["s"] - 0.3), "title": f"Chapter {num}"})
+        elif n in CHAPTER_WORDS:
+            nxt = asr[k + 1] if k + 1 < len(asr) and asr[k + 1]["part"] == w["part"] else None
+            if not nxt or nxt["s"] - w["e"] > 0.35 or re.search(r"[.?!:]$", w["t"]):
+                out.append({"part": w["part"], "t": max(0.0, w["s"] - 0.3), "title": n.capitalize()})
+    return out
+
+
+def plan_tracks(asr, parts, durations):
+    """Track list per part: chapter starts, plus extra splits so no track
+    runs over an hour. Books with no spoken chapter headings get split
+    every ~30 minutes at a natural pause."""
+    chapters = find_chapters(asr)
+    pauses = {}
+    for k in range(1, len(asr)):
+        if asr[k]["part"] == asr[k - 1]["part"]:
+            g = asr[k]["s"] - asr[k - 1]["e"]
+            if g > 0.6:
+                pauses.setdefault(asr[k]["part"], []).append((asr[k - 1]["e"] + g / 2, g))
+    tracks, section = [], 0
+    for pi in range(len(parts)):
+        dur = durations[pi]
+        starts = [dict(c) for c in chapters if c["part"] == pi]
+        no_chapters = not starts
+        if no_chapters:
+            starts = [{"part": pi, "t": 0.0, "title": None}]
+        elif starts[0]["t"] > 20:
+            starts = [{"part": pi, "t": 0.0, "title": "Opening"}] + starts
+        starts[0]["t"] = 0.0
+        target = 30 * 60 if no_chapters else TRACK_MAX  # no headings: ~30 min tracks
+        for x, st in enumerate(starts):
+            end = starts[x + 1]["t"] if x + 1 < len(starts) else dur
+            pieces = max(1, int(np.ceil((end - st["t"]) / target)))
+            cut_at = [st["t"]]
+            for q in range(1, pieces):
+                want = st["t"] + (end - st["t"]) * q / pieces
+                cands = [p for p in pauses.get(pi, []) if abs(p[0] - want) < 120]
+                cut_at.append(max(cands, key=lambda p: p[1] - abs(p[0] - want) / 60)[0]
+                              if cands else want)
+            for q, at in enumerate(cut_at, 1):
+                if no_chapters:
+                    section += 1
+                    title = f"Section {section}"
+                elif pieces > 1:
+                    title = f"{st['title']} ({q} of {pieces})"
+                else:
+                    title = st["title"]
+                tracks.append({"part": pi, "t": at, "title": title})
+    return tracks
+
+
+def _shift(t, cuts):
+    """Where time t (original) lands after the cuts are removed."""
+    removed = sum(min(e, t) - s for s, e in cuts if s < t)
+    return max(0.0, t - removed)
+
+
+def split_tracks(clean_files, tracks, cuts_by_part, outdir, book_title, log=print):
+    """Cut the cleaned files into one file per track; group into Yoto-sized
+    card folders (5 hours / 500 MB / 100 tracks each)."""
+    out = Path(outdir)
+    made = []
+    n = 0
+    for pi, f in enumerate(clean_files):
+        dur = probe_duration(f)
+        pts = [t for t in tracks if t["part"] == pi]
+        for x, t in enumerate(pts):
+            s = _shift(t["t"], cuts_by_part.get(pi, []))
+            e = _shift(pts[x + 1]["t"], cuts_by_part.get(pi, [])) if x + 1 < len(pts) else dur
+            if e - s < 1:
+                continue
+            n += 1
+            made.append({"n": n, "title": t["title"], "src": f, "s": s, "e": e})
+    # group into cards
+    cards, cur, cur_sec, cur_mb = [], [], 0.0, 0.0
+    for m in made:
+        sec = m["e"] - m["s"]
+        size_mb = Path(m["src"]).stat().st_size / 1e6 * sec / max(probe_duration(m["src"]), 1)
+        if cur and (cur_sec + sec > 5 * 3600 - 60 or cur_mb + size_mb > 490 or len(cur) >= 100):
+            cards.append(cur)
+            cur, cur_sec, cur_mb = [], 0.0, 0.0
+        cur.append(m)
+        cur_sec += sec
+        cur_mb += size_mb
+    if cur:
+        cards.append(cur)
+    folders = []
+    for ci, card in enumerate(cards, 1):
+        d = out / ("Chapters" if len(cards) == 1 else f"Chapters - Card {ci} of {len(cards)}")
+        d.mkdir(parents=True, exist_ok=True)
+        folders.append(str(d))
+        for i, m in enumerate(card, 1):
+            ext = Path(m["src"]).suffix
+            safe = re.sub(r'[\\/:*?"<>|]', "", m["title"])
+            dst = d / f"{i:02d} {safe}{ext}"
+            r = run([_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{m['s']:.3f}", "-to", f"{m['e']:.3f}",
+                     "-i", str(m["src"]), "-map", "0:a", "-c", "copy",
+                     "-metadata", f"title={m['title']}", "-metadata", f"track={i}/{len(card)}",
+                     "-metadata", f"album={book_title}", str(dst)], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"Couldn't make chapter file {dst.name}:\n{r.stderr[-500:]}")
+    log(f"Made {len(made)} chapter files in {len(cards)} folder(s)")
+    return {"tracks": len(made), "cards": len(cards), "folders": folders,
+            "titles": [m["title"] for m in made]}
+
+
+# ---------------------------------------------------------------------------
+# Render
+# ---------------------------------------------------------------------------
+def _ranges(rs):
+    return "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in rs)
+
+
+def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False):
+    """Write clean audio. cuts: list of {"part","s","e","note"}; defaults to
+    the scenes marked cut=True in the analysis. chapters=True also writes one
+    file per chapter (Yoto-friendly)."""
+    work = Path(workdir)
+    st = json.loads((work / "analysis.json").read_text())
+    if cuts is None:
+        cuts = [c for c in st["scenes"] if c.get("cut")]
+    out = Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    say = progress or (lambda f, m: None)
+    total_cut_sec = 0.0
+    report = []
+    clean_files = []
+    for pi, p in enumerate(st["parts"]):
+        say(pi / len(st["parts"]), f"Saving part {pi + 1} of {len(st['parts'])}…")
+        mr = sorted((m["s"], m["e"]) for m in st["mutes"] if m["part"] == pi)
+        cr = sorted((c["s"], c["e"]) for c in cuts if c["part"] == pi)
+        src = Path(p)
+        ext = src.suffix.lower()
+        filt = []
+        if mr:
+            filt.append(f"volume=volume=0:enable='{_ranges(mr)}'")
+        if cr:
+            filt.append(f"aselect='not({_ranges(cr)})',asetpts=N/SR/TB")
+        fs = work / f"filter_{pi}.txt"
+        fs.write_text(",".join(filt) or "anull")
+        br = run([_tool("ffprobe"), "-v", "error", "-select_streams", "a:0", "-show_entries",
+                  "stream=bit_rate", "-of", "default=nw=1:nk=1", str(src)],
+                 capture_output=True, text=True).stdout.strip()
+        br = br if br.isdigit() else "96000"
+        if ext in (".m4b", ".m4a", ".mp4", ".aac"):
+            codec, dst = ["-c:a", "aac", "-b:a", br], out / src.name
+        else:
+            codec, dst = ["-c:a", "libmp3lame", "-b:a", br], out / (src.stem + ".mp3")
+        # ffmpeg 7+ reads filter files with "-/filter:a"; older builds use
+        # "-filter_script:a". Try both, and fall back to dropping cover art /
+        # chapters if the output container objects to them.
+        r = None
+        for fopt in (["-/filter:a", str(fs)], ["-filter_script:a", str(fs)]):
+            base = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(src), *fopt]
+            for extra in (["-map", "0:a", "-map", "0:v?", "-c:v", "copy", "-map_metadata", "0",
+                           "-map_chapters", "0"], ["-map", "0:a", "-map_metadata", "0"]):
+                r = run(base + extra + codec + [str(dst)], capture_output=True, text=True)
+                if r.returncode == 0 or "Unrecognized option" in r.stderr:
+                    break
+            if r.returncode == 0:
+                break
+        if r.returncode != 0:
+            raise RuntimeError(f"Couldn't save {src.name}:\n{r.stderr[-800:]}")
+        clean_files.append(str(dst))
+        report.append(f"\n{src.name}\n" + "-" * len(src.name))
+        for m in (m for m in st["mutes"] if m["part"] == pi):
+            via = "" if m["src"] == "audio" else "   (caught by ebook check)"
+            report.append(f"  {fmt_t(m['s'])}  muted  {m['word']}{via}")
+        for c in (c for c in cuts if c["part"] == pi):
+            total_cut_sec += c["e"] - c["s"]
+            report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
+                          f"{c.get('note') or 'scene'}")
+    chap = None
+    if chapters:
+        say(0.95, "Splitting into chapters…")
+        tr = json.loads((work / "transcript.json").read_text())
+        asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(st["parts"]) for w in tr[p]]
+        durs = [probe_duration(p) for p in st["parts"]]
+        tracks = plan_tracks(asr, st["parts"], durs)
+        cuts_by_part = {}
+        for c in cuts:
+            cuts_by_part.setdefault(c["part"], []).append((c["s"], c["e"]))
+        title = re.sub(r"[\s_-]*(part|pt|disc|cd)?[\s_-]*\d+$", "", Path(st["parts"][0]).stem,
+                       flags=re.I) or Path(st["parts"][0]).stem
+        chap = split_tracks(clean_files, tracks, cuts_by_part, out, title, log)
+        report.append("\nChapter files\n-------------")
+        report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
+    head = ["CleanListen report", "==================",
+            f"{len(st['mutes'])} words/phrases muted, {len(cuts)} scenes cut "
+            f"({total_cut_sec / 60:.1f} minutes removed)."]
+    if st.get("ebook_note"):
+        head.append(st["ebook_note"])
+    (out / "CleanListen report.txt").write_text("\n".join(head + report) + "\n", encoding="utf8")
+    say(1.0, "Saved.")
+    log(f"Saved to {out}")
+    return {"mutes": len(st["mutes"]), "cuts": len(cuts), "cut_minutes": total_cut_sec / 60,
+            "out": str(out), "chapters": chap}
+
+
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+def _cli():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    an = sub.add_parser("analyze")
+    an.add_argument("workdir")
+    an.add_argument("audio", nargs="+")
+    an.add_argument("--ebook")
+    an.add_argument("--groups", default="swearing,mild,deity")
+    an.add_argument("--no-sex", action="store_true")
+    rn = sub.add_parser("render")
+    rn.add_argument("workdir")
+    rn.add_argument("--out")
+    a = ap.parse_args()
+    if a.cmd == "analyze":
+        st = analyze(a.audio, a.workdir, a.ebook, a.groups.split(","), not a.no_sex,
+                     progress=lambda f, m: print(f"[{f * 100:3.0f}%] {m}", flush=True))
+        print(f"{st['words']} words; {len(st['mutes'])} to mute; {len(st['scenes'])} scenes flagged")
+    else:
+        print(render(a.workdir, a.out or str(Path(a.workdir) / "clean")))
+
+
+if __name__ == "__main__":
+    _cli()
