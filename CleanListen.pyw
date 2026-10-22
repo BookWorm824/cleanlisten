@@ -192,12 +192,15 @@ class App(tk.Tk):
                  ("mild", "Mild words  (damn, hell, crap)", True),
                  ("deity", "God's name used as a swear", True),
                  ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
-                 ("sex", "Explicit sex scenes  (you'll review them first)", True)]
+                 ("sexual", "Sexual words  (sex, sexy, horny\u2026)", True),
+                 ("refs", "Sexual references  (cut sentences about sex)", True),
+                 ("sex", "Explicit sex scenes  (cut whole scenes)", True),
+                 ("gore", "Gory descriptions  (cut graphic passages)", True)]
         for n, (key, label, on) in enumerate(items):
             v = tk.BooleanVar(value=on)
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(
-                row=n % 3, column=n // 3, sticky="w", padx=(0, 26), pady=2)
+                row=n % 4, column=n // 4, sticky="w", padx=(0, 26), pady=2)
 
         b4 = self._card(body, "4", "Save to")
         row = tk.Frame(b4, bg=CARD)
@@ -274,10 +277,11 @@ class App(tk.Tk):
 
     # ---------- page 2: working ----------
     def start(self):
-        groups = [g for g in ("swearing", "mild", "deity", "minced") if self.opts[g].get()]
+        groups = [g for g in ("swearing", "mild", "deity", "minced", "sexual") if self.opts[g].get()]
         find_sex = self.opts["sex"].get()
+        self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
         self.split_chapters = self.split_var.get()
-        if not groups and not find_sex:
+        if not groups and not (find_sex or self.find_refs or self.find_gore):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         key = hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in self.audio)
@@ -312,6 +316,7 @@ class App(tk.Tk):
         try:
             st = engine.analyze(
                 self.audio, self.workdir, ebook=self.ebook, groups=groups, find_sex=find_sex,
+                find_refs=self.find_refs, find_gore=self.find_gore,
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -389,19 +394,26 @@ class App(tk.Tk):
                     l.bind("<Button-1>", lambda e, v=val: ([x.set(v) for x, _ in var_list],
                                                             self._update_summary()))
 
-        # scenes
+        # passages, grouped by kind
         self.scene_vars = []
-        if scenes:
-            section("Explicit scenes to cut", len(scenes), self.scene_vars)
-            for sc in scenes:
+        kinds = [("sex", "Explicit scenes to cut"), ("ref", "Sexual references to cut"),
+                 ("gore", "Gory descriptions to cut")]
+        for kind, heading in kinds:
+            items = [sc for sc in scenes if sc.get("kind", "sex") == kind]
+            if not items:
+                continue
+            group_vars = []
+            section(heading, len(items), group_vars)
+            for sc in items:
                 card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
                                 highlightthickness=1)
                 card.pack(fill="x", pady=4)
                 v = tk.BooleanVar(value=sc.get("cut", True))
                 self.scene_vars.append((v, sc))
-                mins = (sc["e"] - sc["s"]) / 60
-                length = f"{mins:.1f} min" if mins >= 1 else f"{sc['e'] - sc['s']:.0f} sec"
-                ttk.Checkbutton(card, text=f"Cut this scene   \u00b7   {where(sc)}   \u00b7   {length}",
+                group_vars.append((v, sc))
+                secs = sc["e"] - sc["s"]
+                length = f"{secs / 60:.1f} min" if secs >= 60 else f"{secs:.0f} sec"
+                ttk.Checkbutton(card, text=f"Cut this   \u00b7   {where(sc)}   \u00b7   {length}",
                                 variable=v, command=self._update_summary).pack(anchor="w")
                 txt = tk.Text(card, wrap="word", height=min(7, 2 + len(sc["text"]) // 95),
                               font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
@@ -443,7 +455,7 @@ class App(tk.Tk):
         ns = sum(v.get() for v, _ in getattr(self, "scene_vars", []))
         nm = sum(v.get() for v, _ in getattr(self, "mute_vars", []))
         self.summary_lbl.config(text=f"{nm} word{'s' if nm != 1 else ''} muted \u00b7 "
-                                     f"{ns} scene{'s' if ns != 1 else ''} cut")
+                                     f"{ns} passage{'s' if ns != 1 else ''} cut")
 
     def _save_from_review(self):
         cuts = [sc for v, sc in self.scene_vars if v.get()]
@@ -463,7 +475,7 @@ class App(tk.Tk):
         cm = res["cut_minutes"]
         removed = (f"{cm:.0f}", "minutes removed") if cm >= 1 else (f"{cm * 60:.0f}", "seconds removed")
         for big, small in [(str(res["mutes"]), "words muted"),
-                           (str(res["cuts"]), "scenes cut"), removed]:
+                           (str(res["cuts"]), "passages cut"), removed]:
             box = tk.Frame(stats, bg=CARD, padx=24, pady=14, highlightbackground=LINE,
                            highlightthickness=1)
             box.pack(side="left", padx=(0, 12))

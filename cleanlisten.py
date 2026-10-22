@@ -85,6 +85,25 @@ DEITY_PHRASES = [
     ("for", "christ's", "sake"), ("for", "christs", "sake"),
 ]
 DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"goddamn.*"]
+# Sexual words muted one at a time, wherever they come up (separate from
+# cutting whole explicit scenes). Words with innocent everyday meanings
+# (bed, naked, breast, screw) are deliberately left out.
+SEXUAL_WORDS = [
+    r"sex", r"sexes", r"sexy", r"sexier", r"sexiest", r"sexual", r"sexually", r"sexuality",
+    r"sexed", r"sexting", r"horny", r"orgasm.*", r"erections?", r"arous(ed|al)",
+    r"condoms?", r"boobs?", r"boobies", r"penis(es)?", r"vaginas?", r"genital.*",
+    r"nipples?", r"porn.*", r"foreplay", r"intercourse", r"masturbat.*", r"climaxed",
+    r"hookers?", r"blowjobs?", r"threesomes?", r"lingerie", r"panties",
+]
+SEXUAL_PHRASES = [
+    ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
+    ("get", "laid"), ("got", "laid"), ("getting", "laid"),
+    ("one", "night", "stand"), ("one", "night", "stands"), ("hook", "up", "with"),
+    ("hooked", "up", "with"), ("hooking", "up", "with"),
+] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
+     for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
+               "anybody", "each", "everyone", "everybody")]
+PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES}  # deity filled in below
 BLOODY_SWEAR_NEXT = {
     "hell", "well", "idiot", "fool", "fools", "stupid", "ridiculous", "nuisance",
     "nonsense", "cheek", "marvellous", "marvelous", "brilliant", "awful", "good",
@@ -109,6 +128,7 @@ SEX_PARA_SCORE = 3     # a single paragraph inside such a stretch must score thi
 
 # Checkbox groups shown in the app → word-list categories
 GROUPS = {
+    "sexual": ["sexual"],
     "swearing": ["strong", "moderate"],
     "mild": ["mild"],
     "deity": ["deity"],
@@ -127,7 +147,8 @@ def _c(pats):
 
 
 CATS = {"strong": _c(STRONG), "moderate": _c(MODERATE), "mild": _c(MILD),
-        "minced": _c(MINCED), "deity": _c(DEITY_WORDS)}
+        "minced": _c(MINCED), "deity": _c(DEITY_WORDS), "sexual": _c(SEXUAL_WORDS)}
+PHRASES["deity"] = DEITY_PHRASES
 SEX_C = {w: _c(p) for w, p in SEX_TERMS.items()}
 
 
@@ -135,13 +156,18 @@ def find_language(words, cats):
     """Return (i, j, category) spans of words[i:j] to mute."""
     hits, n, i = [], len(words), 0
     while i < n:
-        if "deity" in cats:
-            ph = next((p for p in sorted(DEITY_PHRASES, key=len, reverse=True)
-                       if tuple(words[i:i + len(p)]) == p), None)
-            if ph:
-                hits.append((i, i + len(ph), "deity"))
-                i += len(ph)
-                continue
+        found = None
+        for cat in cats:
+            for ph in sorted(PHRASES.get(cat) or [], key=len, reverse=True):
+                if tuple(words[i:i + len(ph)]) == ph:
+                    found = (ph, cat)
+                    break
+            if found:
+                break
+        if found:
+            hits.append((i, i + len(found[0]), found[1]))
+            i += len(found[0])
+            continue
         w = words[i]
         for cat in cats:
             if any(p.match(w) for p in CATS[cat]):
@@ -171,12 +197,47 @@ def is_explicit(words):
     return any(p.match(w) for w in words for p in SEX_C[3])
 
 
+# Graphic violence. A body being found, a stabbing or "blood" alone is normal
+# for a mystery and is NOT flagged: a stretch needs several strongly graphic
+# words close together.
+GORE_TERMS = {
+    3: [r"entrails", r"intestines?", r"innards", r"viscera", r"disembowel.*", r"eviscerat.*",
+        r"decapitat.*", r"beheaded", r"dismember.*", r"mutilat.*", r"severed", r"gore", r"gory",
+        r"gush(ed|ing)", r"spurt(ed|ing|s)?", r"splatter(ed|ing|s)?", r"spatter(ed)?", r"ooz(ed|ing)",
+        r"maggots?", r"putrid", r"putrefy.*", r"rotting", r"decompos(ed|ing|ition)", r"flayed",
+        r"gouged", r"impaled", r"pus", r"mangled", r"charred", r"brains", r"gristle",
+        r"sinews?", r"tendons?", r"eyeballs?", r"bloodbath", r"slaughtered", r"butchered"],
+    1: [r"blood", r"bloody", r"bloodied", r"flesh", r"wounds?", r"gash(ed|es)?", r"throat",
+        r"corpse", r"bones?", r"stab(bed|bing|s)?", r"bleed(ing|s)?", r"bled", r"torn", r"ripped",
+        r"crushed", r"veins?", r"guts", r"organs?", r"skull", r"slit", r"carcass", r"limbs?",
+        r"jaw", r"teeth", r"stench", r"vomit(ed)?"],
+}
+GORE_C = {w: _c(p) for w, p in GORE_TERMS.items()}
+GORE_WINDOW_SCORE = 10
+
+
+def gore_score(words):
+    s, strong = 0, set()
+    for w in words:
+        for weight, pats in GORE_C.items():
+            if any(p.match(w) for p in pats):
+                s += weight
+                if weight == 3:
+                    strong.add(w)
+                break
+    return s if len(strong) >= 2 else 0
+
+
+def is_gory(words):
+    return any(p.match(w) for w in words for p in GORE_C[3])
+
+
 def mask(word):
     core = re.sub(r"[^A-Za-z]", "", word)
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
 
 
-ALL_CATS = ["strong", "moderate", "mild", "deity", "minced"]
+ALL_CATS = ["strong", "moderate", "mild", "deity", "minced", "sexual"]
 
 
 def clean_context(raw, normed, i, j, before=6, after=5):
@@ -448,8 +509,9 @@ def span_times(asr, i, j):
 # ---------------------------------------------------------------------------
 # Analyze
 # ---------------------------------------------------------------------------
-def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity"),
+def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "sexual"),
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
+            find_refs=False, find_gore=False,
             threads=None, cancel=None):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
@@ -548,78 +610,99 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity"),
     for m in mutes:
         m["s"], m["e"] = snap_edges(parts[m["part"]], m["s"], m["e"], m["src"] == "ebook-estimated")
 
-    scenes = []
-    if find_sex:
-        say(0.98, "Looking for sex scenes…")
+    ends = {k for k, w in enumerate(asr) if re.search(r"[.?!][\"'\u201d\u2019]?$", w["t"])}
+
+    def to_sentences(a_, b_):
+        while a_ > 0 and (a_ - 1) not in ends and asr[a_ - 1]["part"] == asr[a_]["part"]:
+            a_ -= 1
+        while b_ + 1 < len(asr) and b_ not in ends and asr[b_ + 1]["part"] == asr[b_]["part"]:
+            b_ += 1
+        return a_, b_
+
+    def find_passages(score_fn, strong_fn, threshold, kind):
+        """Stretches whose vocabulary scores above threshold. With an ebook the
+        cut follows paragraph edges; without, sentence edges in the transcript."""
+        out = []
         if paras:
-            pscore = {}
             pwords = {}
             for k, pi_ in enumerate(eb_para):
                 pwords.setdefault(pi_, []).append(k)
-            pexp = {}
-            for pi_, ks in pwords.items():
-                ws = [eb_n[k] for k in ks]
-                pscore[pi_] = sum(wt for w in ws for wt, pats in SEX_C.items()
-                                  if any(p.match(w) for p in pats))
-                pexp[pi_] = is_explicit(ws)
             ids = sorted(pwords)
+            strong = {q: strong_fn([eb_n[k] for k in pwords[q]]) for q in ids}
             hot = set()
-            for x, pi_ in enumerate(ids):
+            for x in range(len(ids)):
                 win = ids[x:x + 3]
-                if sex_score([eb_n[k] for q in win for k in pwords[q]]) >= SEX_WINDOW_SCORE:
-                    # only paragraphs that themselves contain explicit words get cut
-                    hot.update(q for q in win if pexp[q])
+                if score_fn([eb_n[k] for q in win for k in pwords[q]]) >= threshold:
+                    hot.update(q for q in win if strong[q])  # only paragraphs that are themselves graphic
             runs = []
-            for pi_ in sorted(hot):
-                if runs and ids.index(pi_) - ids.index(runs[-1][-1]) <= 2:
-                    runs[-1].extend(q for q in ids[ids.index(runs[-1][-1]) + 1: ids.index(pi_) + 1])
+            for q in sorted(hot):
+                if runs and ids.index(q) - ids.index(runs[-1][-1]) <= 2:
+                    runs[-1].extend(ids[ids.index(runs[-1][-1]) + 1: ids.index(q) + 1])
                 else:
-                    runs.append([pi_])
+                    runs.append([q])
             for run_ in runs:
                 al = [mapping[k] for q in run_ for k in pwords[q] if mapping[k] is not None]
                 if len(al) < 5:
                     continue
                 i0, i1 = min(al), max(al)
                 if asr[i0]["part"] != asr[i1]["part"]:
-                    i1 = max(a for a in al if asr[a]["part"] == asr[i0]["part"])
-                s, e = span_times(asr, i0, i1)
-                scenes.append({"part": asr[i0]["part"], "s": s, "e": e,
-                               "score": sum(pscore[q] for q in run_),
-                               "text": "\n\n".join(paras[q] for q in run_)})
-        else:
-            # No ebook: 60-second windows, trimmed to whole sentences
-            ends = {k for k, w in enumerate(asr) if re.search(r"[.?!][\"'”’]?$", w["t"])}
-            k, flagged = 0, []
-            while k < len(asr):
-                j = k
-                while j < len(asr) and asr[j]["part"] == asr[k]["part"] and asr[j]["s"] - asr[k]["s"] < 60:
-                    j += 1
-                if sex_score(asr_n[k:j]) >= SEX_WINDOW_SCORE:
-                    flagged.append([k, j - 1])
-                step = k
-                while step < len(asr) and asr[step]["part"] == asr[k]["part"] and asr[step]["s"] - asr[k]["s"] < 20:
-                    step += 1
-                k = max(step, k + 1)
-            merged = []
-            for a_, b_ in flagged:
-                if merged and asr[a_]["part"] == asr[merged[-1][0]]["part"] and a_ <= merged[-1][1] + 1:
-                    merged[-1][1] = max(merged[-1][1], b_)
-                else:
-                    merged.append([a_, b_])
-            for a_, b_ in merged:
-                # trim to first/last words with real sexual vocabulary, then out to sentence edges
-                hits = [x for x in range(a_, b_ + 1) if is_explicit([asr_n[x]])] or [a_, b_]
-                a_, b_ = hits[0], hits[-1]
-                while a_ > 0 and (a_ - 1) not in ends and asr[a_ - 1]["part"] == asr[a_]["part"]:
-                    a_ -= 1
-                while b_ + 1 < len(asr) and b_ not in ends and asr[b_ + 1]["part"] == asr[b_]["part"]:
-                    b_ += 1
-                s, e = span_times(asr, a_, b_)
-                scenes.append({"part": asr[a_]["part"], "s": s, "e": e,
-                               "score": sex_score(asr_n[a_:b_ + 1]),
-                               "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
-        for n, sc in enumerate(scenes, 1):
-            sc["id"], sc["cut"] = n, True
+                    i1 = max(a_ for a_ in al if asr[a_]["part"] == asr[i0]["part"])
+                s_, e_ = span_times(asr, i0, i1)
+                out.append({"kind": kind, "part": asr[i0]["part"], "s": s_, "e": e_,
+                            "text": "\n\n".join(paras[q] for q in run_)})
+            return out
+        k, flagged = 0, []
+        while k < len(asr):
+            j = k
+            while j < len(asr) and asr[j]["part"] == asr[k]["part"] and asr[j]["s"] - asr[k]["s"] < 60:
+                j += 1
+            if score_fn(asr_n[k:j]) >= threshold:
+                flagged.append([k, j - 1])
+            step = k
+            while step < len(asr) and asr[step]["part"] == asr[k]["part"] and asr[step]["s"] - asr[k]["s"] < 20:
+                step += 1
+            k = max(step, k + 1)
+        merged = []
+        for a_, b_ in flagged:
+            if merged and asr[a_]["part"] == asr[merged[-1][0]]["part"] and a_ <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], b_)
+            else:
+                merged.append([a_, b_])
+        for a_, b_ in merged:
+            hits = [x for x in range(a_, b_ + 1) if strong_fn([asr_n[x]])] or [a_, b_]
+            a_, b_ = to_sentences(hits[0], hits[-1])
+            s_, e_ = span_times(asr, a_, b_)
+            out.append({"kind": kind, "part": asr[a_]["part"], "s": s_, "e": e_,
+                        "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+        return out
+
+    scenes = []
+    if find_sex:
+        say(0.97, "Looking for sex scenes\u2026")
+        scenes += find_passages(sex_score, is_explicit, SEX_WINDOW_SCORE, "sex")
+    if find_gore:
+        say(0.98, "Looking for gory descriptions\u2026")
+        scenes += find_passages(gore_score, is_gory, GORE_WINDOW_SCORE, "gore")
+    if find_refs:
+        # any sentence that talks about sex, even in passing
+        say(0.99, "Looking for sexual references\u2026")
+        refs = []
+        for i, j, _ in find_language(asr_n, ["sexual"]) + [
+                (x, x + 1, "") for x in range(len(asr)) if is_explicit([asr_n[x]])]:
+            a_, b_ = to_sentences(i, j - 1)
+            if refs and refs[-1][0] == asr[a_]["part"] and a_ <= refs[-1][2] + 1:
+                refs[-1][2] = max(refs[-1][2], b_)
+            else:
+                refs.append([asr[a_]["part"], a_, b_])
+        for part, a_, b_ in refs:
+            s_, e_ = span_times(asr, a_, b_)
+            if any(sc["part"] == part and sc["s"] - 1 <= s_ and e_ <= sc["e"] + 1 for sc in scenes):
+                continue  # already inside a scene being cut
+            scenes.append({"kind": "ref", "part": part, "s": s_, "e": e_,
+                           "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+    scenes.sort(key=lambda x: (x["part"], x["s"]))
+    for n, sc in enumerate(scenes, 1):
+        sc["id"], sc["cut"] = n, True
 
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr)}
@@ -762,11 +845,12 @@ def split_tracks(clean_files, tracks, cuts_by_part, outdir, book_title, log=prin
         d.mkdir(parents=True, exist_ok=True)
         folders.append(str(d))
         for i, m in enumerate(card, 1):
-            ext = Path(m["src"]).suffix
             safe = re.sub(r'[\\/:*?"<>|]', "", m["title"])
-            dst = d / f"{i:02d} {safe}{ext}"
+            dst = d / f"{i:02d} {safe}.mp3"  # Yoto takes MP3, so chapter files are always MP3
+            codec = (["-c", "copy"] if Path(m["src"]).suffix.lower() == ".mp3"
+                     else ["-c:a", "libmp3lame", "-b:a", "128k"])
             r = run([_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{m['s']:.3f}", "-to", f"{m['e']:.3f}",
-                     "-i", str(m["src"]), "-map", "0:a", "-c", "copy",
+                     "-i", str(m["src"]), "-map", "0:a", *codec, "-id3v2_version", "3",
                      "-metadata", f"title={m['title']}", "-metadata", f"track={i}/{len(card)}",
                      "-metadata", f"album={book_title}", str(dst)], capture_output=True, text=True)
             if r.returncode != 0:
@@ -842,8 +926,10 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
             report.append(f"  {fmt_t(m['s'])}  muted  {m['word']}{via}")
         for c in (c for c in cuts if c["part"] == pi):
             total_cut_sec += c["e"] - c["s"]
+            label = {"sex": "explicit scene", "gore": "gory description",
+                     "ref": "sexual reference"}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
-                          f"{c.get('note') or 'scene'}")
+                          f"{c.get('note') or label}")
     chap = None
     if chapters:
         say(0.95, "Splitting into chapters…")
@@ -860,7 +946,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         report.append("\nChapter files\n-------------")
         report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
     head = ["CleanListen report", "==================",
-            f"{len(st['mutes'])} words/phrases muted, {len(cuts)} scenes cut "
+            f"{len(st['mutes'])} words/phrases muted, {len(cuts)} passages cut "
             f"({total_cut_sec / 60:.1f} minutes removed)."]
     if st.get("ebook_note"):
         head.append(st["ebook_note"])
