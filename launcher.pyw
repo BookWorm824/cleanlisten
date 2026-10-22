@@ -1,6 +1,7 @@
 """CleanListen launcher: checks GitHub for a newer version, updates the
-program files if there is one, then opens the app. If the check fails
-(offline, GitHub down) the app simply opens as-is."""
+program files if there is one, then opens the app (CleanListen, or CleanView
+when started with "view"). If the check fails (offline, GitHub down) the app
+simply opens as-is."""
 import json
 import os
 import runpy
@@ -56,5 +57,7 @@ if __name__ == "__main__":
             pass
     if note:
         os.environ["CLEANLISTEN_UPDATED"] = note
-    sys.argv = [str(HERE / "CleanListen.pyw")]
-    runpy.run_path(str(HERE / "CleanListen.pyw"), run_name="__main__")
+    app = "CleanView.pyw" if (len(sys.argv) > 1 and sys.argv[1] == "view"
+                              and (HERE / "CleanView.pyw").exists()) else "CleanListen.pyw"
+    sys.argv = [str(HERE / app)]
+    runpy.run_path(str(HERE / app), run_name="__main__")

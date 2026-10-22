@@ -455,5 +455,14 @@ class App(tk.Tk):
         self.show_setup()
 
 
+def _make_shortcut():
+    try:
+        import shortcuts
+        shortcuts.ensure_cleanview_shortcut()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    threading.Thread(target=_make_shortcut, daemon=True).start()
     App().mainloop()
