@@ -27,6 +27,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cleanlisten as cl  # noqa: E402  (speech model, word lists, ffmpeg helpers)
+import cleanview_ai as ai  # noqa: E402  (picture AI and the local AI helper)
 
 SR = cl.SR
 VIDEO_EXTS = (".mp4", ".m4v", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".mpg", ".mpeg",
@@ -38,8 +39,43 @@ VISUAL_FPS = 2.0
 
 
 # ---------------------------------------------------------------------------
-# One-time tools: the picture checker (NudeNet) and the sound-event model
+# Options and one-time tools
 # ---------------------------------------------------------------------------
+DEFAULTS = {"nudity": True, "sex": True, "violence": True, "gore": True,
+            "kiss_os": "off", "kiss_ss": "off", "samesex": False, "casual": False,
+            "oppsex": False, "sexref": False, "immodest": False, "smoking": False,
+            "drinking": False, "drugs": False, "ai": True}
+
+
+def full_opts(opts=None):
+    o = dict(DEFAULTS)
+    o.update(opts or {})
+    return o
+
+
+def needs(opts):
+    """Which scanners these options need."""
+    o = full_opts(opts)
+    clip_cats = []
+    if o["kiss_os"] != "off" or o["kiss_ss"] != "off":
+        clip_cats.append("kiss")
+    if o["sex"] or o["samesex"] or o["oppsex"]:
+        clip_cats.append("bed")
+    if o["gore"]:
+        clip_cats.append("gore")
+    if o["violence"]:
+        clip_cats.append("fight")
+    for k in ("smoking", "drinking", "drugs", "immodest"):
+        if o[k]:
+            clip_cats.append(k)
+    lines = [k for k in ("sexref", "casual", "samesex", "oppsex") if o[k]]
+    return {"sound": o["violence"] or o["sex"],
+            "nudenet": o["nudity"] or o["sex"],
+            "clip": clip_cats,
+            "lines": lines,
+            "ai": o["ai"] and bool(clip_cats or lines)}
+
+
 def _venv_python():
     exe = Path(sys.executable)
     py = exe.with_name("python.exe") if os.name == "nt" else exe
@@ -54,20 +90,28 @@ def nudity_model():
     return p if p.exists() else None
 
 
-def tools_missing():
+def tools_missing(opts=None):
     """What still needs downloading (empty list = ready)."""
+    nd = needs(opts)
     need = []
-    if not importlib.util.find_spec("onnxruntime") or not nudity_model():
+    if (nd["nudenet"] or nd["clip"]) and (not importlib.util.find_spec("onnxruntime")
+                                          or not nudity_model()):
         need.append("picture checker")
-    if not (TAG_DIR / "model.int8.onnx").exists():
+    if nd["sound"] and not (TAG_DIR / "model.int8.onnx").exists():
         need.append("sound checker")
+    if nd["clip"] and not ai.clip_ready():
+        need.append("picture AI")
+    if nd["ai"] and not (ai.ollama_running() and ai.model_ready()):
+        need.append("AI helper")
     return need
 
 
-def install_tools(progress=None, log=print):
+def install_tools(opts=None, progress=None, log=print):
     say = progress or (lambda f, m: None)
-    if not importlib.util.find_spec("onnxruntime") or not nudity_model():
-        say(0.05, "Getting the picture checker (one time, about 60 MB)…")
+    nd = needs(opts)
+    if (nd["nudenet"] or nd["clip"]) and (not importlib.util.find_spec("onnxruntime")
+                                          or not nudity_model()):
+        say(0.02, "Getting the picture checker (one time, about 60 MB)…")
         py = _venv_python()
         for args in (["onnxruntime"], ["--no-deps", "nudenet"]):
             r = cl.run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", *args],
@@ -76,8 +120,8 @@ def install_tools(progress=None, log=print):
                 raise RuntimeError("Couldn't download the picture checker. Check your internet "
                                    "connection and try again.\n\n" + r.stderr[-600:])
         importlib.invalidate_caches()
-    if not (TAG_DIR / "model.int8.onnx").exists():
-        say(0.6, "Getting the sound checker (one time, about 45 MB)…")
+    if nd["sound"] and not (TAG_DIR / "model.int8.onnx").exists():
+        say(0.05, "Getting the sound checker (one time, about 45 MB)…")
         TAG_DIR.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(suffix=".tar.bz2", dir=TAG_DIR.parent)
         os.close(fd)
@@ -97,8 +141,12 @@ def install_tools(progress=None, log=print):
                 pass
         if not (TAG_DIR / "model.int8.onnx").exists():
             raise RuntimeError("The sound checker download looked wrong. Try again.")
+    if nd["clip"] and not ai.clip_ready():
+        ai.install_clip(_venv_python(), lambda f, m: say(0.1 + 0.2 * f, m))
+        importlib.invalidate_caches()
+    if nd["ai"]:
+        ai.ensure_ai(lambda f, m: say(0.3 + 0.7 * f, m))
     say(1.0, "Ready.")
-
 
 # ---------------------------------------------------------------------------
 # Looking inside the video file
@@ -108,6 +156,17 @@ TEXT_SUBS = {"subrip", "srt", "ass", "ssa", "mov_text", "webvtt", "text"}
 
 class VideoError(Exception):
     pass
+
+
+def _dar(v):
+    """Display shape of the picture (DVDs store stretched pixels)."""
+    w, h = v.get("width") or 16, v.get("height") or 9
+    try:
+        a, b = (v.get("sample_aspect_ratio") or "1:1").split(":")
+        sar = int(a) / int(b) if int(a) and int(b) else 1.0
+    except ValueError:
+        sar = 1.0
+    return w * sar / h if h else 16 / 9
 
 
 def probe(path):
@@ -163,7 +222,8 @@ def probe(path):
     dur = num(fmt.get("duration")) or num(vids[0].get("duration")) or num(audio.get("duration"))
     return {"path": str(path), "duration": dur, "start": num(fmt.get("start_time")),
             "video": {"index": vids[0]["index"], "codec": vids[0].get("codec_name"),
-                      "width": vids[0].get("width"), "height": vids[0].get("height")},
+                      "width": vids[0].get("width"), "height": vids[0].get("height"),
+                      "dar": _dar(vids[0])},
             "audio": {"index": audio["index"], "channels": int(audio.get("channels") or 2),
                       "codec": audio.get("codec_name"), "lang": lang(audio),
                       "bit_rate": int(num(audio.get("bit_rate")))},
@@ -315,6 +375,10 @@ VIOLENCE_SOUNDS = {"Gunshot, gunfire": 1.0, "Machine gun": 1.0, "Fusillade": 1.0
                    "Smash, crash": 0.25}
 INTIMATE_SOUNDS = {"Breathing": 0.6, "Pant": 0.8, "Gasp": 0.5, "Sigh": 0.4,
                    "Wail, moan": 0.8, "Groan": 0.5}
+SOUND_WORDS = {"Gunshot, gunfire": "gunshot-like bangs", "Machine gun": "gunfire-like bursts",
+               "Fusillade": "gunfire-like bursts", "Artillery fire": "heavy bangs",
+               "Explosion": "an explosion", "Screaming": "screaming", "Battle cry": "shouting",
+               "Slap, smack": "hitting", "Whack, thwack": "hitting", "Smash, crash": "crashing"}
 TRACKED = list(VIOLENCE_SOUNDS) + [k for k in INTIMATE_SOUNDS if k not in VIOLENCE_SOUNDS]
 SOUND_WIN, SOUND_HOP = 3.0, 1.5
 
@@ -363,18 +427,32 @@ SKIN = {"MALE_BREAST_EXPOSED": 0.45, "BELLY_EXPOSED": 0.45, "ARMPITS_EXPOSED": 0
 KEEP = list(NUDITY) + list(SKIN)
 
 
-def _visual_scan_here(path, out_json, fps=VISUAL_FPS):
+PICTURE_VERSION = 2
+
+
+def _visual_scan_here(path, out_json, use_clip=False, fps=VISUAL_FPS):
     import onnxruntime as ort
+    info = probe(path)
+    dar = info["video"].get("dar") or 16 / 9
+    H = 256
+    W = max(64, int(round(H * dar / 2)) * 2)
+    threads = max(1, min(6, (os.cpu_count() or 2) - 1))
     opts = ort.SessionOptions()
-    opts.intra_op_num_threads = max(1, min(6, (os.cpu_count() or 2) - 1))
+    opts.intra_op_num_threads = threads
     sess = ort.InferenceSession(str(nudity_model()), opts, providers=["CPUExecutionProvider"])
     name = sess.get_inputs()[0].name
     cols = [NUDE_CLASSES.index(k) for k in KEEP]
+    clip = None
+    if use_clip:
+        try:
+            clip = ai.Clip(ort, threads)
+        except Exception as ex:   # carry on without it rather than fail the whole scan
+            print(f"E picture AI unavailable: {ex}", flush=True)
     cmd = [cl._tool("ffmpeg"), "-v", "error", "-i", str(path), "-map", "0:v:0", "-an", "-sn",
-           "-vf", f"fps={fps},scale=320:320:force_original_aspect_ratio=decrease,"
-                  "pad=320:320:0:0:black,format=bgr24", "-f", "rawvideo", "-"]  # same channel order NudeNet itself feeds the model
+           "-vf", f"fps={fps},scale={W}:{H},setsar=1,format=rgb24", "-f", "rawvideo", "-"]
     proc = cl.popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    size, batch, n, out = 320 * 320 * 3, 8, 0, []
+    size, batch, n, out = W * H * 3, 8, 0, []
+    ct, cs = [], []
     try:
         while True:
             frames = []
@@ -382,14 +460,18 @@ def _visual_scan_here(path, out_json, fps=VISUAL_FPS):
                 data = proc.stdout.read(size)
                 if len(data) < size:
                     break
-                frames.append(np.frombuffer(data, dtype=np.uint8).reshape(320, 320, 3))
+                frames.append(np.frombuffer(data, dtype=np.uint8).reshape(H, W, 3))
             if not frames:
                 break
-            x = np.stack(frames).astype(np.float32).transpose(0, 3, 1, 2) / 255.0
+            x = np.stack([ai.nudenet_input(f) for f in frames]).astype(np.float32)
             y = sess.run(None, {name: x})[0]          # (batch, 4 + 18, anchors)
             best = y[:, 4:, :].max(axis=2)            # best score per class per frame
-            for row in best:
+            for k, row in enumerate(best):
                 out.append([round(float(row[c]), 3) for c in cols])
+                fn = n + k
+                if clip is not None and fn % 2 == 0:  # picture AI once a second
+                    ct.append(round(fn / fps, 2))
+                    cs.append({c: round(v, 3) for c, v in clip.scores(frames[k]).items()})
             n += len(frames)
             print(f"P {n / fps:.1f}", flush=True)
             if len(frames) < batch:
@@ -397,12 +479,17 @@ def _visual_scan_here(path, out_json, fps=VISUAL_FPS):
     finally:
         proc.kill()
         proc.wait()
-    Path(out_json).write_text(json.dumps({"fps": fps, "classes": KEEP, "scores": out}))
+    Path(out_json).write_text(json.dumps({
+        "version": PICTURE_VERSION, "fps": fps, "classes": KEEP, "scores": out,
+        "clip": {"t": ct, "scores": cs} if clip is not None else None}))
 
 
-def visual_scan(path, out_json, progress=None, cancel=None):
+def visual_scan(path, out_json, use_clip=False, progress=None, cancel=None):
     cmd = [_venv_python(), str(HERE / "cleanview.py"), "visualscan", str(path), str(out_json)]
+    if use_clip:
+        cmd.append("--clip")
     errf = Path(out_json).with_suffix(".err.txt")
+    notes = []
     with open(errf, "w", encoding="utf8") as err:
         proc = cl.popen(cmd, stdout=subprocess.PIPE, stderr=err, text=True)
         try:
@@ -412,13 +499,17 @@ def visual_scan(path, out_json, progress=None, cancel=None):
                     raise KeyboardInterrupt
                 if line.startswith("P ") and progress:
                     progress(float(line[2:]))
+                elif line.startswith("E "):
+                    notes.append(line[2:].strip())
             proc.wait()
         finally:
             if proc.poll() is None:
                 proc.kill()
     if proc.returncode != 0 or not Path(out_json).exists():
         raise RuntimeError("The picture check failed:\n" + errf.read_text("utf8", "replace")[-800:])
-    return json.loads(Path(out_json).read_text())
+    res = json.loads(Path(out_json).read_text())
+    res["notes"] = notes
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -465,13 +556,15 @@ def violence_scenes(snd, cues):
         return []
     labels = snd["labels"]
     vi = [(labels.index(k), w) for k, w in VIOLENCE_SOUNDS.items()]
-    flagged, why = [], {}
+    flagged, why, strong = [], {}, set()
     for t, row in zip(snd["t"], snd["p"]):
         score = sum(row[i] * w for i, w in vi)
         if score >= 0.45:
             flagged.append(t)
+            if score >= 0.55:
+                strong.add(t)
             top = max(vi, key=lambda iw: row[iw[0]] * iw[1])
-            why.setdefault(t, labels[top[0]].split(",")[0].lower())
+            why.setdefault(t, SOUND_WORDS.get(labels[top[0]], labels[top[0]].lower()))
     # SDH subtitles often describe violence: [gunshot], [screaming], [grunts]
     for c in cues:
         tags = " ".join(a or b for a, b in re.findall(r"\[([^\]]*)\]|\(([^)]*)\)", c["text"]))
@@ -483,8 +576,8 @@ def violence_scenes(snd, cues):
     scenes = []
     for run_ in _group(flagged, 8.0):
         span = run_[-1] - run_[0]
-        if len(run_) < 3 and span < 3:   # one bang or slap isn't a violent scene
-            continue
+        if len(run_) < 3 and span < 3 and not strong.intersection(run_):
+            continue   # one quiet bang or slap isn't a violent scene; a loud burst is
         kinds = []
         for t in run_:
             w = why.get(t)
@@ -553,10 +646,105 @@ def merge_scenes(scenes):
 # ---------------------------------------------------------------------------
 # Analyze
 # ---------------------------------------------------------------------------
-def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=True,
-            find_sex=True, find_violence=True, progress=None, log=print, cancel=None,
-            model_dir=cl.DEFAULT_MODEL, threads=None):
-    """progress(fraction 0..1, message). Saves and returns workdir/analysis.json."""
+LINE_WORDS = {
+    "sexref": re.compile(r"\b(sex|sexy|horny|laid|screw(ed|ing)?|banging|make love|made love|making "
+                         r"love|virgin|condoms?|boobs?|hookers?|prostitutes?|strippers?|orgasm|"
+                         r"turned on|threesome|blow ?job|porn)\b", re.I),
+    "casual": re.compile(r"\b(one[- ]night stand|hook(ed|ing)? up|slept with|sleep(ing)? around|"
+                         r"affair|cheat(ed|ing)? on|booty call|friends with benefits|fling)\b", re.I),
+    "samesex": re.compile(r"\b(gay|lesbians?|homosexual|bisexual|queer|same[- ]sex|"
+                          r"husband and husband|wife and wife)\b", re.I),
+    "oppsex": re.compile(r"\b(moved in together|living together|live together|shacking up|"
+                         r"sleeping together|slept together)\b", re.I),
+}
+LINE_LABEL = {"sexref": "Sexual reference", "casual": "Sleeping around",
+              "samesex": "Same-sex relationship", "oppsex": "Unmarried couple"}
+WHO_LABEL = {"mf": "man & woman", "mm": "two men", "ff": "two women"}
+CAT_LABEL = {"gore": "Gore", "fight": "Violence", "smoking": "Smoking", "drinking": "Drinking",
+             "drugs": "Drugs", "immodest": "Immodest clothing"}
+
+
+def decide_picture_scenes(cands, o, have_ai):
+    """Turn picture-AI candidates (after the second look) into scenes,
+    following the chosen settings."""
+    rank = {"off": 0, "passionate": 1, "all": 2}
+    scenes = []
+    for c in cands:
+        v = c.get("verdict") or {}
+        if have_ai and v and not v.get("keep", True) and not v.get("error"):
+            continue
+        who = v.get("who", "?") if v else "?"
+        if who == "?" and c.get("who"):
+            w, pw = max(c["who"].items(), key=lambda kv: kv[1])
+            if pw >= 0.5:
+                who = w.replace("kiss_", "")
+        level = v.get("level", "?") if v else "?"
+        note = "" if v and not v.get("error") else " (not double-checked)"
+        if c["cat"] == "kiss":
+            if who == "mf":
+                setting = o["kiss_os"]
+            elif who in ("mm", "ff"):
+                setting = o["kiss_ss"]
+            else:
+                setting = max(o["kiss_os"], o["kiss_ss"], key=lambda x: rank[x])
+            if setting == "off" or (setting == "passionate" and level == "light"):
+                continue
+            label = "Kiss" + (f" · {WHO_LABEL[who]}" if who in WHO_LABEL else "") + \
+                    (f" · {level}" if level in ("light", "passionate") else "")
+            why = "kissing seen" + ("" if level != "?" or setting != "passionate"
+                                    else ", couldn't tell how passionate") + note
+        elif c["cat"] == "bed":
+            if not (o["sex"] or (who in ("mm", "ff") and o["samesex"])
+                    or (who == "mf" and o["oppsex"])):
+                continue
+            label = "Intimate scene" + (f" · {WHO_LABEL[who]}" if who in WHO_LABEL else "")
+            why = "a couple in bed or making out" + note
+        else:
+            label = CAT_LABEL[c["cat"]]
+            why = (v.get("what") or f"{label.lower()} seen") + note
+        scenes.append({"s": c["s"], "e": c["e"], "kind": [label], "why": why})
+    return scenes
+
+
+def find_lines(lines, o, have_ai, progress=None, cancel=None):
+    wanted = [k for k in ("sexref", "casual", "samesex", "oppsex") if o[k]]
+    if not wanted or not lines:
+        return [], ""
+    found, how = {}, "word lists"
+    if have_ai:
+        try:
+            found = ai.classify_dialogue(lines, wanted, progress, cancel)
+            how = "the AI helper"
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            found = {}
+    for i, l in enumerate(lines):
+        for k in wanted:
+            if LINE_WORDS[k].search(l["text"]):
+                found.setdefault(i, set()).add(k)
+    out = []
+    for i in sorted(found):
+        l = lines[i]
+        toks = l["text"].split()
+        normed = [cl.norm(t) for t in toks]
+        for a_, b_, _ in cl.find_language(normed, list(cl.CATS)):
+            for q in range(a_, b_):
+                toks[q] = cl.mask(toks[q])
+        out.append({"id": len(out) + 1, "s": round(l["s"], 2), "e": round(l["e"], 2),
+                    "text": " ".join(toks), "types": sorted(found[i]), "mute": True})
+    return out, how
+
+
+def analyze(path, workdir, groups=("swearing", "mild", "deity"), opts=None, progress=None,
+            log=print, cancel=None, model_dir=cl.DEFAULT_MODEL, threads=None, **legacy):
+    """progress(fraction 0..1, message). Saves and returns workdir/analysis.json.
+    opts: see DEFAULTS. (find_nudity / find_sex / find_violence still work.)"""
+    o = full_opts(opts)
+    for k_old, k_new in (("find_nudity", "nudity"), ("find_sex", "sex"), ("find_violence", "violence")):
+        if k_old in legacy:
+            o[k_new] = bool(legacy[k_old])
+    nd = needs(o)
     work = Path(workdir)
     work.mkdir(parents=True, exist_ok=True)
     path = str(Path(path).resolve())
@@ -565,6 +753,9 @@ def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=Tru
     dur = info["duration"] or 1.0
     cats = [c for g in groups for c in cl.GROUPS[g]]
     t_start = time.time()
+    use_clip = bool(nd["clip"]) and ai.clip_ready()
+    have_ai = nd["ai"] and ai.start_ollama(wait=20) and ai.model_ready()
+    notes = []
 
     def eta(frac_done):
         el = time.time() - t_start
@@ -572,11 +763,20 @@ def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=Tru
             return "estimating time…"
         return f"about {max(1, el / frac_done * (1 - frac_done) / 60):.0f} min left"
 
-    # weights of each step in the progress bar
-    W_ASR, W_SND = 0.45, 0.10
-    W_VIS = 0.40 if (find_nudity or find_sex) else 0.0
-    total_w = W_ASR + W_SND + W_VIS
-    base = {"asr": 0.0, "snd": W_ASR / total_w, "vis": (W_ASR + W_SND) / total_w}
+    # how much of the progress bar each step gets
+    steps = [("asr", 0.35), ("snd", 0.08 if nd["sound"] else 0),
+             ("vis", (0.45 if use_clip else 0.3) if (nd["nudenet"] or use_clip) else 0),
+             ("look", 0.08 if (have_ai and use_clip) else 0),
+             ("lines", 0.12 if (have_ai and nd["lines"]) else 0), ("end", 0.03)]
+    tot = sum(w for _, w in steps)
+    base, acc = {}, 0.0
+    for k, w in steps:
+        base[k] = (acc / tot, w / tot)
+        acc += w
+
+    def at(step, frac):
+        b, w = base[step]
+        return b + w * max(0.0, min(1.0, frac))
 
     tfile = work / "transcript.json"
     if tfile.exists():
@@ -586,8 +786,8 @@ def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=Tru
         rec = load_recognizer(model_dir, threads)
 
         def p_asr(sec):
-            f = min(1.0, sec / dur) * W_ASR / total_w
-            say(f * 0.97, f"Listening to the dialogue · {eta(f)}")
+            f = at("asr", sec / dur)
+            say(f, f"Listening to the dialogue · {eta(f)}")
         asr = transcribe(path, info, rec, p_asr, cancel)
         tfile.write_text(json.dumps(asr))
         del rec
@@ -597,34 +797,41 @@ def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=Tru
     asr_n = [w["n"] for w in asr]
 
     snd = None
-    if find_violence or find_sex:
+    if nd["sound"]:
         sfile = work / "sounds.json"
         if sfile.exists():
             snd = json.loads(sfile.read_text())
         else:
-            say(base["snd"] * 0.97, "Listening for fights, gunfire and other sounds…")
+            say(at("snd", 0), "Listening for fights, gunfire and other sounds…")
             tagger = load_tagger()
 
             def p_snd(sec):
-                f = base["snd"] + min(1.0, sec / dur) * W_SND / total_w
-                say(f * 0.97, f"Listening for fights, gunfire and other sounds · {eta(f)}")
+                f = at("snd", sec / dur)
+                say(f, f"Listening for fights, gunfire and other sounds · {eta(f)}")
             snd = sound_scan(path, info, tagger, p_snd, cancel)
             sfile.write_text(json.dumps(snd))
 
     vis = None
-    if find_nudity or find_sex:
+    if nd["nudenet"] or use_clip:
         vfile = work / "pictures.json"
         if vfile.exists():
             vis = json.loads(vfile.read_text())
-        else:
-            say(base["vis"] * 0.97, "Watching the picture for nudity…")
+            if vis.get("version", 1) < PICTURE_VERSION or (use_clip and not vis.get("clip")):
+                vis = None
+        if vis is None:
+            what = "Watching the picture" + (" with the picture AI" if use_clip else " for nudity")
+            say(at("vis", 0), what + "…")
 
             def p_vis(sec):
-                f = base["vis"] + min(1.0, sec / dur) * W_VIS / total_w
-                say(f * 0.97, f"Watching the picture for nudity · {eta(f)}")
-            vis = visual_scan(path, vfile, p_vis, cancel)
+                f = at("vis", sec / dur)
+                say(f, f"{what} · {eta(f)}")
+            vis = visual_scan(path, vfile, use_clip, p_vis, cancel)
+            notes += vis.get("notes", [])
+    if nd["clip"] and not use_clip:
+        notes.append("The picture AI isn't installed, so kissing, gore, smoking and the like "
+                     "weren't checked by sight.")
 
-    say(0.97, "Finding language…")
+    say(at("end", 0), "Finding language…")
     cues, sub_note = find_subtitles(path, info, work)
     mutes = [{"s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat, "src": "audio",
               "word": " ".join(cl.mask(asr[k]["t"]) for k in range(i, j)),
@@ -669,19 +876,42 @@ def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=Tru
     elif cats:
         sub_note = "No subtitles found, so language was found by listening only."
     mutes.sort(key=lambda m: m["s"])
-    say(0.98, "Fine-tuning mute timing…")
     for m in mutes:
         m["s"], m["e"] = cl.snap_edges(path, m["s"], m["e"], wide=m["src"] != "audio")
 
-    say(0.99, "Putting the scene list together…")
+    # picture AI candidates, double-checked by the AI helper when it's there
+    cands = []
+    if use_clip and vis and vis.get("clip"):
+        cands = ai.clip_candidates(vis["clip"], nd["clip"])
+        if have_ai and cands:
+            say(at("look", 0), "Taking a closer look at the scenes found…")
+            todo = sorted(cands, key=lambda c: -c["peak"])[:150]
+            ff = cl._tool("ffmpeg")
+            ai.second_look(todo, lambda c: ai.grab_frames(ff, path, c["frames"], cl.run),
+                           lambda f: say(at("look", f), f"Taking a closer look at the scenes found · "
+                                                        f"{eta(at('look', f))}"), cancel)
+
+    # dialogue: sexual references, sleeping around, relationship talk
+    lines = ai.dialogue_lines(cues, asr, spoken_words)
+    line_mutes, line_how = find_lines(
+        lines, o, have_ai,
+        lambda f: say(at("lines", f), f"Reading the dialogue · {eta(at('lines', f))}"), cancel)
+    if nd["lines"]:
+        notes.append(f"Dialogue was checked with {line_how}.")
+    if nd["ai"] and not have_ai:
+        notes.append("The AI helper wasn't running, so scenes weren't double-checked and "
+                     "dialogue was checked with word lists only.")
+
+    say(at("end", 0.6), "Putting the scene list together…")
     nude, skin = nudity_scenes(vis) if vis else ([], [])
     scenes = []
-    if find_nudity:
+    if o["nudity"]:
         scenes += nude
-    if find_violence:
+    if o["violence"]:
         scenes += violence_scenes(snd, cues)
-    if find_sex:
+    if o["sex"]:
         scenes += sex_scenes(snd, cues, asr_n, asr, skin, nude)
+    scenes += decide_picture_scenes(cands, o, have_ai)
     scenes = merge_scenes(scenes)
     for n, sc in enumerate(scenes, 1):
         sc["id"], sc["cut"] = n, True
@@ -692,8 +922,9 @@ def analyze(path, workdir, groups=("swearing", "mild", "deity"), find_nudity=Tru
     make_thumbs(path, scenes, work)
 
     st = {"path": path, "info": info, "groups": list(groups), "mutes": mutes, "scenes": scenes,
-          "cues": cues, "sub_note": sub_note, "duration": dur, "words": len(asr),
-          "checked": {"nudity": find_nudity, "sex": find_sex, "violence": find_violence}}
+          "lines": line_mutes, "cues": cues, "sub_note": sub_note, "notes": notes,
+          "duration": dur, "words": len(asr), "opts": o, "used_ai": have_ai,
+          "used_clip": use_clip}
     (work / "analysis.json").write_text(json.dumps(st, indent=1))
     say(1.0, "Done.")
     return st
@@ -781,12 +1012,15 @@ def _shift(t, cuts):
     return max(0.0, t - removed)
 
 
-def clean_cues(cues, cats, mutes, cuts):
-    """Subtitles for the clean copy: language blanked, cut scenes dropped,
-    times moved up to match."""
+def clean_cues(cues, cats, mutes, cuts, line_rs=()):
+    """Subtitles for the clean copy: language blanked, muted lines and cut
+    scenes dropped, times moved up to match."""
     out = []
     for c in cues:
         if any(s <= c["s"] and c["e"] <= e for s, e in cuts):
+            continue
+        dur_c = max(0.01, c["e"] - c["s"])
+        if any(min(e, c["e"]) - max(s, c["s"]) >= 0.5 * dur_c for s, e in line_rs):
             continue
         s, e = c["s"], c["e"]
         for cs, ce in cuts:
@@ -823,8 +1057,10 @@ def write_srt(cues, dst):
                                    for n, c in enumerate(cues, 1)), encoding="utf8")
 
 
-def render(workdir, outdir, cuts=None, progress=None, log=print, cancel=None, encoders=None):
-    """Write the clean copy. cuts: list of {"s","e"} (default: scenes with cut=True)."""
+def render(workdir, outdir, cuts=None, progress=None, log=print, cancel=None, encoders=None,
+           lines=None):
+    """Write the clean copy. cuts: list of {"s","e"} (default: scenes with cut=True).
+    lines: dialogue lines to mute (default: lines with mute=True)."""
     work = Path(workdir)
     st = json.loads((work / "analysis.json").read_text())
     if cuts is None:
@@ -836,14 +1072,17 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, cancel=None, en
     out.mkdir(parents=True, exist_ok=True)
     dur = st["duration"]
     off = info.get("start", 0.0)
+    if lines is None:
+        lines = [l for l in st.get("lines", []) if l.get("mute")]
     cut_rs = _merge((max(0.0, c["s"]), min(dur, c["e"])) for c in cuts)
-    mute_rs = _merge((m["s"], m["e"]) for m in st["mutes"])
+    line_rs = _merge((l["s"], l["e"]) for l in lines)
+    mute_rs = _merge([(m["s"], m["e"]) for m in st["mutes"]] + line_rs)
     reencode = bool(cut_rs)
     mp4 = reencode or src.suffix.lower() in (".mp4", ".m4v", ".mov")
     dst = out / f"{src.stem} (Clean){'.mp4' if mp4 else '.mkv'}"
 
     cats = [c for g in st["groups"] for c in cl.GROUPS[g]]
-    subs = clean_cues(st["cues"], cats, mute_rs, cut_rs) if st["cues"] else []
+    subs = clean_cues(st["cues"], cats, mute_rs, cut_rs, line_rs) if st["cues"] else []
     srt = None
     if subs:
         srt = work / "clean.srt"
@@ -944,23 +1183,26 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, cancel=None, en
         shutil.copyfile(srt, dst.with_suffix(".en.srt"))
     removed = sum(e - s for s, e in cut_rs)
     rep = [f"CleanView report — {src.name}", "=" * 40,
-           f"{len(st['mutes'])} words/phrases muted, {len(cut_rs)} scenes cut "
-           f"({removed / 60:.1f} minutes removed)."]
+           f"{len(st['mutes'])} words/phrases muted, {len(lines)} lines muted, {len(cut_rs)} "
+           f"scenes cut ({removed / 60:.1f} minutes removed)."]
     if st.get("sub_note"):
         rep.append(st["sub_note"])
+    rep += st.get("notes", [])
     if info.get("audio_tracks", 1) > 1:
         rep.append("Only the main soundtrack was kept (other languages and commentary "
                    "weren't cleaned, so they were left out).")
     rep.append("")
     events = [(m["s"], f"muted  {m['word']}" + ("" if m["src"] == "audio" else "   (caught by subtitles)"))
               for m in st["mutes"]]
+    events += [(l["s"], "muted line  (" + ", ".join(LINE_LABEL.get(t, t) for t in l["types"]) + ")")
+               for l in lines]
     events += [(c["s"], f"CUT {c['e'] - c['s']:.0f} seconds  {' + '.join(c.get('kind') or ['scene'])}"
                         f"  ({c.get('why', '')})") for c in cuts]
     rep += [f"  {cl.fmt_t(t)}  {txt}" for t, txt in sorted(events)]
     (out / f"{src.stem} - CleanView report.txt").write_text("\n".join(rep) + "\n", encoding="utf8")
     say(1.0, "Saved.")
     log(f"Saved {dst}")
-    return {"mutes": len(st["mutes"]), "cuts": len(cut_rs), "cut_minutes": removed / 60,
+    return {"mutes": len(st["mutes"]) + len(lines), "cuts": len(cut_rs), "cut_minutes": removed / 60,
             "out": str(dst), "folder": str(out)}
 
 
@@ -974,23 +1216,22 @@ def _cli():
     an.add_argument("workdir")
     an.add_argument("video")
     an.add_argument("--groups", default="swearing,mild,deity")
-    an.add_argument("--no-nudity", action="store_true")
-    an.add_argument("--no-sex", action="store_true")
-    an.add_argument("--no-violence", action="store_true")
+    an.add_argument("--opts", default="{}", help='JSON, e.g. {"kiss_os": "passionate", "ai": false}')
     rn = sub.add_parser("render")
     rn.add_argument("workdir")
     rn.add_argument("outdir")
     vs = sub.add_parser("visualscan")
     vs.add_argument("video")
     vs.add_argument("out")
+    vs.add_argument("--clip", action="store_true")
     a = ap.parse_args()
     if a.cmd == "visualscan":
-        _visual_scan_here(a.video, a.out)
+        _visual_scan_here(a.video, a.out, a.clip)
     elif a.cmd == "analyze":
-        st = analyze(a.video, a.workdir, [g for g in a.groups.split(",") if g], not a.no_nudity,
-                     not a.no_sex, not a.no_violence,
+        st = analyze(a.video, a.workdir, [g for g in a.groups.split(",") if g], json.loads(a.opts),
                      progress=lambda f, m: print(f"[{f * 100:3.0f}%] {m}", flush=True))
-        print(f"{st['words']} words; {len(st['mutes'])} to mute; {len(st['scenes'])} scenes flagged")
+        print(f"{st['words']} words; {len(st['mutes'])} to mute; {len(st['lines'])} lines; "
+              f"{len(st['scenes'])} scenes flagged")
     else:
         print(render(a.workdir, a.outdir, progress=lambda f, m: print(f"[{f * 100:3.0f}%] {m}", flush=True)))
 

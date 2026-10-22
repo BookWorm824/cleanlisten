@@ -17,25 +17,36 @@ Kindle files can't be used.
 
 ## CleanView — movies and TV episodes
 
-- Mutes the same language list, listening to the dialogue channel of surround-sound movies.
-- Uses the movie's subtitles (a matching .srt or a text track inside the file) to catch
-  extra words, and writes cleaned subtitles into the clean copy.
-- Finds nudity by checking the picture twice a second, violence by sound (gunfire,
-  explosions, screaming, blows) and by SDH subtitle tags, and sex scenes from intimate
-  sounds with bare skin on screen, subtitle tags or explicit dialogue.
-- Every flagged scene is listed with blurred stills and a Preview button; only the scenes
-  you leave ticked are cut.
+- Mutes the same language list, listening to the dialogue channel of surround-sound movies,
+  and uses the movie's subtitles (a matching .srt or a text track inside the file) to catch
+  extra words. Writes cleaned subtitles into the clean copy.
+- Filters you can switch on or off: sexual references, nudity, sex scenes, immodest clothing,
+  sleeping around, man & woman kissing and same-sex kissing (keep / cut passionate / cut all),
+  same-sex relationships, unmarried couples living or sleeping together, violence, graphic
+  gore, smoking, drinking and drug use. Your choices are remembered.
+- How it finds things:
+  - NudeNet checks the picture twice a second for nudity.
+  - CLIP (OpenAI's free image model) checks it once a second for kissing, couples in bed,
+    gore, fights, weapons, smoking, drinking, drugs and revealing clothes, so scenes are
+    caught even when they're silent.
+  - A sound model listens for gunfire, explosions, screaming and blows.
+  - The optional AI helper (Ollama running gemma3:4b on your PC) double-checks each scene
+    the picture model found (who is kissing, light or passionate, is it really gore) and
+    reads the dialogue for sexual references, sleeping around and relationship talk.
+- Scenes are cut; flagged dialogue lines are muted. Everything is listed first with blurred
+  stills and a Preview button, and only what you leave ticked is changed.
 - Pick a folder of episodes to clean a whole season in one go.
 - Saves "(Clean)" copies plus a report of every mute and cut. Originals are never changed.
   Uses an NVIDIA, Intel or AMD graphics card to save faster when one is available.
 
 Works with DRM-free video (DVD and Blu-ray rips, home videos). Copy-protected purchases
-from iTunes, Vudu, Movies Anywhere and streaming services can't be used. Gore that makes
-no sound can't be detected, and 4K HDR files come out with flatter colours after a cut.
+from iTunes, Vudu, Movies Anywhere and streaming services can't be used. 4K HDR files come
+out with flatter colours after a cut. The AI checks are good but not perfect, which is why
+everything is shown to you before it's cut.
 
-The first time CleanView looks for scenes it downloads its picture and sound checkers
-(about 100 MB, one time).
+One-time downloads: the picture and sound checkers (about 250 MB) the first time CleanView
+looks for scenes, and Ollama plus its AI model (about 4 GB) if the AI helper is on.
 
-CleanView gets its own desktop and Start-menu icon the first time CleanListen updates to 1.2.0.
+CleanView gets its own desktop and Start-menu icon the first time CleanListen updates.
 
 The installed apps check this repository for updates each time they open.
