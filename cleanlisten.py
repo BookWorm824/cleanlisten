@@ -176,6 +176,21 @@ def mask(word):
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
 
 
+ALL_CATS = ["strong", "moderate", "mild", "deity", "minced"]
+
+
+def clean_context(raw, normed, i, j, before=6, after=5):
+    """Words around a hit, with any bad words in the context starred out."""
+    lo, hi = max(0, i - before), min(len(raw), j + after)
+    win_n = normed[lo:hi]
+    bad = set()
+    for a, b, _ in find_language(win_n, ALL_CATS):
+        bad.update(range(lo + a, lo + b))
+    show = lambda k: mask(raw[k]) if k in bad else raw[k]
+    return (" ".join(show(k) for k in range(lo, i)),
+            " ".join(show(k) for k in range(j, hi)))
+
+
 def fmt_t(t):
     t = int(t)
     return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}"
@@ -472,10 +487,13 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity"),
     asr_n = [w["n"] for w in asr]
 
     say(0.93, "Finding language…")
-    mutes = [{"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
-              "src": "audio", "word": " ".join(mask(asr[k]["t"]) for k in range(i, j)),
-              "ctx": " ".join(asr[k]["t"] for k in range(max(0, i - 6), i))}
-             for i, j, cat in find_language(asr_n, cats)]
+    asr_t = [w["t"] for w in asr]
+    mutes = []
+    for i, j, cat in find_language(asr_n, cats):
+        b, a = clean_context(asr_t, asr_n, i, j)
+        mutes.append({"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
+                      "src": "audio", "word": " ".join(mask(asr_t[k]) for k in range(i, j)),
+                      "ctx": b, "ctx_after": a})
 
     paras = mapping = None
     ebook_note = ""
@@ -516,10 +534,11 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity"),
                         e = max(e, t2[1])
                 if any(m["part"] == part and m["s"] - 0.8 <= s <= m["e"] + 0.8 for m in mutes):
                     continue
+                b, a = clean_context(eb_words, eb_n, i, j)
                 mutes.append({"part": part, "s": round(s, 3), "e": round(e, 3), "cat": cat,
                               "src": "ebook" if exact else "ebook-estimated",
                               "word": " ".join(mask(w) for w in eb_words[i:j]),
-                              "ctx": " ".join(eb_words[max(0, i - 6):i])})
+                              "ctx": b, "ctx_after": a})
                 added += 1
             ebook_note = f"Ebook matched {pct:.0f}% of the audio and caught {added} extra word(s)."
             log(ebook_note)
@@ -764,7 +783,7 @@ def _ranges(rs):
     return "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in rs)
 
 
-def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False):
+def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None):
     """Write clean audio. cuts: list of {"part","s","e","note"}; defaults to
     the scenes marked cut=True in the analysis. chapters=True also writes one
     file per chapter (Yoto-friendly)."""
@@ -772,6 +791,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False)
     st = json.loads((work / "analysis.json").read_text())
     if cuts is None:
         cuts = [c for c in st["scenes"] if c.get("cut")]
+    if mutes is not None:
+        st["mutes"] = sorted(mutes, key=lambda m: (m["part"], m["s"]))
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     say = progress or (lambda f, m: None)

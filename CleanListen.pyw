@@ -321,12 +321,12 @@ class App(tk.Tk):
         except Exception as ex:  # show the problem instead of dying silently
             self.q.put(("error", str(ex), traceback.format_exc()))
 
-    def _render_thread(self, cuts):
+    def _render_thread(self, cuts, mutes):
         try:
             res = engine.render(self.workdir, self.outdir, cuts,
                                 progress=lambda f, m: self.q.put(("progress", f, m)),
                                 log=lambda m: self.q.put(("log", m)),
-                                chapters=self.split_chapters)
+                                chapters=self.split_chapters, mutes=mutes)
             self.q.put(("rendered", res))
         except Exception as ex:
             self.q.put(("error", str(ex), traceback.format_exc()))
@@ -341,10 +341,7 @@ class App(tk.Tk):
                     self.status.config(text=msg[2])
                 elif kind == "analyzed":
                     self.analysis = msg[1]
-                    if self.analysis["scenes"]:
-                        self.show_review()
-                    else:
-                        self.save([])
+                    self.show_review()
                 elif kind == "rendered":
                     self.show_done(msg[1])
                 elif kind == "cancelled":
@@ -358,60 +355,105 @@ class App(tk.Tk):
             pass
         self.after(150, self._poll)
 
-    # ---------- page 3: review scenes ----------
+    # ---------- page 3: review everything before saving ----------
     def show_review(self):
-        scenes = self.analysis["scenes"]
-        n = len(scenes)
-        p = self._new_page(f"{n} explicit scene{'s' if n != 1 else ''} found",
-                           "Checked scenes will be cut out. Untick any that aren't really "
-                           "explicit (for example, a crime scene) and they'll be kept.")
-        if self.analysis.get("ebook_note"):
-            tk.Label(p, text=self.analysis["ebook_note"], bg=BG, fg=MUTED,
-                     font=(FONT, 9)).pack(anchor="w", pady=(0, 6))
-        wrap = tk.Frame(p, bg=LINE)
-        wrap.pack(fill="both", expand=True)
-        canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
-        sb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
-        inner = tk.Frame(canvas, bg=BG)
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        win = canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
-        canvas.configure(yscrollcommand=sb.set)
-        canvas.pack(side="left", fill="both", expand=True, padx=1, pady=1)
-        sb.pack(side="right", fill="y")
-        self.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
-        self.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-2, "units"))
-        self.bind_all("<Button-5>", lambda e: canvas.yview_scroll(2, "units"))
-
-        self.scene_vars = []
-        multi = len(self.analysis["parts"]) > 1
-        for sc in scenes:
-            card = tk.Frame(inner, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
-                            highlightthickness=1)
-            card.pack(fill="x", padx=8, pady=6)
-            v = tk.BooleanVar(value=sc.get("cut", True))
-            self.scene_vars.append((v, sc))
-            where = (f"Part {sc['part'] + 1} · " if multi else "") + engine.fmt_t(sc["s"])
-            mins = (sc["e"] - sc["s"]) / 60
-            length = f"{mins:.1f} min" if mins >= 1 else f"{sc['e'] - sc['s']:.0f} sec"
-            ttk.Checkbutton(card, text=f"Cut this scene   ·   {where}   ·   {length}",
-                            variable=v).pack(anchor="w")
-            txt = tk.Text(card, wrap="word", height=min(7, 2 + len(sc["text"]) // 95),
-                          font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
-                          padx=8, pady=6, borderwidth=0)
-            txt.insert("1.0", sc["text"])
-            txt.configure(state="disabled")
-            txt.pack(fill="x", pady=(6, 0))
-
+        a = self.analysis
+        scenes, mutes = a["scenes"], a["mutes"]
+        if not scenes and not mutes:
+            sub = "Nothing to remove was found in this book."
+        else:
+            sub = "Everything ticked below will be removed. Untick anything you want to keep."
+        p = self._new_page("Review before saving", sub)
+        if a.get("ebook_note"):
+            tk.Label(p, text=a["ebook_note"], bg=BG, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(0, 6))
         ttk.Button(self.footer, text="Save clean audiobook", style="Accent.TButton",
-                   command=lambda: self.save([sc for v, sc in self.scene_vars if v.get()])
-                   ).pack(side="right")
+                   command=self._save_from_review).pack(side="right")
+        self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
+        self.summary_lbl.pack(side="left")
+        body = self._scroll_area(p)
+        multi = len(a["parts"]) > 1
+        where = lambda x: (f"Part {x['part'] + 1} \u00b7 " if multi else "") + engine.fmt_t(x["s"])
 
-    def save(self, cuts):
-        self.unbind_all("<MouseWheel>")
-        self.show_working("Saving the clean audiobook…")
+        def section(title, count, var_list):
+            head = tk.Frame(body, bg=BG)
+            head.pack(fill="x", pady=(10, 4))
+            tk.Label(head, text=f"{title}  ({count})", bg=BG, fg=INK,
+                     font=(FONT, 13, "bold")).pack(side="left")
+            if count > 1:
+                links = tk.Frame(head, bg=BG)
+                links.pack(side="right")
+                for label, val in (("Tick all", True), ("Untick all", False)):
+                    l = tk.Label(links, text=label, bg=BG, fg=ACCENT, font=(FONT, 9, "underline"),
+                                 cursor="hand2")
+                    l.pack(side="left", padx=6)
+                    l.bind("<Button-1>", lambda e, v=val: ([x.set(v) for x, _ in var_list],
+                                                            self._update_summary()))
+
+        # scenes
+        self.scene_vars = []
+        if scenes:
+            section("Explicit scenes to cut", len(scenes), self.scene_vars)
+            for sc in scenes:
+                card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
+                                highlightthickness=1)
+                card.pack(fill="x", pady=4)
+                v = tk.BooleanVar(value=sc.get("cut", True))
+                self.scene_vars.append((v, sc))
+                mins = (sc["e"] - sc["s"]) / 60
+                length = f"{mins:.1f} min" if mins >= 1 else f"{sc['e'] - sc['s']:.0f} sec"
+                ttk.Checkbutton(card, text=f"Cut this scene   \u00b7   {where(sc)}   \u00b7   {length}",
+                                variable=v, command=self._update_summary).pack(anchor="w")
+                txt = tk.Text(card, wrap="word", height=min(7, 2 + len(sc["text"]) // 95),
+                              font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
+                              padx=8, pady=6, borderwidth=0)
+                txt.insert("1.0", sc["text"])
+                txt.configure(state="disabled")
+                txt.pack(fill="x", pady=(6, 0))
+
+        # words
+        self.mute_vars = []
+        if mutes:
+            section("Words to mute", len(mutes), self.mute_vars)
+            box = tk.Frame(body, bg=CARD, highlightbackground=LINE, highlightthickness=1)
+            box.pack(fill="x", pady=4)
+            for n, m in enumerate(mutes):
+                row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
+                row.pack(fill="x")
+                rbg = row.cget("bg")
+                v = tk.BooleanVar(value=True)
+                self.mute_vars.append((v, m))
+                ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
+                tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=16,
+                         anchor="w").pack(side="left")
+                line = tk.Frame(row, bg=rbg)
+                line.pack(side="left", fill="x", expand=True)
+                if m.get("ctx"):
+                    tk.Label(line, text="\u2026" + m["ctx"], bg=rbg, fg=MUTED,
+                             font=(FONT, 10)).pack(side="left")
+                tk.Label(line, text=f" {m['word']} ", bg="#F3E3DF", fg="#8A3B2E",
+                         font=(FONT, 10, "bold")).pack(side="left", padx=2)
+                if m.get("ctx_after"):
+                    tk.Label(line, text=m["ctx_after"] + "\u2026", bg=rbg, fg=MUTED,
+                             font=(FONT, 10)).pack(side="left")
+                if m.get("src", "audio") != "audio":
+                    tk.Label(row, text="from ebook", bg=rbg, fg=ACCENT, font=(FONT, 8)).pack(side="right")
+        self._update_summary()
+
+    def _update_summary(self):
+        ns = sum(v.get() for v, _ in getattr(self, "scene_vars", []))
+        nm = sum(v.get() for v, _ in getattr(self, "mute_vars", []))
+        self.summary_lbl.config(text=f"{nm} word{'s' if nm != 1 else ''} muted \u00b7 "
+                                     f"{ns} scene{'s' if ns != 1 else ''} cut")
+
+    def _save_from_review(self):
+        cuts = [sc for v, sc in self.scene_vars if v.get()]
+        mutes = [m for v, m in self.mute_vars if v.get()]
+        self.save(cuts, mutes)
+
+    def save(self, cuts, mutes):
+        self.show_working("Saving the clean audiobook\u2026")
         self.cancel_btn.destroy()
-        threading.Thread(target=self._render_thread, args=(cuts,), daemon=True).start()
+        threading.Thread(target=self._render_thread, args=(cuts, mutes), daemon=True).start()
 
     # ---------- page 4: done ----------
     def show_done(self, res):
@@ -455,14 +497,5 @@ class App(tk.Tk):
         self.show_setup()
 
 
-def _make_shortcut():
-    try:
-        import shortcuts
-        shortcuts.ensure_cleanview_shortcut()
-    except Exception:
-        pass
-
-
 if __name__ == "__main__":
-    threading.Thread(target=_make_shortcut, daemon=True).start()
     App().mainloop()
