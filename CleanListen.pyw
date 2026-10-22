@@ -43,8 +43,14 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CleanListen")
-        self.geometry("800x760")
-        self.minsize(700, 700)
+        # Size the window for this screen. Windows display scaling (125%, 150%)
+        # makes everything larger, so scale up but never taller than the screen.
+        scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w = min(int(820 * scale), sw - 40)
+        h = min(int(780 * scale), sh - 90)
+        self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
+        self.minsize(min(w, int(640 * scale)), min(h, int(480 * scale)))
         self.configure(bg=BG)
         try:
             self.iconbitmap(str(Path(__file__).resolve().parent / "icon.ico"))
@@ -77,15 +83,52 @@ class App(tk.Tk):
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
 
     def _new_page(self, title, subtitle=""):
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.unbind_all(seq)
         if self.page:
             self.page.destroy()
         self.page = tk.Frame(self, bg=BG)
-        self.page.pack(fill="both", expand=True, padx=28, pady=22)
+        self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
+        # Buttons live in a footer packed first, so they always stay visible
+        # even when the window is short.
+        self.footer = tk.Frame(self.page, bg=BG)
+        self.footer.pack(side="bottom", fill="x", pady=(12, 0))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold")).pack(anchor="w")
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
-                     wraplength=700, justify="left").pack(anchor="w", pady=(2, 14))
+                     wraplength=700, justify="left").pack(anchor="w", pady=(2, 12))
         return self.page
+
+    def _scroll_area(self, parent):
+        """A vertically scrolling area that fills the remaining space."""
+        wrap = tk.Frame(parent, bg=BG)
+        wrap.pack(fill="both", expand=True)
+        canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, bg=BG)
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def refresh(_=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            needs = inner.winfo_reqheight() > canvas.winfo_height() + 2
+            if needs and not sb.winfo_ismapped():
+                sb.pack(side="right", fill="y")
+            elif not needs and sb.winfo_ismapped():
+                sb.pack_forget()
+
+        inner.bind("<Configure>", refresh)
+        canvas.bind("<Configure>", lambda e: (canvas.itemconfigure(win, width=e.width), refresh()))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        def wheel(delta):
+            if inner.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(delta, "units")
+
+        self.bind_all("<MouseWheel>", lambda e: wheel(int(-e.delta / 120)))
+        self.bind_all("<Button-4>", lambda e: wheel(-2))
+        self.bind_all("<Button-5>", lambda e: wheel(2))
+        return inner
 
     def _card(self, parent, step, heading, note=""):
         outer = tk.Frame(parent, bg=LINE)
@@ -109,41 +152,43 @@ class App(tk.Tk):
                            "and remove explicit scenes.")
         upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
         if upd:
-            tk.Label(p, text="✓ " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
+            tk.Label(p, text="\u2713 " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
                      padx=10, pady=6, anchor="w").pack(fill="x", pady=(0, 8))
         try:
             ver = json.loads((Path(__file__).resolve().parent / "version.json").read_text())["version"]
             self.title(f"CleanListen {ver}")
         except Exception:
             pass
+        self.start_btn = ttk.Button(self.footer, text="Start cleaning", style="Accent.TButton",
+                                    command=self.start, state="disabled")
+        self.start_btn.pack(side="right")
+        body = self._scroll_area(p)
 
-        b1 = self._card(p, "1", "Audiobook")
+        b1 = self._card(body, "1", "Audiobook")
         row = tk.Frame(b1, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Choose audio files…", style="Plain.TButton",
-                   command=self.pick_audio).pack(side="left")
-        self.audio_lbl = tk.Label(row, text="No files chosen yet", bg=CARD, fg=MUTED,
-                                  font=(FONT, 10), wraplength=430, justify="left")
-        self.audio_lbl.pack(side="left", padx=12)
-        tk.Label(b1, text="MP3 or M4B. If the book comes in several parts, select them all.",
-                 bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(6, 0))
+        ttk.Button(row, text="Choose folder\u2026", style="Plain.TButton",
+                   command=self.pick_folder).pack(side="left")
+        ttk.Button(row, text="Choose files\u2026", style="Plain.TButton",
+                   command=self.pick_audio).pack(side="left", padx=(8, 0))
+        self.audio_lbl = tk.Label(b1, text="No audiobook chosen yet", bg=CARD, fg=MUTED,
+                                  font=(FONT, 10), wraplength=620, justify="left")
+        self.audio_lbl.pack(anchor="w", pady=(8, 0))
 
-        b2 = self._card(p, "2", "Ebook", "optional — catches words the narrator mumbles")
+        b2 = self._card(body, "2", "Ebook", "optional \u2014 catches words the narrator mumbles")
         row = tk.Frame(b2, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Choose ebook…", style="Plain.TButton",
+        ttk.Button(row, text="Choose ebook\u2026", style="Plain.TButton",
                    command=self.pick_ebook).pack(side="left")
         self.ebook_lbl = tk.Label(row, text="None", bg=CARD, fg=MUTED, font=(FONT, 10),
-                                  wraplength=430, justify="left")
+                                  wraplength=480, justify="left")
         self.ebook_lbl.pack(side="left", padx=12)
-        tk.Label(b2, text="EPUB, PDF or TXT. Kindle books are locked and won't work.",
-                 bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(6, 0))
 
-        b3 = self._card(p, "3", "What to remove")
+        b3 = self._card(body, "3", "What to remove")
         self.opts = {}
         grid = tk.Frame(b3, bg=CARD)
         grid.pack(fill="x")
-        items = [("swearing", "Swearing  (f-word, s-word, b-word…)", True),
+        items = [("swearing", "Swearing  (f-word, s-word, b-word\u2026)", True),
                  ("mild", "Mild words  (damn, hell, crap)", True),
                  ("deity", "God's name used as a swear", True),
                  ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
@@ -154,39 +199,56 @@ class App(tk.Tk):
             ttk.Checkbutton(grid, text=label, variable=v).grid(
                 row=n % 3, column=n // 3, sticky="w", padx=(0, 26), pady=2)
 
-        b4 = self._card(p, "4", "Save to")
+        b4 = self._card(body, "4", "Save to")
         row = tk.Frame(b4, bg=CARD)
         row.pack(fill="x")
-        self.out_lbl = tk.Label(row, text="A “Clean” folder next to the audiobook", bg=CARD,
-                                fg=MUTED, font=(FONT, 10), wraplength=460, justify="left")
-        self.out_lbl.pack(side="left")
-        ttk.Button(row, text="Change…", style="Plain.TButton",
+        ttk.Button(row, text="Change\u2026", style="Plain.TButton",
                    command=self.pick_out).pack(side="right")
+        self.out_lbl = tk.Label(row, text="A \u201cClean\u201d folder next to the audiobook", bg=CARD,
+                                fg=MUTED, font=(FONT, 10), wraplength=480, justify="left")
+        self.out_lbl.pack(side="left")
         self.split_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(b4, text="Also split into chapter files  (for Yoto and players "
                         "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(8, 0))
-
-        bar = tk.Frame(p, bg=BG)
-        bar.pack(fill="x", pady=(16, 0))
-        self.start_btn = ttk.Button(bar, text="Start cleaning", style="Accent.TButton",
-                                    command=self.start, state="disabled")
-        self.start_btn.pack(side="right")
         self._refresh_labels()
 
     def _refresh_labels(self):
         if self.audio:
-            names = ", ".join(Path(a).name for a in self.audio[:3])
-            more = f" + {len(self.audio) - 3} more" if len(self.audio) > 3 else ""
             dur = sum(engine.probe_duration(a) for a in self.audio)
-            self.audio_lbl.config(text=f"{len(self.audio)} file(s) · {fmt_len(dur)}\n{names}{more}",
-                                  fg=INK)
+            first = Path(self.audio[0]).name
+            if len(first) > 70:
+                first = first[:67] + "\u2026"
+            extra = f"  \u2026 and {len(self.audio) - 1} more" if len(self.audio) > 1 else ""
+            folder = os.path.normpath(str(Path(self.audio[0]).parent))
+            self.audio_lbl.config(text=f"{len(self.audio)} file{'s' if len(self.audio) != 1 else ''}"
+                                  f" \u00b7 {fmt_len(dur)}   in  {folder}\n{first}{extra}", fg=INK)
             self.start_btn.config(state="normal")
             if not self.outdir:
-                self.out_lbl.config(text=str(Path(self.audio[0]).parent / "Clean"), fg=INK)
+                self.out_lbl.config(text=os.path.normpath(str(Path(self.audio[0]).parent / "Clean")),
+                                    fg=INK)
         if self.ebook:
             self.ebook_lbl.config(text=Path(self.ebook).name, fg=INK)
         if self.outdir:
-            self.out_lbl.config(text=self.outdir, fg=INK)
+            self.out_lbl.config(text=os.path.normpath(self.outdir), fg=INK)
+
+    def pick_folder(self):
+        d = filedialog.askdirectory(title="Choose the folder with the audiobook in it")
+        if not d:
+            return
+        folder = Path(d)
+        files = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in engine.AUDIO_EXTS]
+        if not files:  # look one level down (some downloads unzip into a subfolder)
+            files = [f for sub in folder.iterdir() if sub.is_dir() and sub.name.lower() != "clean"
+                     for f in sub.iterdir() if f.is_file() and f.suffix.lower() in engine.AUDIO_EXTS]
+        if not files:
+            messagebox.showinfo("CleanListen", "No audio files (MP3, M4B\u2026) were found in that folder.")
+            return
+        self.audio = sorted((str(f) for f in files), key=natural_key)
+        books = sorted(f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in (".epub", ".pdf"))
+        if books and not self.ebook:
+            self.ebook = str(books[0])
+        self.outdir = None
+        self._refresh_labels()
 
     def pick_audio(self):
         exts = " ".join("*" + e for e in engine.AUDIO_EXTS)
@@ -194,6 +256,7 @@ class App(tk.Tk):
                                             filetypes=[("Audiobooks", exts), ("All files", "*.*")])
         if files:
             self.audio = sorted(files, key=natural_key)
+            self.outdir = None
             self._refresh_labels()
 
     def pick_ebook(self):
@@ -238,8 +301,8 @@ class App(tk.Tk):
         self.pb.pack(fill="x")
         self.status = tk.Label(box, text="Starting…", bg=BG, fg=INK, font=(FONT, 12))
         self.status.pack(anchor="w", pady=(12, 0))
-        self.cancel_btn = ttk.Button(p, text="Cancel", style="Plain.TButton", command=self.cancel)
-        self.cancel_btn.pack(anchor="e", side="bottom")
+        self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
+        self.cancel_btn.pack(side="right")
 
     def cancel(self):
         self.cancel_flag = True
@@ -340,9 +403,7 @@ class App(tk.Tk):
             txt.configure(state="disabled")
             txt.pack(fill="x", pady=(6, 0))
 
-        bar = tk.Frame(p, bg=BG)
-        bar.pack(fill="x", pady=(14, 0))
-        ttk.Button(bar, text="Save clean audiobook", style="Accent.TButton",
+        ttk.Button(self.footer, text="Save clean audiobook", style="Accent.TButton",
                    command=lambda: self.save([sc for v, sc in self.scene_vars if v.get()])
                    ).pack(side="right")
 
@@ -386,8 +447,8 @@ class App(tk.Tk):
         ttk.Button(row, text="See what was removed", style="Plain.TButton",
                    command=lambda: open_path(str(Path(res["out"]) / "CleanListen report.txt"))
                    ).pack(side="left", padx=12)
-        ttk.Button(p, text="Clean another book", style="Plain.TButton",
-                   command=self.reset).pack(anchor="e", side="bottom")
+        ttk.Button(self.footer, text="Clean another book", style="Plain.TButton",
+                   command=self.reset).pack(side="right")
 
     def reset(self):
         self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None
