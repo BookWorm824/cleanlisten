@@ -267,17 +267,20 @@ class App(tk.Tk):
                  ("deity", "God's name used as a swear", True),
                  ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
                  ("crude", "Crude humor  (toilet & gross-out jokes)", True),
+                 ("bully", "Bullying  (taunts, name-calling)", False),
                  ("sexual", "Sexual words  (sex, sexy, horny\u2026)", True),
                  ("refs", "Sexual references  (cut sentences about sex)", True),
                  ("sex", "Explicit sex scenes  (cut whole scenes)", True),
+                 ("flirt", "Flirting  (cut flirty sentences)", False),
                  ("gore", "Gory descriptions  (cut graphic passages)", True),
                  ("religion", "Religious content  (beliefs, preaching, anger at God)", True),
                  ("relationships", "Same-sex & non-traditional relationships", True)]
+        left = 6  # language-type options on the left, content options on the right
         for n, (key, label, on) in enumerate(items):
             v = tk.BooleanVar(value=self.saved_opts.get(key, on))
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(
-                row=n if n < 5 else n - 5, column=0 if n < 5 else 1, sticky="w",
+                row=n if n < left else n - left, column=0 if n < left else 1, sticky="w",
                 padx=(0, 26), pady=2)
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
         ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
@@ -436,10 +439,12 @@ class App(tk.Tk):
         if self.find_relationships:
             groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
         self.find_crude = self.opts["crude"].get()
+        self.find_bully, self.find_flirt = self.opts["bully"].get(), self.opts["flirt"].get()
         self.use_ai = self.ai_var.get()
         self.split_chapters = self.split_var.get()
         if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
-                               or self.find_relationships or self.find_crude):
+                               or self.find_relationships or self.find_crude
+                               or self.find_bully or self.find_flirt):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         self.saved_opts = {k: v.get() for k, v in self.opts.items()}
@@ -494,7 +499,7 @@ class App(tk.Tk):
                 self.audio, self.workdir, ebook=self.ebook, groups=groups, find_sex=find_sex,
                 find_refs=self.find_refs, find_gore=self.find_gore, find_religion=self.find_religion,
                 find_relationships=self.find_relationships, find_crude=self.find_crude,
-                use_ai=self.use_ai,
+                use_ai=self.use_ai, find_bully=self.find_bully, find_flirt=self.find_flirt,
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -581,7 +586,8 @@ class App(tk.Tk):
         kinds = [("sex", "Explicit scenes to cut"), ("ref", "Sexual references to cut"),
                  ("gore", "Gory descriptions to cut"), ("religion", "Religious content to cut"),
                  ("relationship", "Same-sex & non-traditional relationships to cut"),
-                 ("crude", "Crude humor to cut")]
+                 ("crude", "Crude humor to cut"), ("bully", "Bullying to cut"),
+                 ("flirt", "Flirting to cut")]
         for kind, heading in kinds:
             items = [sc for sc in scenes if sc.get("kind", "sex") == kind]
             if not items:

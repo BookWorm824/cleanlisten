@@ -103,7 +103,14 @@ SEXUAL_PHRASES = [
 ] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
      for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
                "anybody", "each", "everyone", "everybody")]
-PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES}  # deity filled in below
+# "screw you" / "screw it" as an insult (muted with the mild words). "Screw" on its
+# own is left alone, and so is "screw it in / on / tight..." (hardware).
+SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this", "that", "off",
+                                        "yourself", "em", "'em", "everyone", "everybody", "y'all")]
+SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
+                   "together", "up", "through", "firmly", "securely", "loose", "around", "the",
+                   "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"}
+PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES}  # deity filled in below
 BLOODY_SWEAR_NEXT = {
     "hell", "well", "idiot", "fool", "fools", "stupid", "ridiculous", "nuisance",
     "nonsense", "cheek", "marvellous", "marvelous", "brilliant", "awful", "good",
@@ -170,6 +177,8 @@ def find_language(words, cats):
         for cat in cats:
             for ph in sorted(PHRASES.get(cat) or [], key=len, reverse=True):
                 if tuple(words[i:i + len(ph)]) == ph:
+                    if ph[0] == "screw" and (words[i + 2] if i + 2 < n else "") in SCREW_SAFE_NEXT:
+                        continue  # "screw it in tight", "screw that lid on"
                     found = (ph, cat)
                     break
             if found:
@@ -341,6 +350,158 @@ def relationship_hit(words):
         for subj, obj in (("he", "him"), ("she", "her")):
             if words[i:i + 3] == [subj, "kissed", obj] or words[i:i + 3] == [subj, "kisses", obj]:
                 if (words[i + 3] if i + 3 < len(words) else "") in KISS_AFTER:
+                    return True
+    return same_sex_flirt(words)
+
+
+# Flirting. "*" is the person being flirted with. Sentence-level, like crude humor.
+PERSON = {"me", "you", "him", "her", "them", "us"}
+FLIRT_PATTERNS = (
+    [(v, "with", "*") for v in ("flirt", "flirts", "flirted", "flirting")]
+    + [(v, "at", "*") for v in ("wink", "winks", "winked", "winking")]
+    + [(v, "on", "*") for v in ("hit", "hits", "hitting")]
+    + [(v, "on", "to", "*") for v in ("come", "comes", "came", "coming")]
+    + [(v, "eyes", "at", "*") for v in ("make", "makes", "made", "making")]
+    + [(v, "*", "out") for v in ("checked", "checking")]
+    + [(v, "*", "up") for v in ("chat", "chats", "chatted", "chatting", "eyed", "eyeing")]
+    + [(v, p, l, "at", "*") for v in ("batted", "batting", "bats", "bat")
+       for p in ("her", "his") for l in ("eyelashes", "lashes")]
+    + [(v, p, l) for v in ("batted", "batting", "bats", "bat")
+       for p in ("her", "his") for l in ("eyelashes", "lashes")]
+)
+# slots that must be a pronoun (so "hit on the head" / "checked the car out" don't count)
+PRONOUN_SLOT = {"hit", "hits", "hitting", "checked", "checking", "chat", "chats", "chatted",
+                "chatting", "eyed", "eyeing", "come", "comes", "came", "coming"}
+FLIRT_WORDS = _c([r"flirty", r"flirtatious(ly)?", r"flirtations?", r"flirts?", r"flirted",
+                  r"flirting", r"coquettish(ly)?", r"come-hither", r"pick-?up-?lines?"])
+FLIRT_PHRASES = [("pickup", "line"), ("pick", "up", "line"), ("pick-up", "line"),
+                 ("pickup", "lines"), ("bedroom", "eyes"), ("playing", "hard", "to", "get"),
+                 ("played", "hard", "to", "get"), ("gave", "him", "the", "eye"),
+                 ("gave", "her", "the", "eye"), ("come", "hither")]
+FLIRT_OBJ_AFTER = KISS_AFTER | {"from", "across", "over", "while", "as", "when", "until", "before",
+                                "after", "during", "at", "in", "on", "shamelessly", "openly",
+                                "outrageously", "all", "throughout", "for", "but", "so", "too"}
+
+
+def _flirt_spans(words):
+    """(start, object index or None, subject gender hint or None) for each flirting phrase."""
+    out = []
+    for i in range(len(words)):
+        for pat in FLIRT_PATTERNS:
+            if i + len(pat) > len(words):
+                continue
+            ok, obj = True, None
+            for k, p in enumerate(pat):
+                w = words[i + k]
+                if p == "*":
+                    if pat[0] in PRONOUN_SLOT and w not in PERSON:
+                        ok = False
+                        break
+                    obj = i + k
+                elif w != p:
+                    ok = False
+                    break
+            if ok:
+                hint = {"his": "he", "her": "she"}.get(pat[1]) if pat[0].startswith("bat") else None
+                out.append((i, obj, hint))
+    return out
+
+
+FLIRT_NOT = {"disaster", "danger", "death", "idea", "notion", "thought", "bankruptcy", "fame",
+             "trouble", "madness", "suicide", "ruin", "temptation", "fate", "possibility"}
+
+
+def _flirt_metaphor(words, i):
+    """"flirted with disaster", "flirting with the idea" aren't flirting."""
+    nxt = words[i + 1:i + 4]
+    if nxt[:1] != ["with"]:
+        return False
+    return (len(nxt) > 1 and nxt[1] in FLIRT_NOT) or (
+        len(nxt) > 2 and nxt[1] in ("the", "a") and nxt[2] in FLIRT_NOT)
+
+
+def flirt_hit(words):
+    if any(not (words[i].startswith("flirt") and _flirt_metaphor(words, i))
+           for i, *_ in _flirt_spans(words)):
+        return True
+    if any(any(p.match(w) for p in FLIRT_WORDS) and not _flirt_metaphor(words, i)
+           for i, w in enumerate(words)):
+        return True
+    return any(tuple(words[i:i + len(ph)]) == ph for ph in FLIRT_PHRASES for i in range(len(words)))
+
+
+def same_sex_flirt(words):
+    """"He was flirting with him", "she winked at her" (not "winked at her sister")."""
+    for start, obj, hint in _flirt_spans(words):
+        if obj is None or (words[start].startswith("flirt") and _flirt_metaphor(words, start)):
+            continue
+        o = words[obj]
+        subj = hint
+        if subj is None:
+            before = [w for w in words[max(0, start - 8):start] if w in ("he", "she")]
+            subj = before[-1] if before else None
+        nxt = words[obj + 1] if obj + 1 < len(words) else ""
+        if subj == "he" and o == "him":
+            return True
+        if subj == "she" and o == "her" and nxt in FLIRT_OBJ_AFTER:
+            return True
+    return False
+
+
+# Bullying: name-calling aimed at someone ("you loser", "you're so stupid"),
+# taunts ("nobody likes you"), and narration of bullying ("picked on", "made fun of").
+BULLY_INSULTS = _c([
+    r"losers?", r"freaks?", r"idiots?", r"morons?", r"stupid", r"dummy", r"dumb", r"retard(ed|s)?",
+    r"fatso", r"fatty", r"lardo", r"lard-?ass", r"pig", r"ugly", r"weirdo", r"nerd", r"geek", r"dork",
+    r"fat", r"wimp", r"sissy", r"crybaby", r"scaredy-?cat", r"worthless", r"pathetic", r"useless", r"creep",
+    r"jerk", r"dweeb", r"doofus", r"imbecile", r"cretin", r"runt", r"shrimp", r"four-?eyes", r"brat",
+    r"twerp", r"trash", r"scum", r"garbage", r"coward", r"lame", r"pansy", r"nobody", r"failure",
+    r"disgusting", r"gross", r"psycho", r"spaz", r"klutz", r"airhead", r"bimbo", r"dimwit", r"halfwit",
+    r"nitwit", r"numbskull", r"bonehead", r"blockhead", r"freakshow", r"reject", r"misfit",
+])
+BULLY_LEAD = {"you", "you're", "youre", "ya", "ur", "yer"}
+BULLY_FILL = {"so", "such", "a", "an", "big", "little", "total", "complete", "fat", "stupid",
+              "ugly", "dumb", "pathetic", "worthless", "useless", "are", "really", "just", "nothing",
+              "but", "the", "biggest", "most", "lousy", "sorry", "filthy", "dirty", "skinny", "tiny"}
+BULLY_PHRASES = [
+    ("nobody", "likes", "you"), ("no", "one", "likes", "you"), ("everybody", "hates", "you"),
+    ("everyone", "hates", "you"), ("nobody", "wants", "you"), ("no", "one", "wants", "you"),
+    ("nobody", "cares", "about", "you"), ("no", "one", "cares", "about", "you"),
+    ("go", "cry", "to"), ("cry", "to", "your", "mommy"), ("cry", "to", "your", "mama"),
+    ("run", "home", "to", "mommy"), ("kill", "yourself"), ("you're", "nothing"),
+    ("you", "are", "nothing"), ("you'll", "never", "be"), ("what", "a", "loser"),
+    ("what", "a", "freak"), ("picked", "on"), ("pick", "on"), ("picks", "on"), ("picking", "on"),
+    ("made", "fun", "of"), ("make", "fun", "of"), ("makes", "fun", "of"), ("making", "fun", "of"),
+    ("called", "him", "names"), ("called", "her", "names"), ("called", "me", "names"),
+    ("calling", "him", "names"), ("calling", "her", "names"), ("name", "calling"), ("name-calling",),
+    ("shoved", "him", "into"), ("shoved", "her", "into"), ("stuffed", "him", "in"),
+    ("stuffed", "him", "into"), ("dunked", "his", "head"), ("swirly",), ("swirlies",),
+]
+# ("mocking smile", "felt humiliated", "tormented by guilt" are ordinary in a mystery,
+# so those words only count when aimed at someone: "tormenting him", "mocked her")
+BULLY_WORDS = _c([r"bull(y|ies|ied|ying)", r"taunt(s|ed|ing)?", r"jeer(s|ed|ing)?",
+                  r"ridiculed"])
+BULLY_PHRASES += [(v, o) for v in ("tormented", "tormenting", "torment", "mocked", "mocking",
+                                   "humiliated", "humiliating")
+                  for o in ("him", "her", "them", "me", "us")]
+
+
+def bully_hit(words):
+    if any(any(p.match(w) for p in BULLY_WORDS) for w in words):
+        return True
+    n = len(words)
+    for i in range(n):
+        if any(tuple(words[i:i + len(ph)]) == ph for ph in BULLY_PHRASES):
+            return True
+        if words[i] in BULLY_LEAD:  # "you idiot", "you're such a loser", "you fat pig"
+            j = i + 1
+            while j < n and j - i <= 4 and words[j] in BULLY_FILL and not any(
+                    p.match(words[j]) for p in BULLY_INSULTS):
+                j += 1
+            for k in range(i + 1, min(n, i + 5)):
+                if k > j:
+                    break
+                if any(p.match(words[k]) for p in BULLY_INSULTS):
                     return True
     return False
 
@@ -667,8 +828,15 @@ AI_TYPES = {
                 "angry with, blaming, hating or denying God, or losing their faith (brief mentions "
                 "like praying, saying grace, thanking God, believing in God or going to church are "
                 "NOT this)",
-    "relationship": "a same-sex couple, romance or relationship, or a non-traditional relationship "
+    "relationship": "a same-sex couple, romance, relationship or flirting (for example a man "
+                    "flirting with or hitting on another man), or a non-traditional relationship "
                     "such as a throuple, polyamory, an open marriage, swingers or polygamy",
+    "bully": "bullying or mean-spirited cruelty: taunting, name-calling, mocking or humiliating "
+             "someone, or picking on someone weaker (an ordinary argument, a villain's plot or a "
+             "police interrogation is NOT this)",
+    "flirt": "flirting: someone flirting with, hitting on, winking at, sweet-talking or making "
+             "romantic advances toward someone (a married couple being affectionate, a simple "
+             "compliment or ordinary friendliness is NOT this)",
     "crude": "crude or gross-out humor: jokes about farting, pooping, peeing, burping, boogers or "
              "other bodily functions, toilet humor, or vulgar jokes and pranks (a character simply "
              "feeling sick or using the bathroom is NOT this)",
@@ -704,7 +872,8 @@ def _ai_module():
 LANGUAGE_DEFS = {
     "strong": "the f-word or c-word in any form",
     "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***",
-    "mild": "a mild swear word such as damn, hell used as a curse, crap, or bloody used as a curse",
+    "mild": "a mild swear word such as damn, hell used as a curse, crap, bloody used as a curse, "
+            "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
     "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
              "talk about God; 'thank God' is fine)",
     "minced": "a soft substitute swear such as gosh, heck, freaking or darn",
@@ -856,7 +1025,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     # too (hell, bloody, ass, Jesus, gay...). Clear swear words are never unticked.
     AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
                  "bugger", "tits", "sex", "sexes", "sexual", "sexually", "climaxed", "homo",
-                 "homos", "queer", "queers", "pee", "peed", "peeing"}
+                 "homos", "queer", "queers", "pee", "peed", "peeing", "screw"}
     checkable = [m for m in mutes if m.get("i") is not None and
                  (m.get("cat") in ("deity", "orientation") or
                   any(norm(asr[x]["t"]) in AMBIGUOUS for x in range(m["i"], m["j"])))]
@@ -956,7 +1125,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
             find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
             find_crude=False, use_ai=False,
-            threads=None, cancel=None):
+            threads=None, cancel=None, find_bully=False, find_flirt=False):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
     work = Path(workdir)
@@ -1236,12 +1405,17 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 continue
             scenes.append({"kind": "relationship", "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
-    if find_crude:
-        say(0.99, "Looking for crude humor…")
+    # sentence-level filters: each flagged sentence (and neighbours that also hit) is cut
+    for on, hit, kind, msg in ((find_crude, crude_hit, "crude", "Looking for crude humor…"),
+                               (find_bully, bully_hit, "bully", "Looking for bullying…"),
+                               (find_flirt, flirt_hit, "flirt", "Looking for flirting…")):
+        if not on:
+            continue
+        say(0.99, msg)
         cr, k = [], 0
         while k < len(asr):
             a_, b_ = to_sentences(k, k)
-            if crude_hit(asr_n[a_:b_ + 1]):
+            if hit(asr_n[a_:b_ + 1]):
                 if cr and cr[-1][0] == asr[a_]["part"] and a_ <= cr[-1][2] + 1:
                     cr[-1][2] = b_
                 else:
@@ -1251,13 +1425,14 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             s_, e_ = span_times(asr, a_, b_)
             if any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in scenes):
                 continue
-            scenes.append({"kind": "crude", "part": part, "s": s_, "e": e_,
+            scenes.append({"kind": kind, "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     ai_note = ""
     if use_ai:
         kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
                                  ("religion", find_religion), ("relationship", find_relationships),
-                                 ("crude", find_crude)) if on]
+                                 ("crude", find_crude), ("bully", find_bully),
+                                 ("flirt", find_flirt)) if on]
         try:
             for sc in scenes:
                 sc.setdefault("cut", True)
@@ -1547,7 +1722,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
             label = {"sex": "explicit scene", "gore": "gory description",
                      "ref": "sexual reference", "religion": "religious content",
                      "relationship": "relationship content",
-                     "crude": "crude humor"}.get(c.get("kind"), "scene")
+                     "crude": "crude humor", "bully": "bullying",
+                     "flirt": "flirting"}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
                           f"{c.get('note') or label}")
     chap = None
