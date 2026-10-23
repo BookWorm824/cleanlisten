@@ -195,12 +195,14 @@ class App(tk.Tk):
                  ("sexual", "Sexual words  (sex, sexy, horny\u2026)", True),
                  ("refs", "Sexual references  (cut sentences about sex)", True),
                  ("sex", "Explicit sex scenes  (cut whole scenes)", True),
-                 ("gore", "Gory descriptions  (cut graphic passages)", True)]
+                 ("gore", "Gory descriptions  (cut graphic passages)", True),
+                 ("religion", "Religious content  (beliefs, preaching, anger at God)", True)]
         for n, (key, label, on) in enumerate(items):
             v = tk.BooleanVar(value=on)
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(
-                row=n % 4, column=n // 4, sticky="w", padx=(0, 26), pady=2)
+                row=n if n < 4 else n - 4, column=0 if n < 4 else 1, sticky="w",
+                padx=(0, 26), pady=2)
 
         b4 = self._card(body, "4", "Save to")
         row = tk.Frame(b4, bg=CARD)
@@ -280,8 +282,9 @@ class App(tk.Tk):
         groups = [g for g in ("swearing", "mild", "deity", "minced", "sexual") if self.opts[g].get()]
         find_sex = self.opts["sex"].get()
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
+        self.find_religion = self.opts["religion"].get()
         self.split_chapters = self.split_var.get()
-        if not groups and not (find_sex or self.find_refs or self.find_gore):
+        if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         key = hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in self.audio)
@@ -316,7 +319,7 @@ class App(tk.Tk):
         try:
             st = engine.analyze(
                 self.audio, self.workdir, ebook=self.ebook, groups=groups, find_sex=find_sex,
-                find_refs=self.find_refs, find_gore=self.find_gore,
+                find_refs=self.find_refs, find_gore=self.find_gore, find_religion=self.find_religion,
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -397,7 +400,7 @@ class App(tk.Tk):
         # passages, grouped by kind
         self.scene_vars = []
         kinds = [("sex", "Explicit scenes to cut"), ("ref", "Sexual references to cut"),
-                 ("gore", "Gory descriptions to cut")]
+                 ("gore", "Gory descriptions to cut"), ("religion", "Religious content to cut")]
         for kind, heading in kinds:
             items = [sc for sc in scenes if sc.get("kind", "sex") == kind]
             if not items:

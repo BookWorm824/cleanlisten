@@ -79,7 +79,7 @@ MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"jeez", r"geez",
 DEITY_PHRASES = [
     ("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"),
     ("dear", "god"), ("god", "almighty"), ("for", "god's", "sake"),
-    ("for", "gods", "sake"), ("god", "knows"), ("thank", "god"), ("god", "damn"),
+    ("for", "gods", "sake"), ("god", "knows"), ("god", "damn"),
     ("god", "dammit"), ("oh", "lord"), ("good", "lord"), ("dear", "lord"),
     ("lord", "almighty"), ("sweet", "jesus"), ("jesus", "christ"),
     ("for", "christ's", "sake"), ("for", "christs", "sake"),
@@ -230,6 +230,63 @@ def gore_score(words):
 
 def is_gory(words):
     return any(p.match(w) for w in words for p in GORE_C[3])
+
+
+# Religious content. A passing mention ("she prayed", "thank God", "he believed
+# in God") never flags: a stretch needs several distinct religious words close
+# together (someone explaining their beliefs), or a sentence that pairs God
+# with blame or hatred.
+RELIGION_TERMS = {
+    2: [r"faith", r"scriptures?", r"bible", r"biblical", r"gospels?", r"salvation", r"sins?",
+        r"sinful", r"sinners?", r"sinned", r"heaven(ly)?", r"damnation", r"damned", r"saviou?r",
+        r"worship(ped|ping)?", r"churche?s?", r"pastors?", r"preach(er|ers|ing|ed)?", r"sermons?",
+        r"priests?", r"prayers?", r"prayed", r"praying", r"pray", r"holy", r"divine", r"almighty",
+        r"souls?", r"redemption", r"redeem(ed|er)?", r"repent.*", r"resurrect.*", r"crucif.*",
+        r"eternal", r"eternity", r"providence", r"deity", r"atheists?", r"atheism", r"agnostic",
+        r"religions?", r"religious", r"theolog.*", r"creator", r"angels?", r"demons?", r"devil",
+        r"satan", r"rapture", r"afterlife", r"blessed", r"blessings?", r"grace", r"spiritual",
+        r"christians?", r"christianity", r"muslims?", r"islam", r"allah", r"buddhis.*", r"hindu.*",
+        r"karma", r"reincarnat.*", r"psalms?", r"commandments?", r"apostles?", r"disciples?",
+        r"messiah", r"godless", r"heathens?", r"blasphem.*", r"hymns?", r"congregation"],
+    1: [r"god", r"gods", r"god's", r"lord", r"jesus", r"christ", r"believe", r"believed",
+        r"believes", r"beliefs?", r"miracles?", r"forgive(n|ness)?", r"mercy", r"fate",
+        r"destiny", r"universe", r"hell", r"spirit", r"evil", r"punish(ed|ment)?"],
+}
+RELIGION_C = {w: _c(p) for w, p in RELIGION_TERMS.items()}
+RELIGION_WINDOW_SCORE = 9
+GOD_WORDS = {"god", "god's", "gods", "lord", "jesus", "christ", "heaven", "almighty", "creator"}
+BLAME_C = _c([r"hate[sd]?", r"hating", r"blame[sd]?", r"blaming", r"cruel(ty)?", r"punish.*",
+              r"abandon(ed|s)?", r"forsak(en|e)", r"unfair", r"curse[sd]?", r"cursing", r"angry",
+              r"furious", r"fault", r"monster", r"sadist.*", r"spite", r"rage[ds]?", r"betray.*",
+              r"turned", r"deserted", r"useless", r"heartless", r"evil"])
+NO_GOD_PHRASES = [("there", "is", "no", "god"), ("there's", "no", "god"), ("god", "is", "dead"),
+                  ("god", "doesn't", "exist"), ("god", "does", "not", "exist"),
+                  ("no", "such", "thing", "as", "god"), ("where", "was", "god"),
+                  ("if", "there", "is", "a", "god"), ("if", "there's", "a", "god"),
+                  ("how", "could", "god"), ("why", "would", "god"), ("why", "did", "god")]
+
+
+def religion_score(words):
+    s, strong = 0, set()
+    for w in words:
+        for weight, pats in RELIGION_C.items():
+            if any(p.match(w) for p in pats):
+                s += weight
+                if weight == 2:
+                    strong.add(w)
+                break
+    return s if len(strong) >= 3 else 0
+
+
+def is_religious(words):
+    return any(p.match(w) for w in words for p in RELIGION_C[2])
+
+
+def blames_god(words):
+    """One sentence: does it pair God with blame or hatred, or deny God?"""
+    if any(tuple(words[i:i + len(ph)]) == ph for ph in NO_GOD_PHRASES for i in range(len(words))):
+        return True
+    return bool(GOD_WORDS & set(words)) and any(p.match(w) for w in words for p in BLAME_C)
 
 
 def mask(word):
@@ -511,7 +568,7 @@ def span_times(asr, i, j):
 # ---------------------------------------------------------------------------
 def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "sexual"),
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
-            find_refs=False, find_gore=False,
+            find_refs=False, find_gore=False, find_religion=False,
             threads=None, cancel=None):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
@@ -619,21 +676,46 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             b_ += 1
         return a_, b_
 
-    def find_passages(score_fn, strong_fn, threshold, kind):
+    def find_passages(score_fn, terms_c, threshold, kind):
         """Stretches whose vocabulary scores above threshold. With an ebook the
-        cut follows paragraph edges; without, sentence edges in the transcript."""
+        cut follows paragraph edges; without, sentence edges in the transcript.
+        A passage starts and ends on a paragraph/sentence that is itself heavy
+        with the content, so a passing mention next door is left alone."""
+        top = max(terms_c)
+
+        def raw(ws):
+            return sum(wt for w in ws for wt, pats in terms_c.items() if any(p.match(w) for p in pats))
+
+        def nstrong(ws):
+            return sum(1 for w in ws if any(p.match(w) for p in terms_c[top]))
+
+        def edge_ok(ws):
+            return nstrong(ws) >= 2 or raw(ws) >= top + 1  # one strong word plus some support
+
+        def keeps(edge, inner):
+            # an edge unit stays if it's heavy itself, or it has a content word
+            # and sits right against a very heavy unit (e.g. the last line of a sermon)
+            return edge_ok(edge) or (nstrong(edge) > 0 and raw(inner) >= 2 * top)
+
+        def trim(units, words_of):
+            while units and not keeps(words_of(units[0]), words_of(units[1]) if len(units) > 1 else []):
+                units = units[1:]
+            while units and not keeps(words_of(units[-1]), words_of(units[-2]) if len(units) > 1 else []):
+                units = units[:-1]
+            return units
+
         out = []
         if paras:
             pwords = {}
             for k, pi_ in enumerate(eb_para):
                 pwords.setdefault(pi_, []).append(k)
             ids = sorted(pwords)
-            strong = {q: strong_fn([eb_n[k] for k in pwords[q]]) for q in ids}
+            pw = {q: [eb_n[k] for k in pwords[q]] for q in ids}
             hot = set()
             for x in range(len(ids)):
                 win = ids[x:x + 3]
-                if score_fn([eb_n[k] for q in win for k in pwords[q]]) >= threshold:
-                    hot.update(q for q in win if strong[q])  # only paragraphs that are themselves graphic
+                if score_fn([w for q in win for w in pw[q]]) >= threshold:
+                    hot.update(q for q in win if nstrong(pw[q]))
             runs = []
             for q in sorted(hot):
                 if runs and ids.index(q) - ids.index(runs[-1][-1]) <= 2:
@@ -641,6 +723,9 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 else:
                     runs.append([q])
             for run_ in runs:
+                run_ = trim(run_, lambda q: pw[q])
+                if not run_ or not score_fn([w for q in run_ for w in pw[q]]):
+                    continue
                 al = [mapping[k] for q in run_ for k in pwords[q] if mapping[k] is not None]
                 if len(al) < 5:
                     continue
@@ -651,6 +736,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 out.append({"kind": kind, "part": asr[i0]["part"], "s": s_, "e": e_,
                             "text": "\n\n".join(paras[q] for q in run_)})
             return out
+        # no ebook: 60-second windows over the transcript, then sentence runs
         k, flagged = 0, []
         while k < len(asr):
             j = k
@@ -669,20 +755,46 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             else:
                 merged.append([a_, b_])
         for a_, b_ in merged:
-            hits = [x for x in range(a_, b_ + 1) if strong_fn([asr_n[x]])] or [a_, b_]
-            a_, b_ = to_sentences(hits[0], hits[-1])
-            s_, e_ = span_times(asr, a_, b_)
-            out.append({"kind": kind, "part": asr[a_]["part"], "s": s_, "e": e_,
-                        "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+            a_, b_ = to_sentences(a_, b_)
+            sents, x = [], a_
+            while x <= b_:
+                sa, sb = to_sentences(x, x)
+                sents.append((sa, sb))
+                x = sb + 1
+            sw = lambda se: asr_n[se[0]:se[1] + 1]
+            runs, cur, gap = [], [], 0
+            for se in sents:
+                if nstrong(sw(se)):
+                    cur.append(se)
+                    gap = 0
+                elif cur and gap == 0:
+                    cur.append(se)  # allow one quieter sentence inside a passage
+                    gap = 1
+                else:
+                    if cur:
+                        runs.append(cur)
+                    cur, gap = [], 0
+            if cur:
+                runs.append(cur)
+            for run_ in runs:
+                run_ = trim(run_, sw)
+                if not run_:
+                    continue
+                ra, rb = run_[0][0], run_[-1][1]
+                if not score_fn(asr_n[ra:rb + 1]):
+                    continue
+                s_, e_ = span_times(asr, ra, rb)
+                out.append({"kind": kind, "part": asr[ra]["part"], "s": s_, "e": e_,
+                            "text": " ".join(w["t"] for w in asr[ra:rb + 1])})
         return out
 
     scenes = []
     if find_sex:
         say(0.97, "Looking for sex scenes\u2026")
-        scenes += find_passages(sex_score, is_explicit, SEX_WINDOW_SCORE, "sex")
+        scenes += find_passages(sex_score, SEX_C, SEX_WINDOW_SCORE, "sex")
     if find_gore:
         say(0.98, "Looking for gory descriptions\u2026")
-        scenes += find_passages(gore_score, is_gory, GORE_WINDOW_SCORE, "gore")
+        scenes += find_passages(gore_score, GORE_C, GORE_WINDOW_SCORE, "gore")
     if find_refs:
         # any sentence that talks about sex, even in passing
         say(0.99, "Looking for sexual references\u2026")
@@ -700,6 +812,26 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 continue  # already inside a scene being cut
             scenes.append({"kind": "ref", "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+    if find_religion:
+        say(0.99, "Looking for religious content\u2026")
+        rel = find_passages(religion_score, RELIGION_C, RELIGION_WINDOW_SCORE, "religion")
+        # single sentences that blame or hate God, or deny God
+        k = 0
+        while k < len(asr):
+            a_, b_ = to_sentences(k, k)
+            if blames_god(asr_n[a_:b_ + 1]):
+                s_, e_ = span_times(asr, a_, b_)
+                part = asr[a_]["part"]
+                inside = any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in rel)
+                if not inside:
+                    if rel and rel[-1]["part"] == part and rel[-1].get("blame") and s_ - rel[-1]["e"] < 2:
+                        rel[-1]["e"] = e_
+                        rel[-1]["text"] += " " + " ".join(w["t"] for w in asr[a_:b_ + 1])
+                    else:
+                        rel.append({"kind": "religion", "blame": True, "part": part, "s": s_, "e": e_,
+                                    "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+            k = b_ + 1
+        scenes += rel
     scenes.sort(key=lambda x: (x["part"], x["s"]))
     for n, sc in enumerate(scenes, 1):
         sc["id"], sc["cut"] = n, True
@@ -927,7 +1059,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         for c in (c for c in cuts if c["part"] == pi):
             total_cut_sec += c["e"] - c["s"]
             label = {"sex": "explicit scene", "gore": "gory description",
-                     "ref": "sexual reference"}.get(c.get("kind"), "scene")
+                     "ref": "sexual reference", "religion": "religious content"}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
                           f"{c.get('note') or label}")
     chap = None
