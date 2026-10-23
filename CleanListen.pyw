@@ -22,6 +22,16 @@ FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 
 
 def natural_key(p):
+    """Sort by folder, then file, with numbers in numeric order, so a book in
+    Disc 1, Disc 2... folders plays disc by disc (not every disc's track 01 first)."""
+    q = Path(p)
+    return [[int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", part)]
+            for part in (str(q.parent), q.name)]
+
+
+def _legacy_key(p):
+    # the order older versions used; only for finding the saved transcript of a
+    # book that was already listened to, so it isn't transcribed again
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", Path(p).name)]
 
 
@@ -261,7 +271,7 @@ class App(tk.Tk):
         books = sorted(f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in (".epub", ".pdf"))
         if books and not self.ebook:
             self.ebook = str(books[0])
-        self.outdir = None
+        self.outdir = str(folder / "Clean")  # next to all the discs, not inside Disc 1
         self._refresh_labels()
 
     def pick_audio(self):
@@ -302,9 +312,16 @@ class App(tk.Tk):
                                or self.find_relationships or self.find_crude):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
-        key = hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in self.audio)
-                           .encode()).hexdigest()[:16]
+        def job_key(files):
+            return hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in files)
+                                .encode()).hexdigest()[:16]
+        key = job_key(sorted(self.audio, key=natural_key))
+        old_dir = APP_DATA / "jobs" / job_key(sorted(self.audio, key=_legacy_key))
         self.workdir = APP_DATA / "jobs" / key
+        if not self.workdir.exists() and (old_dir / "transcript.json").exists():
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(old_dir / "transcript.json", self.workdir / "transcript.json")
         if not self.outdir:
             self.outdir = str(Path(self.audio[0]).parent / "Clean")
         self.show_working("Listening to the book…")

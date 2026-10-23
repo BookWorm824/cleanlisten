@@ -1264,73 +1264,87 @@ def find_chapters(asr):
     return out
 
 
-def plan_tracks(asr, parts, durations):
-    """Track list per part: chapter starts, plus extra splits so no track
-    runs over an hour. Books with no spoken chapter headings get split
-    every ~30 minutes at a natural pause."""
-    chapters = find_chapters(asr)
-    pauses = {}
-    for k in range(1, len(asr)):
-        if asr[k]["part"] == asr[k - 1]["part"]:
-            g = asr[k]["s"] - asr[k - 1]["e"]
-            if g > 0.6:
-                pauses.setdefault(asr[k]["part"], []).append((asr[k - 1]["e"] + g / 2, g))
-    tracks, section = [], 0
-    for pi in range(len(parts)):
-        dur = durations[pi]
-        starts = [dict(c) for c in chapters if c["part"] == pi]
-        no_chapters = not starts
-        if no_chapters:
-            starts = [{"part": pi, "t": 0.0, "title": None}]
-        elif starts[0]["t"] > 20:
-            starts = [{"part": pi, "t": 0.0, "title": "Opening"}] + starts
-        starts[0]["t"] = 0.0
-        target = 30 * 60 if no_chapters else TRACK_MAX  # no headings: ~30 min tracks
-        for x, st in enumerate(starts):
-            end = starts[x + 1]["t"] if x + 1 < len(starts) else dur
-            pieces = max(1, int(np.ceil((end - st["t"]) / target)))
-            cut_at = [st["t"]]
-            for q in range(1, pieces):
-                want = st["t"] + (end - st["t"]) * q / pieces
-                cands = [p for p in pauses.get(pi, []) if abs(p[0] - want) < 120]
-                cut_at.append(max(cands, key=lambda p: p[1] - abs(p[0] - want) / 60)[0]
-                              if cands else want)
-            for q, at in enumerate(cut_at, 1):
-                if no_chapters:
-                    section += 1
-                    title = f"Section {section}"
-                elif pieces > 1:
-                    title = f"{st['title']} ({q} of {pieces})"
-                else:
-                    title = st["title"]
-                tracks.append({"part": pi, "t": at, "title": title})
-    return tracks
-
-
 def _shift(t, cuts):
     """Where time t (original) lands after the cuts are removed."""
     removed = sum(min(e, t) - s for s, e in cuts if s < t)
     return max(0.0, t - removed)
 
 
-def split_tracks(clean_files, tracks, cuts_by_part, outdir, book_title, log=print):
-    """Cut the cleaned files into one file per track; group into Yoto-sized
-    card folders (5 hours / 500 MB / 100 tracks each)."""
-    out = Path(outdir)
+def plan_tracks(asr, clean_durs, cuts_by_part):
+    """Chapter tracks on ONE continuous timeline across all the cleaned files,
+    so a chapter can span several CD tracks / parts. Adds splits so no track
+    runs over an hour; books with no spoken chapter headings get ~30-minute
+    sections at natural pauses. Returns [{"g": start_seconds, "title"}]."""
+    offsets = [0.0]
+    for d in clean_durs:
+        offsets.append(offsets[-1] + d)
+    total = offsets[-1]
+
+    def g(part, t):
+        return offsets[part] + _shift(t, cuts_by_part.get(part, []))
+
+    starts = []
+    for c in find_chapters(asr):
+        at = g(c["part"], c["t"])
+        if starts and at - starts[-1]["g"] < 5:
+            continue
+        starts.append({"g": at, "title": c["title"]})
+    pauses = [(offsets[j], 2.0) for j in range(1, len(clean_durs))]  # file boundaries
+    for k in range(1, len(asr)):
+        if asr[k]["part"] == asr[k - 1]["part"]:
+            gap = asr[k]["s"] - asr[k - 1]["e"]
+            if gap > 0.6:
+                pauses.append((g(asr[k]["part"], asr[k - 1]["e"] + gap / 2), gap))
+    no_chapters = not starts
+    if no_chapters:
+        starts = [{"g": 0.0, "title": None}]
+    elif starts[0]["g"] > 20:
+        starts = [{"g": 0.0, "title": "Opening"}] + starts
+    starts[0]["g"] = 0.0
+    target = 30 * 60 if no_chapters else TRACK_MAX
+    tracks, section = [], 0
+    for x, st_ in enumerate(starts):
+        end = starts[x + 1]["g"] if x + 1 < len(starts) else total
+        pieces = max(1, int(np.ceil((end - st_["g"]) / target)))
+        cut_at = [st_["g"]]
+        for q in range(1, pieces):
+            want = st_["g"] + (end - st_["g"]) * q / pieces
+            cands = [p for p in pauses if abs(p[0] - want) < 120]
+            cut_at.append(max(cands, key=lambda p: p[1] - abs(p[0] - want) / 60)[0] if cands else want)
+        for q, at in enumerate(cut_at, 1):
+            if no_chapters:
+                section += 1
+                title = f"Section {section}"
+            elif pieces > 1:
+                title = f"{st_['title']} ({q} of {pieces})"
+            else:
+                title = st_["title"]
+            tracks.append({"g": at, "title": title})
+    return tracks
+
+
+def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print):
+    """Write one MP3 per track into a single numbered "Chapters" folder,
+    joining pieces of several cleaned files when a chapter spans them."""
+    import tempfile
+    offsets = [0.0]
+    for dd in clean_durs:
+        offsets.append(offsets[-1] + dd)
+    total = offsets[-1]
     made = []
-    n = 0
-    for pi, f in enumerate(clean_files):
-        dur = probe_duration(f)
-        pts = [t for t in tracks if t["part"] == pi]
-        for x, t in enumerate(pts):
-            s = _shift(t["t"], cuts_by_part.get(pi, []))
-            e = _shift(pts[x + 1]["t"], cuts_by_part.get(pi, [])) if x + 1 < len(pts) else dur
-            if e - s < 1:
-                continue
-            n += 1
-            made.append({"n": n, "title": t["title"], "src": f, "s": s, "e": e})
-    # everything goes in one "Chapters" folder, numbered in order
-    d = out / "Chapters"
+    for x, t in enumerate(tracks):
+        g0 = t["g"]
+        g1 = tracks[x + 1]["g"] if x + 1 < len(tracks) else total
+        if g1 - g0 < 1:
+            continue
+        segs = []
+        for j, f in enumerate(clean_files):
+            a, b = max(g0, offsets[j]), min(g1, offsets[j + 1])
+            if b - a > 0.05:
+                segs.append((f, a - offsets[j], b - offsets[j]))
+        if segs:
+            made.append({"title": t["title"], "segs": segs})
+    d = Path(outdir) / "Chapters"
     if d.exists():
         for old in d.glob("*.mp3"):  # clear files from an earlier run of this book
             try:
@@ -1339,20 +1353,39 @@ def split_tracks(clean_files, tracks, cuts_by_part, outdir, book_title, log=prin
                 pass
     d.mkdir(parents=True, exist_ok=True)
     width = max(2, len(str(len(made))))
+    all_mp3 = all(Path(f).suffix.lower() == ".mp3" for f in clean_files)
+    codec = ["-c", "copy"] if all_mp3 else ["-c:a", "libmp3lame", "-b:a", "128k"]
     for i, m in enumerate(made, 1):
         safe = re.sub(r'[\\/:*?"<>|]', "", m["title"])
         dst = d / f"{i:0{width}d} {safe}.mp3"  # Yoto takes MP3, so chapter files are always MP3
-        codec = (["-c", "copy"] if Path(m["src"]).suffix.lower() == ".mp3"
-                 else ["-c:a", "libmp3lame", "-b:a", "128k"])
-        r = run([_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{m['s']:.3f}", "-to", f"{m['e']:.3f}",
-                 "-i", str(m["src"]), "-map", "0:a", *codec, "-id3v2_version", "3",
-                 "-metadata", f"title={m['title']}", "-metadata", f"track={i}/{len(made)}",
-                 "-metadata", f"album={book_title}", str(dst)], capture_output=True, text=True)
+        tags = ["-id3v2_version", "3", "-metadata", f"title={m['title']}",
+                "-metadata", f"track={i}/{len(made)}", "-metadata", f"album={book_title}"]
+        if len(m["segs"]) == 1:
+            f, a, b = m["segs"][0]
+            cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{a:.3f}", "-to", f"{b:.3f}",
+                   "-i", str(f), "-map", "0:a", *codec, *tags, str(dst)]
+            r = run(cmd, capture_output=True, text=True)
+        else:
+            lines = ["ffconcat version 1.0"]
+            for f, a, b in m["segs"]:
+                fp = Path(f).resolve().as_posix().replace("'", "'\\''")
+                lines += [f"file '{fp}'", f"inpoint {a:.3f}", f"outpoint {b:.3f}"]
+            fd, lst = tempfile.mkstemp(suffix=".txt")
+            with os.fdopen(fd, "w", encoding="utf8") as fh:
+                fh.write("\n".join(lines) + "\n")
+            try:
+                cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst,
+                       "-map", "0:a", *codec, *tags, str(dst)]
+                r = run(cmd, capture_output=True, text=True)
+            finally:
+                try:
+                    os.unlink(lst)
+                except OSError:
+                    pass
         if r.returncode != 0:
             raise RuntimeError(f"Couldn't make chapter file {dst.name}:\n{r.stderr[-500:]}")
-    cards, folders = [made], [str(d)]
     log(f"Made {len(made)} chapter files")
-    return {"tracks": len(made), "cards": len(cards), "folders": folders,
+    return {"tracks": len(made), "cards": 1, "folders": [str(d)],
             "titles": [m["title"] for m in made]}
 
 
@@ -1381,6 +1414,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     total_cut_sec = 0.0
     report = []
     clean_files = []
+    multi_dir = len({str(Path(p).parent) for p in st["parts"]}) > 1
+    used_names = set()
     for pi, p in enumerate(st["parts"]):
         say(pi / len(st["parts"]), f"Saving part {pi + 1} of {len(st['parts'])}…")
         mr = sorted((m["s"], m["e"]) for m in st["mutes"] if m["part"] == pi)
@@ -1399,9 +1434,17 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                  capture_output=True, text=True).stdout.strip()
         br = br if br.isdigit() else "96000"
         if ext in (".m4b", ".m4a", ".mp4", ".aac"):
-            codec, dst = ["-c:a", "aac", "-b:a", br], out / src.name
+            codec, out_ext = ["-c:a", "aac", "-b:a", br], ext
         else:
-            codec, dst = ["-c:a", "libmp3lame", "-b:a", br], out / (src.stem + ".mp3")
+            codec, out_ext = ["-c:a", "libmp3lame", "-b:a", br], ".mp3"
+        # books split into Disc 1, Disc 2... folders: keep the disc in the name so
+        # files sort in order and identically named tracks don't overwrite each other
+        stem = f"{src.parent.name} - {src.stem}" if multi_dir else src.stem
+        name, k = stem + out_ext, 2
+        while name.lower() in used_names:
+            name, k = f"{stem} ({k}){out_ext}", k + 1
+        used_names.add(name.lower())
+        dst = out / name
         # ffmpeg 7+ reads filter files with "-/filter:a"; older builds use
         # "-filter_script:a". Try both, and fall back to dropping cover art /
         # chapters if the output container objects to them.
@@ -1435,14 +1478,18 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         say(0.95, "Splitting into chapters…")
         tr = json.loads((work / "transcript.json").read_text())
         asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(st["parts"]) for w in tr[p]]
-        durs = [probe_duration(p) for p in st["parts"]]
-        tracks = plan_tracks(asr, st["parts"], durs)
         cuts_by_part = {}
         for c in cuts:
             cuts_by_part.setdefault(c["part"], []).append((c["s"], c["e"]))
-        title = re.sub(r"[\s_-]*(part|pt|disc|cd)?[\s_-]*\d+$", "", Path(st["parts"][0]).stem,
-                       flags=re.I) or Path(st["parts"][0]).stem
-        chap = split_tracks(clean_files, tracks, cuts_by_part, out, title, log)
+        clean_durs = [probe_duration(f) for f in clean_files]
+        tracks = plan_tracks(asr, clean_durs, cuts_by_part)
+        first = Path(st["parts"][0])
+        if len({str(Path(p).parent) for p in st["parts"]}) > 1:
+            title = first.parent.parent.name  # the book folder that holds Disc 1, Disc 2...
+        else:
+            title = re.sub(r"[\s_-]*(part|pt|disc|cd)?[\s_-]*\d+$", "", first.stem,
+                           flags=re.I) or first.parent.name or first.stem
+        chap = split_tracks(clean_files, clean_durs, tracks, out, title, log)
         report.append("\nChapter files\n-------------")
         report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
     head = ["CleanListen report", "==================",
