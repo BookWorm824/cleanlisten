@@ -192,18 +192,26 @@ class App(tk.Tk):
                  ("mild", "Mild words  (damn, hell, crap)", True),
                  ("deity", "God's name used as a swear", True),
                  ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
+                 ("crude", "Crude humor  (toilet & gross-out jokes)", True),
                  ("sexual", "Sexual words  (sex, sexy, horny\u2026)", True),
                  ("refs", "Sexual references  (cut sentences about sex)", True),
                  ("sex", "Explicit sex scenes  (cut whole scenes)", True),
                  ("gore", "Gory descriptions  (cut graphic passages)", True),
                  ("religion", "Religious content  (beliefs, preaching, anger at God)", True),
-                 ("relationships", "Same-sex & non-traditional relationships  (throuples, open marriages\u2026)", True)]
+                 ("relationships", "Same-sex & non-traditional relationships", True)]
         for n, (key, label, on) in enumerate(items):
             v = tk.BooleanVar(value=on)
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(
-                row=n if n < 4 else n - 4, column=0 if n < 4 else 1, sticky="w",
+                row=n if n < 5 else n - 5, column=0 if n < 5 else 1, sticky="w",
                 padx=(0, 26), pady=2)
+        self.ai_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
+                        variable=self.ai_var).pack(anchor="w", pady=(10, 0))
+        tk.Label(b3, text="Catches what the word lists missed and unticks anything flagged by "
+                 "mistake. Runs on your PC; the first time it downloads about 4 GB (shared with "
+                 "CleanView). Adds time to each book.", bg=CARD, fg=MUTED, font=(FONT, 9),
+                 wraplength=600, justify="left").pack(anchor="w", padx=(22, 0))
 
         b4 = self._card(body, "4", "Save to")
         row = tk.Frame(b4, bg=CARD)
@@ -285,9 +293,11 @@ class App(tk.Tk):
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
         self.find_religion = self.opts["religion"].get()
         self.find_relationships = self.opts["relationships"].get()
+        self.find_crude = self.opts["crude"].get()
+        self.use_ai = self.ai_var.get()
         self.split_chapters = self.split_var.get()
         if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
-                               or self.find_relationships):
+                               or self.find_relationships or self.find_crude):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         key = hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in self.audio)
@@ -323,7 +333,8 @@ class App(tk.Tk):
             st = engine.analyze(
                 self.audio, self.workdir, ebook=self.ebook, groups=groups, find_sex=find_sex,
                 find_refs=self.find_refs, find_gore=self.find_gore, find_religion=self.find_religion,
-                find_relationships=self.find_relationships,
+                find_relationships=self.find_relationships, find_crude=self.find_crude,
+                use_ai=self.use_ai,
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -376,8 +387,10 @@ class App(tk.Tk):
         else:
             sub = "Everything ticked below will be removed. Untick anything you want to keep."
         p = self._new_page("Review before saving", sub)
-        if a.get("ebook_note"):
-            tk.Label(p, text=a["ebook_note"], bg=BG, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(0, 6))
+        for note in (a.get("ai_note"), a.get("ebook_note")):
+            if note:
+                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=720,
+                         justify="left").pack(anchor="w", pady=(0, 4))
         ttk.Button(self.footer, text="Save clean audiobook", style="Accent.TButton",
                    command=self._save_from_review).pack(side="right")
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
@@ -405,7 +418,8 @@ class App(tk.Tk):
         self.scene_vars = []
         kinds = [("sex", "Explicit scenes to cut"), ("ref", "Sexual references to cut"),
                  ("gore", "Gory descriptions to cut"), ("religion", "Religious content to cut"),
-                 ("relationship", "Same-sex & non-traditional relationships to cut")]
+                 ("relationship", "Same-sex & non-traditional relationships to cut"),
+                 ("crude", "Crude humor to cut")]
         for kind, heading in kinds:
             items = [sc for sc in scenes if sc.get("kind", "sex") == kind]
             if not items:
@@ -421,9 +435,16 @@ class App(tk.Tk):
                 group_vars.append((v, sc))
                 secs = sc["e"] - sc["s"]
                 length = f"{secs / 60:.1f} min" if secs >= 60 else f"{secs:.0f} sec"
-                ttk.Checkbutton(card, text=f"Cut this   \u00b7   {where(sc)}   \u00b7   {length}",
-                                variable=v, command=self._update_summary).pack(anchor="w")
-                txt = tk.Text(card, wrap="word", height=min(7, 2 + len(sc["text"]) // 95),
+                top = tk.Frame(card, bg=CARD)
+                top.pack(fill="x")
+                ttk.Checkbutton(top, text=f"Cut this   \u00b7   {where(sc)}   \u00b7   {length}",
+                                variable=v, command=self._update_summary).pack(side="left")
+                if sc.get("ai_note"):
+                    good = sc["ai_note"] == "AI thinks this one is fine"
+                    tk.Label(top, text=sc["ai_note"], bg="#FFF4D6" if good else "#E3EFEC",
+                             fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 9),
+                             padx=6).pack(side="right")
+                txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(sc["text"]) // 95),
                               font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
                               padx=8, pady=6, borderwidth=0)
                 txt.insert("1.0", sc["text"])
@@ -440,23 +461,32 @@ class App(tk.Tk):
                 row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
                 row.pack(fill="x")
                 rbg = row.cget("bg")
-                v = tk.BooleanVar(value=True)
+                v = tk.BooleanVar(value=m.get("on", True))
                 self.mute_vars.append((v, m))
                 ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
                 tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=16,
                          anchor="w").pack(side="left")
-                line = tk.Frame(row, bg=rbg)
-                line.pack(side="left", fill="x", expand=True)
-                if m.get("ctx"):
-                    tk.Label(line, text="\u2026" + m["ctx"], bg=rbg, fg=MUTED,
-                             font=(FONT, 10)).pack(side="left")
-                tk.Label(line, text=f" {m['word']} ", bg="#F3E3DF", fg="#8A3B2E",
-                         font=(FONT, 10, "bold")).pack(side="left", padx=2)
-                if m.get("ctx_after"):
-                    tk.Label(line, text=m["ctx_after"] + "\u2026", bg=rbg, fg=MUTED,
-                             font=(FONT, 10)).pack(side="left")
-                if m.get("src", "audio") != "audio":
+                if m.get("note"):
+                    good = m["note"].startswith("AI thinks")
+                    tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
+                             fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 8),
+                             padx=4).pack(side="right")
+                elif m.get("src", "audio") != "audio":
                     tk.Label(row, text="from ebook", bg=rbg, fg=ACCENT, font=(FONT, 8)).pack(side="right")
+                # the line of text wraps to fit the window, with the muted word highlighted
+                line = tk.Text(row, wrap="word", width=20, height=1, font=(FONT, 10), bg=rbg,
+                               fg=MUTED, relief="flat", borderwidth=0, highlightthickness=0,
+                               cursor="arrow")
+                line.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E",
+                                   font=(FONT, 10, "bold"))
+                if m.get("ctx"):
+                    line.insert("end", "\u2026" + m["ctx"] + " ")
+                line.insert("end", f" {m['word']} ", "w")
+                if m.get("ctx_after"):
+                    line.insert("end", " " + m["ctx_after"] + "\u2026")
+                n_chars = len(m.get("ctx", "")) + len(m["word"]) + len(m.get("ctx_after", ""))
+                line.configure(state="disabled", height=1 if n_chars < 70 else 2)
+                line.pack(side="left", fill="x", expand=True)
         self._update_summary()
 
     def _update_summary(self):

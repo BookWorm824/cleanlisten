@@ -635,9 +635,231 @@ def span_times(asr, i, j):
 # ---------------------------------------------------------------------------
 # Analyze
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# AI helper (optional). Uses the same local AI as CleanView (Ollama running
+# gemma3:4b on this PC, nothing uploaded): reads the book for what the word
+# lists miss, and gives a second opinion on what they flagged.
+# ---------------------------------------------------------------------------
+AI_TYPES = {
+    "ref": "a sexual reference, sexual joke or innuendo, or talk about sex (ordinary romance, "
+           "affection and kissing are NOT this)",
+    "sex": "part of an explicit sex scene",
+    "gore": "a graphic, gory description of injuries, wounds, dead bodies or violence (simply "
+            "saying someone died, was shot or was found dead is NOT this)",
+    "religion": "someone explaining, preaching or debating religious beliefs, or someone being "
+                "angry with, blaming, hating or denying God, or losing their faith (brief mentions "
+                "like praying, saying grace, thanking God, believing in God or going to church are "
+                "NOT this)",
+    "relationship": "a same-sex couple, romance or relationship, or a non-traditional relationship "
+                    "such as a throuple, polyamory, an open marriage, swingers or polygamy",
+    "crude": "crude or gross-out humor: jokes about farting, pooping, peeing, burping, boogers or "
+             "other bodily functions, toilet humor, or vulgar jokes and pranks (a character simply "
+             "feeling sick or using the bathroom is NOT this)",
+}
+
+# Crude humor: words that are almost always toilet / gross-out humor in a story.
+CRUDE_WORDS = _c([
+    r"farts?", r"farted", r"farting", r"farty", r"poop(s|ed|ing|y)?", r"poo", r"poos", r"turds?",
+    r"boogers?", r"burp(s|ed|ing)?", r"belch(es|ed|ing)?", r"diarrh(o)?ea", r"wedgies?",
+    r"tooted", r"tooting", r"butthole", r"buttcheeks?", r"mooned", r"mooning", r"peed",
+    r"peeing", r"pee", r"wee-?wee", r"number-?two", r"skidmarks?", r"snot", r"dookie",
+])
+CRUDE_PHRASES = [("pull", "my", "finger"), ("butt", "crack"), ("skid", "marks"),
+                 ("dropped", "a", "deuce"), ("passed", "gas"), ("passing", "gas"), ("break", "wind"),
+                 ("broke", "wind"), ("whoopee", "cushion"), ("number", "two")]
+
+
+def crude_hit(words):
+    if any(any(p.match(w) for p in CRUDE_WORDS) for w in words):
+        return True
+    return any(tuple(words[i:i + len(ph)]) == ph for ph in CRUDE_PHRASES for i in range(len(words)))
+
+
+def _ai_module():
+    try:
+        import cleanview_ai as ai  # ships alongside CleanListen (shared with CleanView)
+        return ai
+    except Exception as ex:
+        raise RuntimeError("The AI helper files are missing. Close and reopen CleanListen so it "
+                           "can update, then try again.") from ex
+
+
+LANGUAGE_DEFS = {
+    "strong": "the f-word or c-word in any form",
+    "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***",
+    "mild": "a mild swear word such as damn, hell used as a curse, crap, or bloody used as a curse",
+    "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
+             "talk about God; 'thank God' is fine)",
+    "minced": "a soft substitute swear such as gosh, heck, freaking or darn",
+    "sexual": "a sexual word such as sex, sexy or horny, or a crude word for body parts",
+}
+
+
+def _masked_text(words):
+    return " ".join(mask(t) if find_language([norm(t)], ALL_CATS) else t for t in words)
+
+
+def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cancel=None,
+              chunk=40, overlap=6, mutes=None, cats=(), parts=None):
+    """Checks every filter both ways: adds what the word lists missed (passages
+    and single words) and unticks what they flagged wrongly, with a note."""
+    ai = _ai_module()
+    say = progress or (lambda f, m: None)
+    ai.ensure_ai(lambda f, m: say(f, m))
+    kinds = [k for k in kinds if k in AI_TYPES]
+    lang = [c for c in cats if c in LANGUAGE_DEFS]
+    mutes = mutes if mutes is not None else []
+    if not kinds and not lang:
+        return scenes
+    # sentences with their word ranges
+    sents, k = [], 0
+    while k < len(asr):
+        a_, b_ = to_sentences(k, k)
+        sents.append((a_, b_, " ".join(w["t"] for w in asr[a_:b_ + 1])))
+        k = b_ + 1
+    types = list(kinds) + (["language"] if lang else [])
+    defs = "\n".join(f'- "{t}": {AI_TYPES[t]}' for t in kinds)
+    if lang:
+        defs += ('\n- "language": a word that is ' + "; or ".join(LANGUAGE_DEFS[c] for c in lang)
+                 + ' (put the exact word in "word")')
+    schema = {"type": "object", "properties": {"flags": {"type": "array", "items": {
+        "type": "object", "properties": {"line": {"type": "integer"},
+                                         "type": {"type": "string", "enum": types},
+                                         "word": {"type": "string"}},
+        "required": ["line", "type"]}}}, "required": ["flags"]}
+    found, missed_words = {}, []
+    starts = list(range(0, len(sents), chunk - overlap))
+    for n, a in enumerate(starts):
+        if cancel and cancel():
+            raise KeyboardInterrupt
+        say(n / max(len(starts), 1), f"AI is reading the book \u00b7 {100 * n // max(len(starts), 1)}%")
+        part = sents[a:a + chunk]
+        listing = "\n".join(f"{a + i}: {t}" for i, (_, _, t) in enumerate(part))
+        prompt = ("You help a family decide which sentences of an audiobook to cut. Here are "
+                  "numbered sentences in order:\n\n" + listing + "\n\nList every sentence that "
+                  "contains any of these:\n" + defs + "\n\nOnly flag a sentence when it clearly "
+                  "fits. Answer in JSON like {\"flags\": [{\"line\": 12, \"type\": \"gore\"}]}; "
+                  "use an empty list if nothing fits.")
+        try:
+            res = ai.chat(prompt, schema=schema, timeout=300)
+        except Exception:
+            continue
+        for f in res.get("flags", []):
+            try:
+                i = int(f.get("line"))
+            except (TypeError, ValueError):
+                continue
+            if not (a <= i < a + len(part)):
+                continue
+            if f.get("type") in kinds:
+                found.setdefault(f["type"], set()).add(i)
+            elif f.get("type") == "language" and f.get("word"):
+                missed_words.append((i, f["word"]))
+        if a + chunk >= len(sents):
+            break
+    # second opinion on keyword-flagged passages
+    checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai")]
+    yes_no = {"type": "object", "properties": {"fits": {"type": "boolean"}}, "required": ["fits"]}
+    for n, sc in enumerate(checks):
+        if cancel and cancel():
+            raise KeyboardInterrupt
+        say(n / max(len(checks), 1), "AI is double-checking what was flagged\u2026")
+        try:
+            res = ai.chat("Here is a passage from an audiobook:\n\n" + sc["text"][:4000] +
+                          "\n\nDoes it contain " + AI_TYPES[sc["kind"]] +
+                          '? Answer in JSON: {"fits": true} or {"fits": false}.', schema=yes_no,
+                          timeout=120)
+            if res.get("fits") is False:
+                sc["cut"] = False
+                sc["ai_note"] = "AI thinks this one is fine"
+            elif res.get("fits") is True:
+                sc["ai_note"] = "AI agrees"
+        except Exception:
+            pass
+    # second opinion on muted words: is each one really used as a swear?
+    checkable = [m for m in mutes if m.get("i") is not None]
+    fine_schema = {"type": "object", "properties": {"fine": {"type": "array", "items": {
+        "type": "integer"}}}, "required": ["fine"]}
+    for b0 in range(0, len(checkable), 30):
+        if cancel and cancel():
+            raise KeyboardInterrupt
+        say(b0 / max(len(checkable), 1), "AI is double-checking the muted words…")
+        batch = checkable[b0:b0 + 30]
+        rows = []
+        for q, m in enumerate(batch):
+            i, j = m["i"], m["j"]
+            before = " ".join(w["t"] for w in asr[max(0, i - 10):i])
+            after = " ".join(w["t"] for w in asr[j:j + 8])
+            rows.append(f"{q}: ...{before} [[{' '.join(w['t'] for w in asr[i:j])}]] {after}...")
+        prompt = ("Each numbered line below has one word or phrase in [[double brackets]] that a "
+                  "family's filter plans to mute from an audiobook:\n\n" + "\n".join(rows) +
+                  "\n\nList the numbers where the bracketed word is NOT used as swearing, cursing, "
+                  "crude language, a sexual word or God's name in vain. Examples of NOT: 'hell' as a "
+                  "place in a sermon, 'bloody' meaning covered in blood, 'ass' meaning a donkey, "
+                  "'Jesus' in a sincere prayer. Answer in JSON like {\"fine\": [3, 7]}; use an empty "
+                  "list if all of them are swearing.")
+        try:
+            res = ai.chat(prompt, schema=fine_schema, timeout=180)
+            for q in res.get("fine", []):
+                if isinstance(q, int) and 0 <= q < len(batch):
+                    batch[q]["on"] = False
+                    batch[q]["note"] = "AI thinks this isn't swearing"
+        except Exception:
+            pass
+    # words the lists missed (often ones the speech recognition misheard)
+    for li, word in missed_words:
+        target = [norm(w) for w in word.split() if norm(w)]
+        if not target:
+            continue
+        a_, b_, _ = sents[li]
+        span = [norm(asr[x]["t"]) for x in range(a_, b_ + 1)]
+        hit = next((x for x in range(len(span)) if span[x:x + len(target)] == target), None)
+        if hit is None:
+            continue
+        i, j = a_ + hit, a_ + hit + len(target)
+        part = asr[i]["part"]
+        if any(m["part"] == part and not (asr[j - 1]["e"] < m["s"] or asr[i]["s"] > m["e"])
+               for m in mutes):
+            continue
+        s_, e_ = asr[i]["s"], asr[j - 1]["e"]
+        if parts:
+            try:
+                s_, e_ = snap_edges(parts[part], s_, e_)
+            except Exception:
+                pass
+        mutes.append({"part": part, "s": s_, "e": e_, "cat": "ai", "src": "ai", "i": i, "j": j,
+                      "word": " ".join(mask(asr[x]["t"]) for x in range(i, j)),
+                      "ctx": _masked_text([w["t"] for w in asr[max(0, i - 6):i]]),
+                      "ctx_after": _masked_text([w["t"] for w in asr[j:j + 5]]),
+                      "note": "found by AI"})
+    mutes.sort(key=lambda m: (m["part"], m["s"]))
+    # turn AI-flagged sentences into passages (adjacent sentences merge)
+    for kind, idxs in found.items():
+        runs = []
+        for i in sorted(idxs):
+            if runs and i <= runs[-1][-1] + 1:
+                runs[-1].append(i)
+            else:
+                runs.append([i])
+        for run_ in runs:
+            a_, b_ = sents[run_[0]][0], sents[run_[-1]][1]
+            if asr[a_]["part"] != asr[b_]["part"]:
+                continue
+            s_, e_ = span_times(asr, a_, b_)
+            part = asr[a_]["part"]
+            if any(x["part"] == part and not (e_ < x["s"] or s_ > x["e"]) for x in scenes):
+                continue  # already flagged by the word lists
+            scenes.append({"kind": kind, "part": part, "s": s_, "e": e_, "ai": True,
+                           "ai_note": "found by AI",
+                           "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+    say(1.0, "AI check done")
+    return scenes
+
+
 def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "sexual"),
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
             find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
+            find_crude=False, use_ai=False,
             threads=None, cancel=None):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
@@ -681,7 +903,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         b, a = clean_context(asr_t, asr_n, i, j)
         mutes.append({"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
                       "src": "audio", "word": " ".join(mask(asr_t[k]) for k in range(i, j)),
-                      "ctx": b, "ctx_after": a})
+                      "ctx": b, "ctx_after": a, "i": i, "j": j})
 
     paras = mapping = None
     ebook_note = ""
@@ -918,12 +1140,53 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 continue
             scenes.append({"kind": "relationship", "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+    if find_crude:
+        say(0.99, "Looking for crude humor…")
+        cr, k = [], 0
+        while k < len(asr):
+            a_, b_ = to_sentences(k, k)
+            if crude_hit(asr_n[a_:b_ + 1]):
+                if cr and cr[-1][0] == asr[a_]["part"] and a_ <= cr[-1][2] + 1:
+                    cr[-1][2] = b_
+                else:
+                    cr.append([asr[a_]["part"], a_, b_])
+            k = b_ + 1
+        for part, a_, b_ in cr:
+            s_, e_ = span_times(asr, a_, b_)
+            if any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in scenes):
+                continue
+            scenes.append({"kind": "crude", "part": part, "s": s_, "e": e_,
+                           "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+    ai_note = ""
+    if use_ai:
+        kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
+                                 ("religion", find_religion), ("relationship", find_relationships),
+                                 ("crude", find_crude)) if on]
+        try:
+            for sc in scenes:
+                sc.setdefault("cut", True)
+            ai_assist(asr, scenes, kinds, to_sentences, span_times,
+                      progress=lambda f, m: say(0.99, m), cancel=cancel,
+                      mutes=mutes, cats=cats, parts=parts)
+            n_ai = (sum(1 for x in scenes if x.get("ai")) +
+                    sum(1 for m in mutes if m.get("src") == "ai"))
+            n_off = (sum(1 for x in scenes if x.get("ai_note") == "AI thinks this one is fine") +
+                     sum(1 for m in mutes if m.get("on") is False))
+            ai_note = (f"AI helper caught {n_ai} more thing(s) the word lists missed and unticked "
+                       f"{n_off} it thinks were flagged wrongly.")
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            ai_note = f"AI helper couldn't run ({ex}); results are from the word lists only."
+        log(ai_note)
     scenes.sort(key=lambda x: (x["part"], x["s"]))
     for n, sc in enumerate(scenes, 1):
-        sc["id"], sc["cut"] = n, True
+        sc["id"] = n
+        sc.setdefault("cut", True)
 
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
-          "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr)}
+          "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
+          "ai_note": ai_note}
     (work / "analysis.json").write_text(json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st
@@ -1088,6 +1351,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         cuts = [c for c in st["scenes"] if c.get("cut")]
     if mutes is not None:
         st["mutes"] = sorted(mutes, key=lambda m: (m["part"], m["s"]))
+    else:  # no review screen: leave out what the AI unticked
+        st["mutes"] = [m for m in st["mutes"] if m.get("on", True)]
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     say = progress or (lambda f, m: None)
@@ -1133,13 +1398,14 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         clean_files.append(str(dst))
         report.append(f"\n{src.name}\n" + "-" * len(src.name))
         for m in (m for m in st["mutes"] if m["part"] == pi):
-            via = "" if m["src"] == "audio" else "   (caught by ebook check)"
+            via = {"audio": "", "ai": "   (found by AI)"}.get(m["src"], "   (caught by ebook check)")
             report.append(f"  {fmt_t(m['s'])}  muted  {m['word']}{via}")
         for c in (c for c in cuts if c["part"] == pi):
             total_cut_sec += c["e"] - c["s"]
             label = {"sex": "explicit scene", "gore": "gory description",
                      "ref": "sexual reference", "religion": "religious content",
-                     "relationship": "relationship content"}.get(c.get("kind"), "scene")
+                     "relationship": "relationship content",
+                     "crude": "crude humor"}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
                           f"{c.get('note') or label}")
     chap = None
