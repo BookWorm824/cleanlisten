@@ -466,6 +466,11 @@ class App(tk.Tk):
                 ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
                 tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=16,
                          anchor="w").pack(side="left")
+                # "Show" reveals the real word and its sentence; hidden (starred) by default
+                show = tk.Label(row, text="Show", bg=rbg, fg=ACCENT, font=(FONT, 9, "underline"),
+                                cursor="hand2", padx=6)
+                if m.get("word_raw"):
+                    show.pack(side="right")
                 if m.get("note"):
                     good = m["note"].startswith("AI thinks")
                     tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
@@ -479,13 +484,28 @@ class App(tk.Tk):
                                cursor="arrow")
                 line.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E",
                                    font=(FONT, 10, "bold"))
-                if m.get("ctx"):
-                    line.insert("end", "\u2026" + m["ctx"] + " ")
-                line.insert("end", f" {m['word']} ", "w")
-                if m.get("ctx_after"):
-                    line.insert("end", " " + m["ctx_after"] + "\u2026")
-                n_chars = len(m.get("ctx", "")) + len(m["word"]) + len(m.get("ctx_after", ""))
-                line.configure(state="disabled", height=1 if n_chars < 70 else 2)
+
+                def fill(t=line, m=m, revealed=False):
+                    before = m.get("ctx_raw" if revealed else "ctx", "")
+                    word = m.get("word_raw" if revealed else "word", "")
+                    after = m.get("ctx_after_raw" if revealed else "ctx_after", "")
+                    t.configure(state="normal")
+                    t.delete("1.0", "end")
+                    if before:
+                        t.insert("end", "\u2026" + before + " ")
+                    t.insert("end", f" {word} ", "w")
+                    if after:
+                        t.insert("end", " " + after + "\u2026")
+                    n_chars = len(before) + len(word) + len(after)
+                    t.configure(state="disabled", height=1 if n_chars < 70 else 2)
+
+                def toggle(_e=None, t=line, m=m, lbl=show, state={"on": False}):
+                    state["on"] = not state["on"]
+                    fill(t, m, state["on"])
+                    lbl.configure(text="Hide" if state["on"] else "Show")
+
+                show.bind("<Button-1>", toggle)
+                fill()
                 line.pack(side="left", fill="x", expand=True)
         self._update_summary()
 

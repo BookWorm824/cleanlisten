@@ -366,6 +366,13 @@ def mask(word):
 ALL_CATS = ["strong", "moderate", "mild", "deity", "minced", "sexual"]
 
 
+def raw_fields(raw, i, j, before=6, after=5):
+    """The unmasked word and its surroundings, for the review screen's Show link."""
+    return {"word_raw": " ".join(raw[i:j]),
+            "ctx_raw": " ".join(raw[max(0, i - before):i]),
+            "ctx_after_raw": " ".join(raw[j:j + after])}
+
+
 def clean_context(raw, normed, i, j, before=6, after=5):
     """Words around a hit, with any bad words in the context starred out."""
     lo, hi = max(0, i - before), min(len(raw), j + after)
@@ -831,6 +838,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                       "word": " ".join(mask(asr[x]["t"]) for x in range(i, j)),
                       "ctx": _masked_text([w["t"] for w in asr[max(0, i - 6):i]]),
                       "ctx_after": _masked_text([w["t"] for w in asr[j:j + 5]]),
+                      **raw_fields([w["t"] for w in asr[max(0, i - 6):j + 5]],
+                                   min(i, 6), min(i, 6) + (j - i)),
                       "note": "found by AI"})
     mutes.sort(key=lambda m: (m["part"], m["s"]))
     # turn AI-flagged sentences into passages (adjacent sentences merge)
@@ -903,7 +912,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         b, a = clean_context(asr_t, asr_n, i, j)
         mutes.append({"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
                       "src": "audio", "word": " ".join(mask(asr_t[k]) for k in range(i, j)),
-                      "ctx": b, "ctx_after": a, "i": i, "j": j})
+                      "ctx": b, "ctx_after": a, "i": i, "j": j, **raw_fields(asr_t, i, j)})
 
     paras = mapping = None
     ebook_note = ""
@@ -948,7 +957,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 mutes.append({"part": part, "s": round(s, 3), "e": round(e, 3), "cat": cat,
                               "src": "ebook" if exact else "ebook-estimated",
                               "word": " ".join(mask(w) for w in eb_words[i:j]),
-                              "ctx": b, "ctx_after": a})
+                              "ctx": b, "ctx_after": a, **raw_fields(eb_words, i, j)})
                 added += 1
             ebook_note = f"Ebook matched {pct:.0f}% of the audio and caught {added} extra word(s)."
             log(ebook_note)
