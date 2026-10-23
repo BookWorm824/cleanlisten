@@ -149,6 +149,16 @@ def _c(pats):
 CATS = {"strong": _c(STRONG), "moderate": _c(MODERATE), "mild": _c(MILD),
         "minced": _c(MINCED), "deity": _c(DEITY_WORDS), "sexual": _c(SEXUAL_WORDS)}
 PHRASES["deity"] = DEITY_PHRASES
+# Orientation words, muted one at a time when CleanListen's relationships filter
+# is on. Kept OUT of CATS on purpose: CleanView masks every CATS category in its
+# subtitles, and this list is CleanListen's choice only.
+ORIENTATION_WORDS = [
+    r"gays?", r"lesbians?", r"homosexual(s|ity)?", r"bisexual(s|ity)?", r"queers?",
+    r"homos?", r"pansexual(s)?", r"lgbt", r"lgbtq", r"lgbtqia", r"lgbtq\+?", r"throuples?",
+    r"polyamor.*", r"dykes?", r"fags?", r"faggots?",
+]
+EXTRA_CATS = {"orientation": _c(ORIENTATION_WORDS)}
+GROUPS["orientation"] = ["orientation"]
 SEX_C = {w: _c(p) for w, p in SEX_TERMS.items()}
 
 
@@ -170,7 +180,7 @@ def find_language(words, cats):
             continue
         w = words[i]
         for cat in cats:
-            if any(p.match(w) for p in CATS[cat]):
+            if any(p.match(w) for p in (CATS.get(cat) or EXTRA_CATS.get(cat) or [])):
                 if w == "bloody" and (words[i + 1] if i + 1 < n else "") not in BLOODY_SWEAR_NEXT:
                     break
                 hits.append((i, i + 1, cat))
@@ -363,7 +373,7 @@ def mask(word):
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
 
 
-ALL_CATS = ["strong", "moderate", "mild", "deity", "minced", "sexual"]
+ALL_CATS = ["strong", "moderate", "mild", "deity", "minced", "sexual", "orientation"]
 
 
 def raw_fields(raw, i, j, before=6, after=5):
@@ -699,6 +709,8 @@ LANGUAGE_DEFS = {
              "talk about God; 'thank God' is fine)",
     "minced": "a soft substitute swear such as gosh, heck, freaking or darn",
     "sexual": "a sexual word such as sex, sexy or horny, or a crude word for body parts",
+    "orientation": "a word about sexual orientation such as gay, lesbian, homosexual or bisexual "
+                   "('gay' meaning cheerful or bright is NOT this)",
 }
 
 
@@ -801,10 +813,11 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         prompt = ("Each numbered line below has one word or phrase in [[double brackets]] that a "
                   "family's filter plans to mute from an audiobook:\n\n" + "\n".join(rows) +
                   "\n\nList the numbers where the bracketed word is NOT used as swearing, cursing, "
-                  "crude language, a sexual word or God's name in vain. Examples of NOT: 'hell' as a "
-                  "place in a sermon, 'bloody' meaning covered in blood, 'ass' meaning a donkey, "
-                  "'Jesus' in a sincere prayer. Answer in JSON like {\"fine\": [3, 7]}; use an empty "
-                  "list if all of them are swearing.")
+                  "crude language, a sexual word, a word about sexual orientation, or God's name in "
+                  "vain. Examples of NOT: 'hell' as a place in a sermon, 'bloody' meaning covered in "
+                  "blood, 'ass' meaning a donkey, 'Jesus' in a sincere prayer, 'gay' meaning cheerful "
+                  "or bright. Answer in JSON like {\"fine\": [3, 7]}; use an empty list if all of "
+                  "them fit.")
         try:
             res = ai.chat(prompt, schema=fine_schema, timeout=180)
             for q in res.get("fine", []):

@@ -293,6 +293,8 @@ class App(tk.Tk):
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
         self.find_religion = self.opts["religion"].get()
         self.find_relationships = self.opts["relationships"].get()
+        if self.find_relationships:
+            groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
         self.find_crude = self.opts["crude"].get()
         self.use_ai = self.ai_var.get()
         self.split_chapters = self.split_var.get()
