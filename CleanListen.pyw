@@ -364,6 +364,9 @@ class App(tk.Tk):
             c.pack(fill="x", padx=1, pady=1)
             ttk.Button(c, text="Re-check", style="Plain.TButton",
                        command=lambda b=b: self._load_past(b)).pack(side="right")
+            if (b["dir"] / "analysis.json").exists():
+                ttk.Button(c, text="Export last results", style="Plain.TButton",
+                           command=lambda b=b: self._export_past(b)).pack(side="right", padx=(0, 8))
             tk.Label(c, text=b["title"], bg=CARD, fg=INK, font=(FONT, 11, "bold"),
                      wraplength=520, justify="left").pack(anchor="w")
             n = len(b["audio"])
@@ -371,6 +374,14 @@ class App(tk.Tk):
                     f"{_t.strftime('%b %d, %I:%M %p', _t.localtime(b['when']))}"
                     + (" · with ebook" if b["ebook"] else ""))
             tk.Label(c, text=meta, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w")
+
+    def _export_past(self, b):
+        try:
+            a = json.loads((b["dir"] / "analysis.json").read_text(encoding="utf8"))
+        except Exception as ex:
+            messagebox.showerror("CleanListen", f"Couldn't read the saved results ({ex}).")
+            return
+        self.export_findings(analysis=a, audio=b["audio"], outdir=b.get("outdir"))
 
     def _load_past(self, b):
         self.audio = list(b["audio"])
@@ -556,12 +567,16 @@ class App(tk.Tk):
             if note:
                 tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=720,
                          justify="left").pack(anchor="w", pady=(0, 4))
-        ttk.Button(self.footer, text="Save clean audiobook", style="Accent.TButton",
-                   command=self._save_from_review).pack(side="right")
-        ttk.Button(self.footer, text="Re-check", style="Plain.TButton",
-                   command=self.recheck_same).pack(side="right", padx=(0, 10))
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
-        self.summary_lbl.pack(side="left")
+        self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
+        btns = tk.Frame(self.footer, bg=BG)
+        btns.pack(side="top", fill="x")
+        ttk.Button(btns, text="Save clean audiobook", style="Accent.TButton",
+                   command=self._save_from_review).pack(side="right")
+        ttk.Button(btns, text="Re-check", style="Plain.TButton",
+                   command=self.recheck_same).pack(side="right", padx=(0, 10))
+        ttk.Button(btns, text="Export for Claude", style="Plain.TButton",
+                   command=self.export_findings).pack(side="left")
         body = self._scroll_area(p)
         multi = len(a["parts"]) > 1
         where = lambda x: (f"Part {x['part'] + 1} \u00b7 " if multi else "") + engine.fmt_t(x["s"])
@@ -682,6 +697,87 @@ class App(tk.Tk):
         nm = sum(v.get() for v, _ in getattr(self, "mute_vars", []))
         self.summary_lbl.config(text=f"{nm} word{'s' if nm != 1 else ''} muted \u00b7 "
                                      f"{ns} passage{'s' if ns != 1 else ''} cut")
+
+    def export_findings(self, analysis=None, audio=None, outdir=None):
+        """Write everything on the review screen (real words, not starred out,
+        with what's ticked and the AI's notes) to a text file on the Desktop,
+        so it can be sent to Claude to fix the filters."""
+        from_screen = analysis is None
+        a = self.analysis if from_screen else analysis
+        audio = self.audio if from_screen else (audio or a.get("parts", []))
+        outdir = self.outdir if from_screen else outdir
+        try:
+            ver = json.loads((Path(__file__).resolve().parent / "version.json").read_text())["version"]
+        except Exception:
+            ver = "?"
+        title = book_title(audio) if audio else "book"
+        multi = len(a["parts"]) > 1
+        where = lambda x: (f"Part {x['part'] + 1} " if multi else "") + engine.fmt_t(x["s"])
+        opts = (getattr(self, "saved_opts", {}) or {}) if from_screen else {}
+        L = [f"CleanListen {ver} findings for: {title}",
+             f"Exported {__import__('time').strftime('%Y-%m-%d %H:%M')}",
+             "Filters ticked: " + (", ".join(k for k, v in opts.items() if v) or "(not recorded)"),
+             f"Ebook used: {'yes' if a.get('ebook') else 'no'}"]
+        for note in (a.get("ai_note"), a.get("ebook_note")):
+            if note:
+                L.append("Note: " + note)
+        names = {"sex": "EXPLICIT SCENE", "ref": "SEXUAL REFERENCE", "gore": "GORE",
+                 "religion": "RELIGION", "relationship": "RELATIONSHIP", "crude": "CRUDE HUMOR",
+                 "bully": "BULLYING", "flirt": "FLIRTING"}
+        class _V:  # stands in for a checkbox when exporting a saved result
+            def __init__(self, on): self.on = on
+            def get(self): return self.on
+        if from_screen:
+            scene_vars = getattr(self, "scene_vars", [])
+            mute_vars = getattr(self, "mute_vars", [])
+        else:
+            scene_vars = [(_V(sc.get("cut", True)), sc) for sc in a.get("scenes", [])]
+            mute_vars = [(_V(m.get("on", True)), m) for m in a.get("mutes", [])]
+        L += ["", f"===== PASSAGES TO CUT ({len(scene_vars)}) ====="]
+        for n, (v, sc) in enumerate(scene_vars, 1):
+            src = "AI" if sc.get("ai") else "word list"
+            L.append(f"\n[{n}] {names.get(sc.get('kind', 'sex'), sc.get('kind', '?').upper())} · "
+                     f"{where(sc)} · {sc['e'] - sc['s']:.0f} sec · found by {src} · "
+                     f"{'TICKED (will cut)' if v.get() else 'unticked (kept)'}"
+                     + (f" · {sc['ai_note']}" if sc.get("ai_note") else ""))
+            L.append("    " + sc.get("text", "").strip())
+        L += ["", f"===== WORDS TO MUTE ({len(mute_vars)}) ====="]
+        for n, (v, m) in enumerate(mute_vars, 1):
+            word = m.get("word_raw") or m.get("word", "")
+            ctx = f"...{m.get('ctx_raw', m.get('ctx', ''))} [[{word}]] {m.get('ctx_after_raw', m.get('ctx_after', ''))}..."
+            L.append(f"[{n}] {m.get('cat', '?')} · {where(m)} · "
+                     f"{'TICKED' if v.get() else 'unticked'}"
+                     + (f" · {m['note']}" if m.get("note") else "")
+                     + f"\n    {ctx}")
+        L += ["", "(Real words are shown here so Claude can see exactly what was flagged.)"]
+        text = "\n".join(L)
+        safe = re.sub(r'[<>:"/\\|?*]', "", title)[:60].strip() or "book"
+        dests = [Path(os.environ.get("USERPROFILE", Path.home())) / "Desktop",
+                 Path(os.environ.get("USERPROFILE", Path.home())) / "OneDrive" / "Desktop",
+                 Path(outdir) if outdir else None, APP_DATA]
+        for d in dests:
+            if d is None:
+                continue
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                out = d / f"CleanListen findings - {safe}.txt"
+                out.write_text(text, encoding="utf-8")
+                break
+            except Exception:
+                continue
+        else:
+            messagebox.showerror("CleanListen", "Couldn't save the export file.")
+            return
+        try:
+            if os.name == "nt":
+                subprocess.Popen(f'explorer /select,"{out}"')
+            else:
+                open_path(str(out.parent))
+        except Exception:
+            pass
+        messagebox.showinfo("CleanListen", f"Saved:\n{out}\n\nDrag this file into your chat with "
+                            "Claude." + (" Your review screen is still here." if from_screen else ""))
+        self.last_export = out
 
     def _save_from_review(self):
         cuts = [sc for v, sc in self.scene_vars if v.get()]
