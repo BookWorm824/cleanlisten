@@ -459,7 +459,7 @@ class App(tk.Tk):
                 ttk.Checkbutton(top, text=f"Cut this   \u00b7   {where(sc)}   \u00b7   {length}",
                                 variable=v, command=self._update_summary).pack(side="left")
                 if sc.get("ai_note"):
-                    good = sc["ai_note"] == "AI thinks this one is fine"
+                    good = sc["ai_note"] in ("AI thinks this one is fine", "AI suggests")
                     tk.Label(top, text=sc["ai_note"], bg="#FFF4D6" if good else "#E3EFEC",
                              fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 9),
                              padx=6).pack(side="right")
@@ -491,7 +491,7 @@ class App(tk.Tk):
                 if m.get("word_raw"):
                     show.pack(side="right")
                 if m.get("note"):
-                    good = m["note"].startswith("AI thinks")
+                    good = m["note"].startswith(("AI thinks", "AI suggests"))
                     tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
                              fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 8),
                              padx=4).pack(side="right")

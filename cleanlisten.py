@@ -736,53 +736,109 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         a_, b_ = to_sentences(k, k)
         sents.append((a_, b_, " ".join(w["t"] for w in asr[a_:b_ + 1])))
         k = b_ + 1
+    # ---- 1. AI reads the book and QUOTES what it flags (no line numbers: a
+    # small model often gets numbers wrong and flags the sentence next door)
     types = list(kinds) + (["language"] if lang else [])
     defs = "\n".join(f'- "{t}": {AI_TYPES[t]}' for t in kinds)
     if lang:
         defs += ('\n- "language": a word that is ' + "; or ".join(LANGUAGE_DEFS[c] for c in lang)
                  + ' (put the exact word in "word")')
     schema = {"type": "object", "properties": {"flags": {"type": "array", "items": {
-        "type": "object", "properties": {"line": {"type": "integer"},
+        "type": "object", "properties": {"quote": {"type": "string"},
                                          "type": {"type": "string", "enum": types},
                                          "word": {"type": "string"}},
-        "required": ["line", "type"]}}}, "required": ["flags"]}
-    found, missed_words = {}, []
-    starts = list(range(0, len(sents), chunk - overlap))
+        "required": ["quote", "type"]}}}, "required": ["flags"]}
+    sent_norm = [[norm(w) for w in t.split() if norm(w)] for _, _, t in sents]
+
+    def locate(quote, lo, hi):
+        q = [norm(w) for w in str(quote).split() if norm(w)]
+        if len(q) < 2:
+            return None
+        best, best_i = 0.0, None
+        for i in range(lo, hi):
+            words = sent_norm[i]
+            if not words:
+                continue
+            for st_ in range(0, max(1, len(words) - len(q) + 1)):
+                r = difflib.SequenceMatcher(None, q, words[st_:st_ + len(q)], autojunk=False).ratio()
+                if r > best:
+                    best, best_i = r, i
+                if r == 1.0:
+                    break
+        return best_i if best >= 0.8 else None
+
+    cands, word_cands = set(), set()
+    chunk = 25
+    starts = list(range(0, len(sents), chunk - 3))
     for n, a in enumerate(starts):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(starts), 1), f"AI is reading the book \u00b7 {100 * n // max(len(starts), 1)}%")
+        say(n / max(len(starts), 1), f"AI is reading the book · {100 * n // max(len(starts), 1)}%")
         part = sents[a:a + chunk]
-        listing = "\n".join(f"{a + i}: {t}" for i, (_, _, t) in enumerate(part))
+        listing = "\n".join(f"- {t}" for _, _, t in part)
         prompt = ("You help a family decide which sentences of an audiobook to cut. Here are "
-                  "numbered sentences in order:\n\n" + listing + "\n\nList every sentence that "
-                  "contains any of these:\n" + defs + "\n\nOnly flag a sentence when it clearly "
-                  "fits. Answer in JSON like {\"flags\": [{\"line\": 12, \"type\": \"gore\"}]}; "
-                  "use an empty list if nothing fits.")
+                  "sentences in order:\n\n" + listing + "\n\nFind sentences that CLEARLY contain "
+                  "one of these:\n" + defs + "\n\nBe strict. Ordinary conversation, affection, "
+                  "kissing, worry, danger, crime and death are NOT flagged unless they clearly fit "
+                  "a type above. For each sentence you flag, copy its first 8 words exactly into "
+                  "\"quote\". Answer in JSON like {\"flags\": [{\"quote\": \"first words of the "
+                  "sentence\", \"type\": \"gore\"}]}; use an empty list if nothing fits.")
         try:
             res = ai.chat(prompt, schema=schema, timeout=300)
         except Exception:
             continue
         for f in res.get("flags", []):
-            try:
-                i = int(f.get("line"))
-            except (TypeError, ValueError):
-                continue
-            if not (a <= i < a + len(part)):
+            i = locate(f.get("quote", ""), a, a + len(part))
+            if i is None:
                 continue
             if f.get("type") in kinds:
-                found.setdefault(f["type"], set()).add(i)
+                cands.add((i, f["type"]))
             elif f.get("type") == "language" and f.get("word"):
-                missed_words.append((i, f["word"]))
+                word_cands.add((i, str(f["word"]).strip()))
         if a + chunk >= len(sents):
             break
-    # second opinion on keyword-flagged passages
+
+    # ---- 2. strict second check of every AI find, one sentence at a time
+    sure_schema = {"type": "object", "properties": {
+        "fits": {"type": "boolean"}, "confidence": {"type": "string", "enum": ["high", "medium", "low"]}},
+        "required": ["fits", "confidence"]}
+
+    def excerpt(i):
+        prev = sents[i - 1][2] if i > 0 else ""
+        nxt = sents[i + 1][2] if i + 1 < len(sents) else ""
+        return f"{prev}\n>>> {sents[i][2]} <<<\n{nxt}".strip()
+
+    def verify(question, i):
+        try:
+            res = ai.chat("Below is a short excerpt from an audiobook. The sentence between >>> and "
+                          "<<< is the one being checked; the others are only context.\n\n" +
+                          excerpt(i) + "\n\nQuestion: " + question + " Judge only the marked "
+                          "sentence. Be strict: when in doubt, answer false.\nAnswer in JSON: "
+                          '{"fits": true or false, "confidence": "high", "medium" or "low"}',
+                          schema=sure_schema, timeout=120)
+        except Exception:
+            return None
+        if res.get("fits") is not True:
+            return None
+        return res.get("confidence") if res.get("confidence") in ("high", "medium") else None
+
+    found = {}
+    todo = sorted(cands)
+    for n, (i, kind) in enumerate(todo):
+        if cancel and cancel():
+            raise KeyboardInterrupt
+        say(n / max(len(todo), 1), "AI is double-checking what it found…")
+        conf = verify(f"Does the marked sentence clearly contain {AI_TYPES[kind]}?", i)
+        if conf:
+            found.setdefault(kind, {})[i] = conf
+
+    # ---- 3. second opinion on what the word lists flagged
     checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai")]
     yes_no = {"type": "object", "properties": {"fits": {"type": "boolean"}}, "required": ["fits"]}
     for n, sc in enumerate(checks):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(checks), 1), "AI is double-checking what was flagged\u2026")
+        say(n / max(len(checks), 1), "AI is double-checking what was flagged…")
         try:
             res = ai.chat("Here is a passage from an audiobook:\n\n" + sc["text"][:4000] +
                           "\n\nDoes it contain " + AI_TYPES[sc["kind"]] +
@@ -795,15 +851,22 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                 sc["ai_note"] = "AI agrees"
         except Exception:
             pass
-    # second opinion on muted words: is each one really used as a swear?
-    checkable = [m for m in mutes if m.get("i") is not None]
+
+    # ---- 4. muted words: the AI only gets a say on words with an innocent meaning
+    # too (hell, bloody, ass, Jesus, gay...). Clear swear words are never unticked.
+    AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
+                 "bugger", "tits", "sex", "sexes", "sexual", "sexually", "climaxed", "homo",
+                 "homos", "queer", "queers", "pee", "peed", "peeing"}
+    checkable = [m for m in mutes if m.get("i") is not None and
+                 (m.get("cat") in ("deity", "orientation") or
+                  any(norm(asr[x]["t"]) in AMBIGUOUS for x in range(m["i"], m["j"])))]
     fine_schema = {"type": "object", "properties": {"fine": {"type": "array", "items": {
         "type": "integer"}}}, "required": ["fine"]}
-    for b0 in range(0, len(checkable), 30):
+    for b0 in range(0, len(checkable), 20):
         if cancel and cancel():
             raise KeyboardInterrupt
         say(b0 / max(len(checkable), 1), "AI is double-checking the muted words…")
-        batch = checkable[b0:b0 + 30]
+        batch = checkable[b0:b0 + 20]
         rows = []
         for q, m in enumerate(batch):
             i, j = m["i"], m["j"]
@@ -812,12 +875,11 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
             rows.append(f"{q}: ...{before} [[{' '.join(w['t'] for w in asr[i:j])}]] {after}...")
         prompt = ("Each numbered line below has one word or phrase in [[double brackets]] that a "
                   "family's filter plans to mute from an audiobook:\n\n" + "\n".join(rows) +
-                  "\n\nList the numbers where the bracketed word is NOT used as swearing, cursing, "
-                  "crude language, a sexual word, a word about sexual orientation, or God's name in "
-                  "vain. Examples of NOT: 'hell' as a place in a sermon, 'bloody' meaning covered in "
-                  "blood, 'ass' meaning a donkey, 'Jesus' in a sincere prayer, 'gay' meaning cheerful "
-                  "or bright. Answer in JSON like {\"fine\": [3, 7]}; use an empty list if all of "
-                  "them fit.")
+                  "\n\nList ONLY the numbers where you are sure the bracketed word has an innocent "
+                  "meaning, for example: 'hell' as a place in a sermon, 'bloody' meaning covered in "
+                  "blood, 'ass' meaning a donkey, 'Jesus' in a sincere prayer, 'gay' meaning "
+                  "cheerful or bright. Answer in JSON like {\"fine\": [3, 7]}; use an empty list "
+                  "if none are innocent.")
         try:
             res = ai.chat(prompt, schema=fine_schema, timeout=180)
             for q in res.get("fine", []):
@@ -826,8 +888,11 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                     batch[q]["note"] = "AI thinks this isn't swearing"
         except Exception:
             pass
-    # words the lists missed (often ones the speech recognition misheard)
-    for li, word in missed_words:
+
+    # ---- 5. words the lists missed (often ones the speech recognition misheard)
+    for n, (li, word) in enumerate(sorted(word_cands)):
+        if cancel and cancel():
+            raise KeyboardInterrupt
         target = [norm(w) for w in word.split() if norm(w)]
         if not target:
             continue
@@ -841,6 +906,11 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         if any(m["part"] == part and not (asr[j - 1]["e"] < m["s"] or asr[i]["s"] > m["e"])
                for m in mutes):
             continue
+        say(n / max(len(word_cands), 1), "AI is double-checking words it found…")
+        conf = verify(f'Is the word "{word}" in the marked sentence used as ' +
+                      "; or as ".join(LANGUAGE_DEFS[c] for c in lang) + "?", li)
+        if not conf:
+            continue
         s_, e_ = asr[i]["s"], asr[j - 1]["e"]
         if parts:
             try:
@@ -853,12 +923,15 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                       "ctx_after": _masked_text([w["t"] for w in asr[j:j + 5]]),
                       **raw_fields([w["t"] for w in asr[max(0, i - 6):j + 5]],
                                    min(i, 6), min(i, 6) + (j - i)),
-                      "note": "found by AI"})
+                      "on": conf == "high",
+                      "note": "found by AI" if conf == "high" else "AI suggests"})
     mutes.sort(key=lambda m: (m["part"], m["s"]))
-    # turn AI-flagged sentences into passages (adjacent sentences merge)
-    for kind, idxs in found.items():
+
+    # ---- 6. turn verified AI finds into passages (adjacent sentences merge).
+    # Very sure = ticked; somewhat sure = unticked "AI suggests" for you to decide.
+    for kind, idx_conf in found.items():
         runs = []
-        for i in sorted(idxs):
+        for i in sorted(idx_conf):
             if runs and i <= runs[-1][-1] + 1:
                 runs[-1].append(i)
             else:
@@ -871,8 +944,9 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
             part = asr[a_]["part"]
             if any(x["part"] == part and not (e_ < x["s"] or s_ > x["e"]) for x in scenes):
                 continue  # already flagged by the word lists
+            sure = any(idx_conf[i] == "high" for i in run_)
             scenes.append({"kind": kind, "part": part, "s": s_, "e": e_, "ai": True,
-                           "ai_note": "found by AI",
+                           "cut": sure, "ai_note": "found by AI" if sure else "AI suggests",
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     say(1.0, "AI check done")
     return scenes
@@ -1190,12 +1264,15 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             ai_assist(asr, scenes, kinds, to_sentences, span_times,
                       progress=lambda f, m: say(0.99, m), cancel=cancel,
                       mutes=mutes, cats=cats, parts=parts)
-            n_ai = (sum(1 for x in scenes if x.get("ai")) +
-                    sum(1 for m in mutes if m.get("src") == "ai"))
+            n_sure = (sum(1 for x in scenes if x.get("ai") and x.get("cut")) +
+                      sum(1 for m in mutes if m.get("src") == "ai" and m.get("on", True)))
+            n_sugg = (sum(1 for x in scenes if x.get("ai") and not x.get("cut")) +
+                      sum(1 for m in mutes if m.get("src") == "ai" and not m.get("on", True)))
             n_off = (sum(1 for x in scenes if x.get("ai_note") == "AI thinks this one is fine") +
-                     sum(1 for m in mutes if m.get("on") is False))
-            ai_note = (f"AI helper caught {n_ai} more thing(s) the word lists missed and unticked "
-                       f"{n_off} it thinks were flagged wrongly.")
+                     sum(1 for m in mutes if m.get("note") == "AI thinks this isn't swearing"))
+            ai_note = (f"AI helper added {n_sure} it's sure about, suggested {n_sugg} more for you "
+                       f"to decide (left unticked), and unticked {n_off} it thinks were flagged "
+                       f"by mistake.")
         except KeyboardInterrupt:
             raise
         except Exception as ex:
