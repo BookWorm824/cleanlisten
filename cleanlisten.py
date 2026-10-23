@@ -258,12 +258,35 @@ GOD_WORDS = {"god", "god's", "gods", "lord", "jesus", "christ", "heaven", "almig
 BLAME_C = _c([r"hate[sd]?", r"hating", r"blame[sd]?", r"blaming", r"cruel(ty)?", r"punish.*",
               r"abandon(ed|s)?", r"forsak(en|e)", r"unfair", r"curse[sd]?", r"cursing", r"angry",
               r"furious", r"fault", r"monster", r"sadist.*", r"spite", r"rage[ds]?", r"betray.*",
-              r"turned", r"deserted", r"useless", r"heartless", r"evil"])
+              r"turned", r"deserted", r"useless", r"heartless", r"evil", r"mad", r"upset",
+              r"resent.*", r"bitter(ness|ly)?", r"unanswered", r"furiously", r"livid",
+              r"allow(s|ed|ing)?", r"permit(s|ted)?"])
 NO_GOD_PHRASES = [("there", "is", "no", "god"), ("there's", "no", "god"), ("god", "is", "dead"),
                   ("god", "doesn't", "exist"), ("god", "does", "not", "exist"),
                   ("no", "such", "thing", "as", "god"), ("where", "was", "god"),
                   ("if", "there", "is", "a", "god"), ("if", "there's", "a", "god"),
-                  ("how", "could", "god"), ("why", "would", "god"), ("why", "did", "god")]
+                  ("how", "could", "god"), ("why", "would", "god"), ("why", "did", "god"),
+                  # losing or rejecting faith
+                  ("lost", "my", "faith"), ("lost", "her", "faith"), ("lost", "his", "faith"),
+                  ("lost", "their", "faith"), ("losing", "my", "faith"), ("lose", "my", "faith"),
+                  ("lost", "faith", "in", "god"), ("stopped", "believing"), ("stop", "believing"),
+                  ("gave", "up", "on", "god"), ("give", "up", "on", "god"), ("given", "up", "on", "god"),
+                  ("don't", "believe", "in", "god"), ("doesn't", "believe", "in", "god"),
+                  ("didn't", "believe", "in", "god"), ("never", "believed", "in", "god"),
+                  ("do", "not", "believe", "in", "god"), ("turned", "away", "from", "god"),
+                  # God as uncaring or to blame
+                  ("god", "doesn't", "care"), ("god", "didn't", "care"), ("god", "never", "cared"),
+                  ("if", "god", "loved"), ("if", "god", "cared"), ("if", "god", "really"),
+                  ("god", "never", "answered"), ("god", "didn't", "answer"), ("god", "wasn't", "listening"),
+                  ("god", "never", "listened"), ("god", "didn't", "listen"),
+                  ("god", "took"), ("god", "takes"), ("god", "let"), ("god", "lets"),
+                  ("god", "has", "taken"), ("god", "had", "taken"), ("taken", "by", "god"),
+                  ("god", "gave", "up"), ("god", "forgot"), ("god", "left", "us"), ("god", "left", "me"),
+                  ("god's", "fault"), ("god", "did", "this"), ("god", "did", "nothing"),
+                  ("prayers", "went", "unanswered"), ("prayers", "were", "never", "answered"),
+                  ("unanswered", "prayers"), ("prayers", "unanswered"), ("prayed", "for", "nothing"),
+                  ("praying", "for", "nothing"), ("what", "good", "is", "praying"),
+                  ("praying", "doesn't", "work"), ("prayer", "doesn't", "work")]
 
 
 def religion_score(words):
