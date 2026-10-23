@@ -981,36 +981,29 @@ def split_tracks(clean_files, tracks, cuts_by_part, outdir, book_title, log=prin
                 continue
             n += 1
             made.append({"n": n, "title": t["title"], "src": f, "s": s, "e": e})
-    # group into cards
-    cards, cur, cur_sec, cur_mb = [], [], 0.0, 0.0
-    for m in made:
-        sec = m["e"] - m["s"]
-        size_mb = Path(m["src"]).stat().st_size / 1e6 * sec / max(probe_duration(m["src"]), 1)
-        if cur and (cur_sec + sec > 5 * 3600 - 60 or cur_mb + size_mb > 490 or len(cur) >= 100):
-            cards.append(cur)
-            cur, cur_sec, cur_mb = [], 0.0, 0.0
-        cur.append(m)
-        cur_sec += sec
-        cur_mb += size_mb
-    if cur:
-        cards.append(cur)
-    folders = []
-    for ci, card in enumerate(cards, 1):
-        d = out / ("Chapters" if len(cards) == 1 else f"Chapters - Card {ci} of {len(cards)}")
-        d.mkdir(parents=True, exist_ok=True)
-        folders.append(str(d))
-        for i, m in enumerate(card, 1):
-            safe = re.sub(r'[\\/:*?"<>|]', "", m["title"])
-            dst = d / f"{i:02d} {safe}.mp3"  # Yoto takes MP3, so chapter files are always MP3
-            codec = (["-c", "copy"] if Path(m["src"]).suffix.lower() == ".mp3"
-                     else ["-c:a", "libmp3lame", "-b:a", "128k"])
-            r = run([_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{m['s']:.3f}", "-to", f"{m['e']:.3f}",
-                     "-i", str(m["src"]), "-map", "0:a", *codec, "-id3v2_version", "3",
-                     "-metadata", f"title={m['title']}", "-metadata", f"track={i}/{len(card)}",
-                     "-metadata", f"album={book_title}", str(dst)], capture_output=True, text=True)
-            if r.returncode != 0:
-                raise RuntimeError(f"Couldn't make chapter file {dst.name}:\n{r.stderr[-500:]}")
-    log(f"Made {len(made)} chapter files in {len(cards)} folder(s)")
+    # everything goes in one "Chapters" folder, numbered in order
+    d = out / "Chapters"
+    if d.exists():
+        for old in d.glob("*.mp3"):  # clear files from an earlier run of this book
+            try:
+                old.unlink()
+            except OSError:
+                pass
+    d.mkdir(parents=True, exist_ok=True)
+    width = max(2, len(str(len(made))))
+    for i, m in enumerate(made, 1):
+        safe = re.sub(r'[\\/:*?"<>|]', "", m["title"])
+        dst = d / f"{i:0{width}d} {safe}.mp3"  # Yoto takes MP3, so chapter files are always MP3
+        codec = (["-c", "copy"] if Path(m["src"]).suffix.lower() == ".mp3"
+                 else ["-c:a", "libmp3lame", "-b:a", "128k"])
+        r = run([_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{m['s']:.3f}", "-to", f"{m['e']:.3f}",
+                 "-i", str(m["src"]), "-map", "0:a", *codec, "-id3v2_version", "3",
+                 "-metadata", f"title={m['title']}", "-metadata", f"track={i}/{len(made)}",
+                 "-metadata", f"album={book_title}", str(dst)], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"Couldn't make chapter file {dst.name}:\n{r.stderr[-500:]}")
+    cards, folders = [made], [str(d)]
+    log(f"Made {len(made)} chapter files")
     return {"tracks": len(made), "cards": len(cards), "folders": folders,
             "titles": [m["title"] for m in made]}
 

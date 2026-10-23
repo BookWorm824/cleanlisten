@@ -488,11 +488,7 @@ class App(tk.Tk):
                  wraplength=700, justify="left").pack(anchor="w", pady=(4, 6))
         ch = res.get("chapters")
         if ch:
-            if ch["cards"] > 1:
-                note = (f"Also split into {ch['tracks']} chapter files, in {ch['cards']} folders — "
-                        f"one per Yoto card (each card holds up to 5 hours).")
-            else:
-                note = f"Also split into {ch['tracks']} chapter files, in the “Chapters” folder."
+            note = f"Also split into {ch['tracks']} chapter files, in the \u201cChapters\u201d folder."
             tk.Label(p, text=note, bg=BG, fg=INK, font=(FONT, 10), wraplength=700,
                      justify="left").pack(anchor="w", pady=(0, 16))
         else:
