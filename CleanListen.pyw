@@ -35,6 +35,59 @@ def _legacy_key(p):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", Path(p).name)]
 
 
+def job_key(files):
+    return hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in files)
+                        .encode()).hexdigest()[:16]
+
+
+def book_title(files):
+    """A readable name for a book: its folder, or the folder above the discs."""
+    parents = {str(Path(f).parent) for f in files}
+    first = Path(files[0])
+    return (first.parent.parent.name if len(parents) > 1 else first.parent.name) or first.stem
+
+
+def past_books():
+    """Books already listened to (saved transcript covers every file and the
+    files are still there), newest first. Works for jobs from older versions too."""
+    out = []
+    jobs = APP_DATA / "jobs"
+    if not jobs.exists():
+        return out
+    for d in jobs.iterdir():
+        tfile = d / "transcript.json"
+        if not tfile.exists():
+            continue
+        try:
+            info = {}
+            for name in ("job.json", "analysis.json"):
+                if (d / name).exists():
+                    info = {**json.loads((d / name).read_text(encoding="utf8")), **info}
+            parts = info.get("audio") or info.get("parts") or list(json.loads(tfile.read_text()).keys())
+            heard = set(json.loads(tfile.read_text()).keys())
+            parts = sorted(parts, key=natural_key)
+            if not parts or not all(Path(p).exists() for p in parts):
+                continue
+            if not all(str(Path(p).resolve()) in heard for p in parts):
+                continue  # listening never finished; it'll resume if started normally
+            stamp = max((d / n).stat().st_mtime for n in ("job.json", "analysis.json", "transcript.json")
+                        if (d / n).exists())
+            ebook = info.get("ebook")
+            out.append({"audio": parts, "ebook": ebook if ebook and Path(ebook).exists() else None,
+                        "outdir": info.get("outdir"), "title": info.get("title") or book_title(parts),
+                        "when": stamp, "dir": d})
+        except Exception:
+            continue
+    # the same book can have two job folders (old + new file order); keep the newest
+    seen, uniq = set(), []
+    for b in sorted(out, key=lambda b: -b["when"]):
+        k = tuple(sorted(str(Path(p).resolve()) for p in b["audio"]))
+        if k not in seen:
+            seen.add(k)
+            uniq.append(b)
+    return uniq
+
+
 def fmt_len(sec):
     h, m = int(sec // 3600), int(sec % 3600 // 60)
     return f"{h} hr {m} min" if h else f"{m} min"
@@ -70,6 +123,7 @@ class App(tk.Tk):
         self.cancel_flag = False
         self.audio, self.ebook, self.outdir = [], None, None
         self.analysis, self.workdir = None, None
+        self.saved_opts = {}   # filter ticks, kept when re-checking a book
         self._style()
         self.page = None
         self.show_setup()
@@ -172,9 +226,19 @@ class App(tk.Tk):
         self.start_btn = ttk.Button(self.footer, text="Start cleaning", style="Accent.TButton",
                                     command=self.start, state="disabled")
         self.start_btn.pack(side="right")
+        try:
+            have_past = bool(past_books())
+        except Exception:
+            have_past = False
+        if have_past:
+            ttk.Button(self.footer, text="Re-check a book I've already done…",
+                       style="Plain.TButton", command=self.show_past).pack(side="left")
         body = self._scroll_area(p)
+        self.heard_lbl = tk.Label(body, text="", bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
+                                  padx=10, pady=6, anchor="w", justify="left", wraplength=680)
 
         b1 = self._card(body, "1", "Audiobook")
+        self.b1_outer = b1.master.master
         row = tk.Frame(b1, bg=CARD)
         row.pack(fill="x")
         ttk.Button(row, text="Choose folder\u2026", style="Plain.TButton",
@@ -210,12 +274,12 @@ class App(tk.Tk):
                  ("religion", "Religious content  (beliefs, preaching, anger at God)", True),
                  ("relationships", "Same-sex & non-traditional relationships", True)]
         for n, (key, label, on) in enumerate(items):
-            v = tk.BooleanVar(value=on)
+            v = tk.BooleanVar(value=self.saved_opts.get(key, on))
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(
                 row=n if n < 5 else n - 5, column=0 if n < 5 else 1, sticky="w",
                 padx=(0, 26), pady=2)
-        self.ai_var = tk.BooleanVar(value=True)
+        self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
         ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
                         variable=self.ai_var).pack(anchor="w", pady=(10, 0))
         tk.Label(b3, text="Catches what the word lists missed and unticks anything flagged by "
@@ -231,7 +295,7 @@ class App(tk.Tk):
         self.out_lbl = tk.Label(row, text="A \u201cClean\u201d folder next to the audiobook", bg=CARD,
                                 fg=MUTED, font=(FONT, 10), wraplength=480, justify="left")
         self.out_lbl.pack(side="left")
-        self.split_var = tk.BooleanVar(value=False)
+        self.split_var = tk.BooleanVar(value=self.saved_opts.get("split", False))
         ttk.Checkbutton(b4, text="Also split into chapter files  (for Yoto and players "
                         "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(8, 0))
         self._refresh_labels()
@@ -254,6 +318,72 @@ class App(tk.Tk):
             self.ebook_lbl.config(text=Path(self.ebook).name, fg=INK)
         if self.outdir:
             self.out_lbl.config(text=os.path.normpath(self.outdir), fg=INK)
+        heard = bool(self.audio) and self._already_heard()
+        if heard:
+            self.heard_lbl.config(text="✓ This book has already been listened to, so the "
+                                  "listening step is skipped — it goes straight to checking. "
+                                  "Change the ticks below if you like, then press Re-check.")
+            self.heard_lbl.pack(fill="x", pady=(0, 6), before=self.b1_outer)
+            self.start_btn.config(text="Re-check this book")
+        else:
+            self.heard_lbl.pack_forget()
+            self.start_btn.config(text="Start cleaning")
+
+    def _job_dirs(self):
+        new = APP_DATA / "jobs" / job_key(sorted(self.audio, key=natural_key))
+        old = APP_DATA / "jobs" / job_key(sorted(self.audio, key=_legacy_key))
+        return new, old
+
+    def _already_heard(self):
+        try:
+            want = {str(Path(p).resolve()) for p in self.audio}
+            for d in self._job_dirs():
+                t = d / "transcript.json"
+                if t.exists() and want <= set(json.loads(t.read_text()).keys()):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    # ---------- re-check a book that was already listened to ----------
+    def show_past(self):
+        p = self._new_page("Re-check a book", "These books were already listened to, so "
+                           "re-checking skips the slow listening step. Pick one, adjust the ticks, "
+                           "and press Re-check.")
+        ttk.Button(self.footer, text="Back", style="Plain.TButton",
+                   command=self.show_setup).pack(side="left")
+        body = self._scroll_area(p)
+        import time as _t
+        for b in past_books():
+            outer = tk.Frame(body, bg=LINE)
+            outer.pack(fill="x", pady=4)
+            c = tk.Frame(outer, bg=CARD, padx=14, pady=10)
+            c.pack(fill="x", padx=1, pady=1)
+            ttk.Button(c, text="Re-check", style="Plain.TButton",
+                       command=lambda b=b: self._load_past(b)).pack(side="right")
+            tk.Label(c, text=b["title"], bg=CARD, fg=INK, font=(FONT, 11, "bold"),
+                     wraplength=520, justify="left").pack(anchor="w")
+            n = len(b["audio"])
+            meta = (f"{n} file{'s' if n != 1 else ''} · last run "
+                    f"{_t.strftime('%b %d, %I:%M %p', _t.localtime(b['when']))}"
+                    + (" · with ebook" if b["ebook"] else ""))
+            tk.Label(c, text=meta, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w")
+
+    def _load_past(self, b):
+        self.audio = list(b["audio"])
+        self.ebook = b["ebook"]
+        self.outdir = b["outdir"] or None
+        if not self.outdir:
+            parents = {str(Path(f).parent) for f in self.audio}
+            first = Path(self.audio[0])
+            self.outdir = str((first.parent.parent if len(parents) > 1 else first.parent) / "Clean")
+        self.analysis = None
+        self.show_setup()
+
+    def recheck_same(self):
+        """Back to the start screen with the same book loaded and the same ticks."""
+        self.analysis = None
+        self.show_setup()
 
     def pick_folder(self):
         d = filedialog.askdirectory(title="Choose the folder with the audiobook in it")
@@ -312,27 +442,38 @@ class App(tk.Tk):
                                or self.find_relationships or self.find_crude):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
-        def job_key(files):
-            return hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in files)
-                                .encode()).hexdigest()[:16]
-        key = job_key(sorted(self.audio, key=natural_key))
-        old_dir = APP_DATA / "jobs" / job_key(sorted(self.audio, key=_legacy_key))
-        self.workdir = APP_DATA / "jobs" / key
-        if not self.workdir.exists() and (old_dir / "transcript.json").exists():
+        self.saved_opts = {k: v.get() for k, v in self.opts.items()}
+        self.saved_opts.update(ai=self.use_ai, split=self.split_chapters)
+        heard = self._already_heard()
+        self.workdir, old_dir = self._job_dirs()
+        if not (self.workdir / "transcript.json").exists() and (old_dir / "transcript.json").exists():
             self.workdir.mkdir(parents=True, exist_ok=True)
             import shutil
             shutil.copy2(old_dir / "transcript.json", self.workdir / "transcript.json")
         if not self.outdir:
             self.outdir = str(Path(self.audio[0]).parent / "Clean")
-        self.show_working("Listening to the book…")
+        try:  # remember the book so it can be re-checked later from the list
+            self.workdir.mkdir(parents=True, exist_ok=True)
+            (self.workdir / "job.json").write_text(json.dumps(
+                {"audio": self.audio, "ebook": self.ebook, "outdir": self.outdir,
+                 "title": book_title(self.audio)}, indent=1), encoding="utf8")
+        except Exception:
+            pass
+        self.show_working("Checking the book…" if heard else "Listening to the book…",
+                          quick=heard)
         self.cancel_flag = False
         threading.Thread(target=self._analyze_thread, args=(groups, find_sex), daemon=True).start()
 
-    def show_working(self, title):
+    def show_working(self, title, quick=False):
         dur = sum(engine.probe_duration(a) for a in self.audio) if self.audio else 0
-        p = self._new_page(title, f"This book is {fmt_len(dur)} long. You can leave this running "
-                           "and come back — closing the window pauses it, and it picks up "
-                           "where it left off next time.")
+        if quick:
+            sub = ("Already listened to, so this skips straight to checking. It takes a few "
+                   "minutes (longer with the AI helper on).")
+        else:
+            sub = (f"This book is {fmt_len(dur)} long. You can leave this running "
+                   "and come back — closing the window pauses it, and it picks up "
+                   "where it left off next time.")
+        p = self._new_page(title, sub)
         box = tk.Frame(p, bg=BG)
         box.pack(fill="x", pady=40)
         self.pb = ttk.Progressbar(box, style="Green.Horizontal.TProgressbar", maximum=1000,
@@ -412,6 +553,8 @@ class App(tk.Tk):
                          justify="left").pack(anchor="w", pady=(0, 4))
         ttk.Button(self.footer, text="Save clean audiobook", style="Accent.TButton",
                    command=self._save_from_review).pack(side="right")
+        ttk.Button(self.footer, text="Re-check", style="Plain.TButton",
+                   command=self.recheck_same).pack(side="right", padx=(0, 10))
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
         self.summary_lbl.pack(side="left")
         body = self._scroll_area(p)
@@ -576,6 +719,8 @@ class App(tk.Tk):
                    ).pack(side="left", padx=12)
         ttk.Button(self.footer, text="Clean another book", style="Plain.TButton",
                    command=self.reset).pack(side="right")
+        ttk.Button(self.footer, text="Re-check this book", style="Plain.TButton",
+                   command=self.recheck_same).pack(side="right", padx=(0, 10))
 
     def reset(self):
         self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None
