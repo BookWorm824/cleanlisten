@@ -196,7 +196,8 @@ class App(tk.Tk):
                  ("refs", "Sexual references  (cut sentences about sex)", True),
                  ("sex", "Explicit sex scenes  (cut whole scenes)", True),
                  ("gore", "Gory descriptions  (cut graphic passages)", True),
-                 ("religion", "Religious content  (beliefs, preaching, anger at God)", True)]
+                 ("religion", "Religious content  (beliefs, preaching, anger at God)", True),
+                 ("relationships", "Same-sex & non-traditional relationships  (throuples, open marriages\u2026)", True)]
         for n, (key, label, on) in enumerate(items):
             v = tk.BooleanVar(value=on)
             self.opts[key] = v
@@ -283,8 +284,10 @@ class App(tk.Tk):
         find_sex = self.opts["sex"].get()
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
         self.find_religion = self.opts["religion"].get()
+        self.find_relationships = self.opts["relationships"].get()
         self.split_chapters = self.split_var.get()
-        if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion):
+        if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
+                               or self.find_relationships):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         key = hashlib.sha1("|".join(f"{a}:{os.path.getsize(a)}" for a in self.audio)
@@ -320,6 +323,7 @@ class App(tk.Tk):
             st = engine.analyze(
                 self.audio, self.workdir, ebook=self.ebook, groups=groups, find_sex=find_sex,
                 find_refs=self.find_refs, find_gore=self.find_gore, find_religion=self.find_religion,
+                find_relationships=self.find_relationships,
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -400,7 +404,8 @@ class App(tk.Tk):
         # passages, grouped by kind
         self.scene_vars = []
         kinds = [("sex", "Explicit scenes to cut"), ("ref", "Sexual references to cut"),
-                 ("gore", "Gory descriptions to cut"), ("religion", "Religious content to cut")]
+                 ("gore", "Gory descriptions to cut"), ("religion", "Religious content to cut"),
+                 ("relationship", "Same-sex & non-traditional relationships to cut")]
         for kind, heading in kinds:
             items = [sc for sc in scenes if sc.get("kind", "sex") == kind]
             if not items:

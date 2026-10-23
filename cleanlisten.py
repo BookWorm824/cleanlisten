@@ -289,6 +289,52 @@ NO_GOD_PHRASES = [("there", "is", "no", "god"), ("there's", "no", "god"), ("god"
                   ("praying", "doesn't", "work"), ("prayer", "doesn't", "work")]
 
 
+# Same-sex and non-traditional relationships (kept separate from the mute
+# word lists so CleanView's subtitle masking is unaffected). Sentence-level:
+# any sentence that makes such a relationship clear is offered for cutting.
+RELATIONSHIP_WORDS = _c([
+    r"gay", r"gays", r"lesbians?", r"bisexuals?", r"bi-?curious", r"queer", r"homosexual(s|ity)?",
+    r"throuples?", r"polyamor.*", r"polygam.*", r"polyandr.*", r"swingers?", r"swinging"])
+RELATIONSHIP_PHRASES = [
+    ("same", "sex"), ("same-sex",), ("his", "husband"), ("his", "husband's"), ("his", "husbands"),
+    ("her", "wife"), ("her", "wife's"), ("her", "wives"), ("his", "boyfriend"), ("his", "boyfriend's"),
+    ("her", "girlfriend"), ("her", "girlfriend's"), ("two", "husbands"), ("two", "wives"),
+    ("two", "dads"), ("two", "moms"), ("two", "mommies"), ("two", "daddies"),
+    ("open", "marriage"), ("open", "relationship"), ("wife", "swapping"), ("wife", "swap"),
+    ("sister", "wives"), ("sister", "wife"), ("our", "girlfriend"), ("our", "boyfriend"),
+    ("both", "of", "us", "are", "dating"), ("dating", "both", "of"), ("married", "to", "both"),
+    ("came", "out", "as"), ("coming", "out", "as"), ("came", "out", "to"), ("came", "out", "of", "the", "closet"),
+    ("in", "the", "closet"),
+]
+KISS_AFTER = {"", "again", "back", "gently", "softly", "hard", "deeply", "passionately", "then",
+              "and", "slowly", "hungrily", "tenderly", "fiercely"}
+
+
+def relationship_hit(words):
+    """Does this sentence make a same-sex or non-traditional relationship clear?"""
+    if any(any(p.match(w) for p in RELATIONSHIP_WORDS) for w in words):
+        return True
+    for i in range(len(words)):
+        for ph in RELATIONSHIP_PHRASES:
+            if tuple(words[i:i + len(ph)]) == ph:
+                return True
+        # "my husband, he said" / "my wife, she told him": partner word + same-gender speaker tag
+        for partner, tags in (((("my", "husband"), ("my", "boyfriend")), ("he",)),
+                              ((("my", "wife"), ("my", "girlfriend")), ("she",))):
+            if any(tuple(words[i:i + 2]) == ph for ph in partner):
+                verbs = {"said", "says", "added", "told", "explained", "replied", "answered", "laughed", "admitted"}
+                near = words[max(0, i - 8):i + 10]
+                for j in range(len(near) - 1):
+                    if (near[j] in tags and near[j + 1] in verbs) or (near[j] in verbs and near[j + 1] in tags):
+                        return True
+        # "he kissed him" / "she kissed her" (but not "she kissed her daughter")
+        for subj, obj in (("he", "him"), ("she", "her")):
+            if words[i:i + 3] == [subj, "kissed", obj] or words[i:i + 3] == [subj, "kisses", obj]:
+                if (words[i + 3] if i + 3 < len(words) else "") in KISS_AFTER:
+                    return True
+    return False
+
+
 def religion_score(words):
     s, strong = 0, set()
     for w in words:
@@ -591,7 +637,7 @@ def span_times(asr, i, j):
 # ---------------------------------------------------------------------------
 def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "sexual"),
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
-            find_refs=False, find_gore=False, find_religion=False,
+            find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
             threads=None, cancel=None):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
@@ -855,6 +901,23 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                                     "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
             k = b_ + 1
         scenes += rel
+    if find_relationships:
+        say(0.99, "Looking for relationship content\u2026")
+        rel_s, k = [], 0
+        while k < len(asr):
+            a_, b_ = to_sentences(k, k)
+            if relationship_hit(asr_n[a_:b_ + 1]):
+                if rel_s and rel_s[-1][0] == asr[a_]["part"] and a_ <= rel_s[-1][2] + 1:
+                    rel_s[-1][2] = b_
+                else:
+                    rel_s.append([asr[a_]["part"], a_, b_])
+            k = b_ + 1
+        for part, a_, b_ in rel_s:
+            s_, e_ = span_times(asr, a_, b_)
+            if any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in scenes):
+                continue
+            scenes.append({"kind": "relationship", "part": part, "s": s_, "e": e_,
+                           "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     scenes.sort(key=lambda x: (x["part"], x["s"]))
     for n, sc in enumerate(scenes, 1):
         sc["id"], sc["cut"] = n, True
@@ -1075,7 +1138,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         for c in (c for c in cuts if c["part"] == pi):
             total_cut_sec += c["e"] - c["s"]
             label = {"sex": "explicit scene", "gore": "gory description",
-                     "ref": "sexual reference", "religion": "religious content"}.get(c.get("kind"), "scene")
+                     "ref": "sexual reference", "religion": "religious content",
+                     "relationship": "relationship content"}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
                           f"{c.get('note') or label}")
     chap = None
