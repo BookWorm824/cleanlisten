@@ -1,4 +1,4 @@
-"""Puts a CleanView icon on the desktop and in the Start menu (once)."""
+"""Puts CleanView and CleanRead icons on the desktop and in the Start menu (once each)."""
 import base64
 import os
 import subprocess
@@ -22,26 +22,35 @@ def open_cleanview():
 
 
 def ensure_cleanview_shortcut(force=False):
-    if os.name != "nt":
+    return _ensure_shortcut("CleanView", "view", "cleanview.ico", "Clean up movies and TV shows", force)
+
+
+def ensure_cleanread_shortcut(force=False):
+    return _ensure_shortcut("CleanRead", "read", "cleanread.ico",
+                            "Check what's in an ebook, or make a clean copy", force)
+
+
+def _ensure_shortcut(name, arg, ico, desc, force=False):
+    if os.name != "nt" or not (HERE / (name + ".pyw")).exists():
         return False
-    marker = APP_DATA / "cleanview_shortcut_made.txt"
+    marker = APP_DATA / f"{name.lower()}_shortcut_made.txt"
     if marker.exists() and not force:
         return True
 
     def q(p):  # PowerShell single-quoted string
         return "'" + str(p).replace("'", "''") + "'"
 
-    args = '"' + str(HERE / "launcher.pyw") + '" view'
+    args = '"' + str(HERE / "launcher.pyw") + '" ' + arg
     ps = f"""
 $s = New-Object -ComObject WScript.Shell
 foreach ($dir in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {{
     if (-not $dir) {{ continue }}
-    $l = $s.CreateShortcut((Join-Path $dir 'CleanView.lnk'))
+    $l = $s.CreateShortcut((Join-Path $dir '{name}.lnk'))
     $l.TargetPath = {q(_pythonw())}
     $l.Arguments = {q(args)}
     $l.WorkingDirectory = {q(HERE)}
-    $l.IconLocation = {q(HERE / 'cleanview.ico')}
-    $l.Description = 'Clean up movies and TV shows'
+    $l.IconLocation = {q(HERE / ico)}
+    $l.Description = {q(desc)}
     $l.Save()
 }}
 """
@@ -51,6 +60,6 @@ foreach ($dir in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFo
                        creationflags=0x08000000)
     if r.returncode == 0:
         APP_DATA.mkdir(parents=True, exist_ok=True)
-        marker.write_text("CleanView shortcut created. Delete this file to make it again.\n")
+        marker.write_text(f"{name} shortcut created. Delete this file to make it again.\n")
         return True
     return False

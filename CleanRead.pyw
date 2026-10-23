@@ -1,0 +1,759 @@
+"""CleanRead — check what's in an ebook before your kids read it, or make a clean copy."""
+import json
+import os
+import queue
+import subprocess
+import sys
+import threading
+import tkinter as tk
+import traceback
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import cleanread as engine  # noqa: E402
+
+APP = "CleanRead"
+APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
+SETTINGS = APP_DATA / "cleanread_settings.json"
+BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
+    "#F6F3EE", "#FFFFFF", "#23211F", "#6D6862", "#2F6F62", "#24574D", "#E3DED6")
+FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
+CHIP = {"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
+        "some": ("#FFF1D6", "#8A5A00"), "a lot": ("#FBE1DC", "#9A2F1F")}
+BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt"), ("All files", "*.*")]
+
+# (key, label, on by default)
+WORD_OPTS = [("swearing", "Swearing  (f-word, s-word, b-word…)", True),
+             ("mild", "Mild words  (damn, hell, crap, “screw you”)", True),
+             ("deity", "God's name used as a swear", True),
+             ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
+             ("sexual", "Sexual words  (sex, sexy, horny…)", True)]
+CUT_OPTS = [("sex", "Sex scenes  (whole passages)", True),
+            ("refs", "Sexual references", True),
+            ("sleeping", "Sleeping around, affairs & living together", False),
+            ("flirt", "Flirting", False),
+            ("relationships", "Same-sex & non-traditional relationships", True),
+            ("gore", "Gory descriptions", True),
+            ("religion", "Religious content  (preaching, anger at God)", True),
+            ("crude", "Crude humor  (toilet & gross-out jokes)", True),
+            ("bully", "Bullying  (taunts, name-calling)", False),
+            ("substances", "Drinking, smoking & drugs", False)]
+KISS = [("keep", "Keep all kissing"), ("passionate", "Cut passionate kissing"),
+        ("all", "Cut all romantic kissing")]
+STYLE = [("dash", "Replace with a dash  ( — )"), ("stars", "First letter and stars  (d***)"),
+         ("remove", "Take the word out completely")]
+
+
+def load_settings():
+    try:
+        return json.loads(SETTINGS.read_text(encoding="utf8"))
+    except Exception:
+        return {}
+
+
+def save_settings(d):
+    try:
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps(d, indent=1), encoding="utf8")
+    except Exception:
+        pass
+
+
+def open_path(p):
+    p = str(p)
+    if os.name == "nt":
+        os.startfile(p)  # noqa
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", p])
+    else:
+        subprocess.Popen(["xdg-open", p])
+
+
+def show_in_folder(p):
+    if os.name == "nt":
+        subprocess.Popen(["explorer", "/select,", os.path.normpath(str(p))])
+    else:
+        open_path(Path(p).parent)
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(APP)
+        scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        w = min(int(860 * scale), sw - 40)
+        h = min(int(800 * scale), sh - 90)
+        self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
+        self.minsize(min(w, int(640 * scale)), min(h, int(480 * scale)))
+        self.configure(bg=BG)
+        try:
+            self.iconbitmap(str(HERE / "cleanread.ico"))
+        except Exception:
+            pass
+        self.q = queue.Queue()
+        self.cancel_flag = False
+        self.settings = load_settings()
+        self.book_path = None
+        self.book = None          # parsed book, kept while the same file is loaded
+        self.mode = tk.StringVar(value=self.settings.get("mode", "check"))
+        self.outdir = None
+        self.report = None
+        self.analysis = None
+        self._style()
+        self.page = None
+        self.show_setup()
+        self.after(100, self._poll)
+
+    # ---------- look ----------
+    def _style(self):
+        s = ttk.Style(self)
+        s.theme_use("clam")
+        s.configure(".", background=BG, foreground=INK, font=(FONT, 10))
+        s.configure("TCheckbutton", background=CARD, font=(FONT, 10))
+        s.map("TCheckbutton", background=[("active", CARD)])
+        s.configure("TRadiobutton", background=CARD, font=(FONT, 11, "bold"))
+        s.map("TRadiobutton", background=[("active", CARD)])
+        s.configure("Accent.TButton", background=ACCENT, foreground="white",
+                    font=(FONT, 12, "bold"), padding=(22, 10), borderwidth=0)
+        s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
+                    borderwidth=0, font=(FONT, 10))
+        s.map("Plain.TButton", background=[("active", "#E0D9CF")])
+        s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
+                    background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
+        s.configure("TCombobox", padding=4)
+
+    def _new_page(self, title, subtitle=""):
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.unbind_all(seq)
+        if self.page:
+            self.page.destroy()
+        self.page = tk.Frame(self, bg=BG)
+        self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
+        self.footer = tk.Frame(self.page, bg=BG)
+        self.footer.pack(side="bottom", fill="x", pady=(12, 0))
+        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold"),
+                 wraplength=760, justify="left").pack(anchor="w")
+        if subtitle:
+            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
+                     wraplength=740, justify="left").pack(anchor="w", pady=(2, 12))
+        return self.page
+
+    def _scroll_area(self, parent):
+        wrap = tk.Frame(parent, bg=BG)
+        wrap.pack(fill="both", expand=True)
+        canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, bg=BG)
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def refresh(_=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            needs = inner.winfo_reqheight() > canvas.winfo_height() + 2
+            if needs and not sb.winfo_ismapped():
+                sb.pack(side="right", fill="y")
+            elif not needs and sb.winfo_ismapped():
+                sb.pack_forget()
+
+        inner.bind("<Configure>", refresh)
+        canvas.bind("<Configure>", lambda e: (canvas.itemconfigure(win, width=e.width), refresh()))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+
+        def wheel(delta):
+            if inner.winfo_reqheight() > canvas.winfo_height():
+                canvas.yview_scroll(delta, "units")
+
+        self.bind_all("<MouseWheel>", lambda e: wheel(int(-e.delta / 120)))
+        self.bind_all("<Button-4>", lambda e: wheel(-2))
+        self.bind_all("<Button-5>", lambda e: wheel(2))
+        self._canvas = canvas
+        return inner
+
+    def _card(self, parent, step, heading, note=""):
+        outer = tk.Frame(parent, bg=LINE)
+        outer.pack(fill="x", pady=6)
+        c = tk.Frame(outer, bg=CARD, padx=16, pady=12)
+        c.pack(fill="x", padx=1, pady=1)
+        top = tk.Frame(c, bg=CARD)
+        top.pack(fill="x")
+        tk.Label(top, text=step, bg=ACCENT, fg="white", font=(FONT, 10, "bold"),
+                 width=2).pack(side="left", padx=(0, 10))
+        tk.Label(top, text=heading, bg=CARD, fg=INK, font=(FONT, 12, "bold")).pack(side="left")
+        if note:
+            tk.Label(top, text=note, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=8)
+        body = tk.Frame(c, bg=CARD)
+        body.pack(fill="x", pady=(8, 0), padx=(32, 0))
+        return body
+
+    def _note(self, parent, text, bg=CARD):
+        tk.Label(parent, text=text, bg=bg, fg=MUTED, font=(FONT, 9), wraplength=640,
+                 justify="left").pack(anchor="w", padx=(22, 0))
+
+    def _link(self, parent, text, cmd, bg=BG):
+        l = tk.Label(parent, text=text, bg=bg, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
+        l.bind("<Button-1>", lambda e: cmd())
+        return l
+
+    # ---------- page 1: choose a book and what to do ----------
+    def show_setup(self):
+        p = self._new_page(APP, "Check what's in a book before your kids read it, or make a clean "
+                                "copy with the language and content you don't want taken out.")
+        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
+        if upd:
+            tk.Label(p, text="✓ " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
+                     padx=10, pady=6, anchor="w").pack(fill="x", pady=(0, 8))
+        try:
+            ver = json.loads((HERE / "version.json").read_text())["version"]
+            self.title(f"{APP} {ver}")
+        except Exception:
+            pass
+        self.start_btn = ttk.Button(self.footer, text="", style="Accent.TButton",
+                                    command=self.start, state="disabled")
+        self.start_btn.pack(side="right")
+        body = self._scroll_area(p)
+
+        b1 = self._card(body, "1", "Ebook", "EPUB, PDF or TXT — not copy-protected")
+        row = tk.Frame(b1, bg=CARD)
+        row.pack(fill="x")
+        ttk.Button(row, text="Choose ebook…", style="Plain.TButton",
+                   command=self.pick_book).pack(side="left")
+        self.book_lbl = tk.Label(row, text="No book chosen yet", bg=CARD, fg=MUTED, font=(FONT, 10),
+                                 wraplength=520, justify="left")
+        self.book_lbl.pack(side="left", padx=12)
+
+        b2 = self._card(body, "2", "What do you want to do?")
+        for val, head, sub in (
+                ("check", "Check the content",
+                 "Reads the whole book and makes a report for parents: witches, dark magic, vampires, "
+                 "werewolves, bullying, disrespect toward parents, romance, language and more — "
+                 "with the actual sentences and where they are."),
+                ("clean", "Make a clean copy",
+                 "Marks out bad words and cuts the content you choose, using the same filters as "
+                 "CleanListen and CleanView. You see everything before it's saved.")):
+            ttk.Radiobutton(b2, text=head, value=val, variable=self.mode,
+                            command=self._mode_changed).pack(anchor="w", pady=(4, 0))
+            tk.Label(b2, text=sub, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640,
+                     justify="left").pack(anchor="w", padx=(22, 0), pady=(0, 4))
+
+        self.opt_host = tk.Frame(body, bg=BG)
+        self.opt_host.pack(fill="x")
+        self._build_options()
+        self._refresh()
+
+    def _mode_changed(self):
+        self._save_opts()
+        self._build_options()
+        self._refresh()
+
+    def _build_options(self):
+        for w in self.opt_host.winfo_children():
+            w.destroy()
+        st = self.settings
+        self._built_mode = self.mode.get()
+        if self.mode.get() == "check":
+            b3 = self._card(self.opt_host, "3", "Options")
+            self.ai_var = tk.BooleanVar(value=st.get("check_ai", False))
+            ttk.Checkbutton(b3, text="AI helper  (reads for what word lists can't spot)",
+                            variable=self.ai_var).pack(anchor="w")
+            self._note(b3, "Catches things like a child sneaking around or mocking their parents when "
+                       "no warning words are used. Runs on your PC (the same AI as CleanListen). "
+                       "Without it the check takes under a minute; with it, expect 20–60 minutes "
+                       "for a novel.")
+            return
+        b3 = self._card(self.opt_host, "3", "What to take out")
+        grid = tk.Frame(b3, bg=CARD)
+        grid.pack(fill="x")
+        self.opts = {}
+        tk.Label(grid, text="Words (marked out)", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
+            row=0, column=0, sticky="w")
+        tk.Label(grid, text="Content (cut)", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
+            row=0, column=1, sticky="w")
+        for n, (key, label, on) in enumerate(WORD_OPTS):
+            v = tk.BooleanVar(value=st.get(key, on))
+            self.opts[key] = v
+            ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=0, sticky="w",
+                                                               padx=(0, 24), pady=2)
+        for n, (key, label, on) in enumerate(CUT_OPTS):
+            v = tk.BooleanVar(value=st.get(key, on))
+            self.opts[key] = v
+            ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=1, sticky="w", pady=2)
+        r = len(WORD_OPTS) + 2
+        tk.Label(grid, text="Kissing", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
+            row=r, column=0, sticky="w", pady=(10, 0))
+        self.kiss_box = ttk.Combobox(grid, state="readonly", width=30, values=[l for _, l in KISS])
+        self.kiss_box.current([k for k, _ in KISS].index(st.get("kiss", "keep")))
+        self.kiss_box.grid(row=r + 1, column=0, sticky="w")
+        tk.Label(grid, text="How marked-out words look", bg=CARD, fg=MUTED,
+                 font=(FONT, 9, "bold")).grid(row=r + 2, column=0, sticky="w", pady=(10, 0))
+        self.style_box = ttk.Combobox(grid, state="readonly", width=30, values=[l for _, l in STYLE])
+        self.style_box.current([k for k, _ in STYLE].index(st.get("style", "dash")))
+        self.style_box.grid(row=r + 3, column=0, sticky="w")
+        self.marker_var = tk.BooleanVar(value=st.get("marker", True))
+        ttk.Checkbutton(b3, text="Show […] where something was cut  (so a jump in the story "
+                        "makes sense)", variable=self.marker_var).pack(anchor="w", pady=(12, 0))
+        self.ai_var = tk.BooleanVar(value=st.get("clean_ai", True))
+        ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
+                        variable=self.ai_var).pack(anchor="w", pady=(6, 0))
+        self._note(b3, "Catches what the word lists missed and unticks anything flagged by mistake. "
+                   "Runs on your PC (shared with CleanListen and CleanView). Adds 20–60 minutes "
+                   "for a novel.")
+        b4 = self._card(self.opt_host, "4", "Save to")
+        row = tk.Frame(b4, bg=CARD)
+        row.pack(fill="x")
+        ttk.Button(row, text="Change…", style="Plain.TButton", command=self.pick_out).pack(side="right")
+        self.out_lbl = tk.Label(row, text="Next to the original book", bg=CARD, fg=MUTED,
+                                font=(FONT, 10), wraplength=520, justify="left")
+        self.out_lbl.pack(side="left")
+        tk.Label(b4, text="The original is never changed. EPUB books stay EPUB (with “(Clean)” "
+                 "added to the title); a PDF comes out as a plain EPUB; a TXT stays TXT.",
+                 bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640, justify="left").pack(anchor="w", pady=(6, 0))
+
+    def _refresh(self):
+        if self.book_path:
+            self.book_lbl.config(text=Path(self.book_path).name, fg=INK)
+            self.start_btn.config(state="normal")
+        self.start_btn.config(text="Check this book" if self.mode.get() == "check" else "Find what to remove")
+        if self.mode.get() == "clean" and getattr(self, "out_lbl", None) and self.out_lbl.winfo_exists():
+            if self.outdir:
+                self.out_lbl.config(text=os.path.normpath(self.outdir), fg=INK)
+            elif self.book_path:
+                self.out_lbl.config(text=os.path.normpath(str(Path(self.book_path).parent)), fg=INK)
+
+    def pick_book(self):
+        f = filedialog.askopenfilename(title="Choose the ebook", filetypes=BOOK_TYPES)
+        if f:
+            if f != self.book_path:
+                self.book = None
+            self.book_path = f
+            self.outdir = None
+            self._refresh()
+
+    def pick_out(self):
+        d = filedialog.askdirectory(title="Where should the clean copy go?")
+        if d:
+            self.outdir = d
+            self._refresh()
+
+    def _save_opts(self):
+        """Remember the ticks of the options card that is currently showing."""
+        st = self.settings
+        st["mode"] = self.mode.get()
+        built = getattr(self, "_built_mode", None)
+        try:
+            if built == "check":
+                st["check_ai"] = self.ai_var.get()
+            elif built == "clean":
+                for k, v in self.opts.items():
+                    st[k] = v.get()
+                st["kiss"] = KISS[self.kiss_box.current()][0]
+                st["style"] = STYLE[self.style_box.current()][0]
+                st["marker"] = self.marker_var.get()
+                st["clean_ai"] = self.ai_var.get()
+        except (tk.TclError, AttributeError):
+            pass
+        save_settings(st)
+
+    # ---------- working ----------
+    def start(self):
+        if not self.book_path:
+            return
+        mode = self.mode.get()
+        if mode == "check":
+            self._save_opts()
+            self.show_working("Checking the book…", "Reading every sentence. " + (
+                "The AI helper is on, so this takes a while — you can leave it running."
+                if self.ai_var.get() else "This takes under a minute."))
+            threading.Thread(target=self._scan_thread, args=(self.ai_var.get(),), daemon=True).start()
+            return
+        opts = {k: v.get() for k, v in self.opts.items()}
+        opts["kiss"] = KISS[self.kiss_box.current()][0]
+        opts["ai"] = self.ai_var.get()
+        if not any(v for k, v in opts.items() if k not in ("kiss", "ai")) and opts["kiss"] == "keep":
+            messagebox.showinfo(APP, "Tick at least one thing to take out.")
+            return
+        self.clean_opts = opts
+        self.style = STYLE[self.style_box.current()][0]
+        self.marker = self.marker_var.get()
+        self._save_opts()
+        self.show_working("Finding what to remove…", "Nothing is changed yet — you'll see "
+                          "everything first." + (" The AI helper is on, so this takes a while."
+                                                 if opts["ai"] else ""))
+        threading.Thread(target=self._analyze_thread, args=(opts,), daemon=True).start()
+
+    def show_working(self, title, sub=""):
+        p = self._new_page(title, sub)
+        box = tk.Frame(p, bg=BG)
+        box.pack(fill="x", pady=40)
+        self.pb = ttk.Progressbar(box, style="Green.Horizontal.TProgressbar", maximum=1000, length=640)
+        self.pb.pack(fill="x")
+        self.status = tk.Label(box, text="Starting…", bg=BG, fg=INK, font=(FONT, 12))
+        self.status.pack(anchor="w", pady=(12, 0))
+        self.cancel_flag = False
+        self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
+        self.cancel_btn.pack(side="right")
+
+    def cancel(self):
+        self.cancel_flag = True
+        self.status.config(text="Stopping…")
+
+    def _load_book(self):
+        if self.book is None or str(self.book.path) != str(Path(self.book_path)):
+            self.q.put(("progress", 0.01, "Opening the book…"))
+            self.book = engine.Book(self.book_path)
+        return self.book
+
+    def _prog(self, f, m):
+        self.q.put(("progress", f, m))
+
+    def _scan_thread(self, use_ai):
+        try:
+            book = self._load_book()
+            res = engine.scan(book, use_ai=use_ai, progress=self._prog, cancel=lambda: self.cancel_flag)
+            html = engine.report_html(res)
+            path = Path(self.book_path).with_name(Path(self.book_path).stem + " - Content Report.html")
+            try:
+                path.write_text(html, encoding="utf8")
+            except OSError:
+                path = APP_DATA / "reports" / path.name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(html, encoding="utf8")
+            res["report_path"] = str(path)
+            self.q.put(("scanned", res))
+        except KeyboardInterrupt:
+            self.q.put(("cancelled",))
+        except engine.BookError as ex:
+            self.q.put(("error", str(ex), ""))
+        except Exception as ex:
+            self.q.put(("error", str(ex), traceback.format_exc()))
+
+    def _analyze_thread(self, opts):
+        try:
+            book = self._load_book()
+            an = engine.analyze(book, opts, progress=self._prog, cancel=lambda: self.cancel_flag)
+            self.q.put(("analyzed", an))
+        except KeyboardInterrupt:
+            self.q.put(("cancelled",))
+        except engine.BookError as ex:
+            self.q.put(("error", str(ex), ""))
+        except Exception as ex:
+            self.q.put(("error", str(ex), traceback.format_exc()))
+
+    def _write_thread(self, cuts, mutes):
+        try:
+            book = self.book
+            out = engine.clean_out_path(book, self.outdir)
+            res = engine.write_clean(book, cuts, mutes, out, self.style, self.marker, progress=self._prog)
+            rep = out.with_name(out.stem + " - what was removed.txt")
+            try:
+                rep.write_text(engine.removal_report(book, cuts, mutes, res), encoding="utf8")
+                res["report"] = str(rep)
+            except OSError:
+                pass
+            self.q.put(("written", res))
+        except Exception as ex:
+            self.q.put(("error", str(ex), traceback.format_exc()))
+
+    def _poll(self):
+        try:
+            while True:
+                msg = self.q.get_nowait()
+                kind = msg[0]
+                if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
+                    self.pb["value"] = int(msg[1] * 1000)
+                    self.status.config(text=msg[2])
+                elif kind == "scanned":
+                    self.report = msg[1]
+                    self.show_report()
+                elif kind == "analyzed":
+                    self.analysis = msg[1]
+                    self.show_review()
+                elif kind == "written":
+                    self.show_done(msg[1])
+                elif kind == "cancelled":
+                    self.show_setup()
+                elif kind == "error":
+                    if msg[2]:
+                        try:
+                            APP_DATA.mkdir(parents=True, exist_ok=True)
+                            (APP_DATA / "cleanread_last_error.txt").write_text(msg[2], encoding="utf8")
+                        except OSError:
+                            pass
+                    messagebox.showerror(f"{APP} ran into a problem", msg[1])
+                    self.show_setup()
+        except queue.Empty:
+            pass
+        self.after(150, self._poll)
+
+    # ---------- page 2a: the content report ----------
+    def show_report(self):
+        r = self.report
+        bits = [r.get("author") or "", f"{r['words']:,} words"]
+        if r.get("grade"):
+            bits.append(f"about a grade {r['grade']} reading level")
+        p = self._new_page(r["title"] or "Content check", " · ".join(b for b in bits if b))
+        if r.get("ai_note"):
+            tk.Label(p, text=r["ai_note"], bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                     justify="left").pack(anchor="w", pady=(0, 6))
+        ttk.Button(self.footer, text="Open full report", style="Accent.TButton",
+                   command=lambda: open_path(r["report_path"])).pack(side="right")
+        ttk.Button(self.footer, text="Make a clean copy", style="Plain.TButton",
+                   command=self._to_clean).pack(side="right", padx=(0, 10))
+        ttk.Button(self.footer, text="Check another book", style="Plain.TButton",
+                   command=self.reset).pack(side="left")
+        body = self._scroll_area(p)
+        tk.Label(body, text="The full report (with every sentence, printable) is saved as:\n"
+                 + os.path.normpath(r["report_path"]), bg=BG, fg=MUTED, font=(FONT, 9),
+                 justify="left", wraplength=740).pack(anchor="w", pady=(0, 8))
+
+        all_cats = list(r["cats"].values())
+        lang = []
+        for cat, label in engine.LANG_CATS:
+            c = r["lang"].get(cat)
+            lang.append(c if c else {"label": label, "count": 0, "rating": "none", "items": [],
+                                     "chapters_list": [], "group": "Language"})
+            lang[-1]["group"] = "Language"
+            lang[-1]["lang"] = True
+        none_found = []
+        for grp in engine.SCAN_GROUPS:
+            cats = lang if grp == "Language" else [c for c in all_cats if c["group"] == grp]
+            found = [c for c in cats if c["count"]]
+            none_found += [c["label"] for c in cats if not c["count"]]
+            if not found:
+                continue
+            tk.Label(body, text=grp, bg=BG, fg=INK, font=(FONT, 13, "bold")).pack(anchor="w", pady=(14, 4))
+            for c in found:
+                self._report_row(body, c)
+        if none_found:
+            tk.Label(body, text="Not found in this book", bg=BG, fg=INK,
+                     font=(FONT, 13, "bold")).pack(anchor="w", pady=(18, 4))
+            tk.Label(body, text=", ".join(none_found), bg=BG, fg=MUTED, font=(FONT, 10),
+                     wraplength=740, justify="left").pack(anchor="w")
+        tk.Label(body, text="This is a guide, not a guarantee: a theme can be there without the words "
+                 "that flag it, and a flagged sentence may be harmless in context — that's why the "
+                 "sentences are shown.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                 justify="left").pack(anchor="w", pady=(18, 0))
+
+    def _report_row(self, parent, c):
+        outer = tk.Frame(parent, bg=LINE)
+        outer.pack(fill="x", pady=3)
+        card = tk.Frame(outer, bg=CARD, padx=14, pady=8)
+        card.pack(fill="x", padx=1, pady=1)
+        top = tk.Frame(card, bg=CARD)
+        top.pack(fill="x")
+        bg, fg = CHIP[c["rating"]]
+        tk.Label(top, text=engine.RATING_LABEL[c["rating"]], bg=bg, fg=fg, font=(FONT, 9, "bold"),
+                 padx=8).pack(side="right")
+        tk.Label(top, text=str(c["count"]), bg=CARD, fg=MUTED, font=(FONT, 10), padx=10).pack(side="right")
+        left = tk.Frame(top, bg=CARD)
+        left.pack(side="left", fill="x", expand=True)
+        tk.Label(left, text=c["label"], bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(anchor="w")
+        chs = c.get("chapters_list") or []
+        where = ", ".join(chs[:8]) + (f" and {len(chs) - 8} more" if len(chs) > 8 else "")
+        if where:
+            tk.Label(left, text="Where: " + where, bg=CARD, fg=MUTED, font=(FONT, 9),
+                     wraplength=560, justify="left").pack(anchor="w")
+        holder = tk.Frame(card, bg=CARD)
+        state = {"open": False}
+        link = self._link(card, "Show examples", lambda: toggle(), bg=CARD)
+        link.pack(anchor="w", pady=(4, 0))
+
+        def toggle():
+            state["open"] = not state["open"]
+            link.config(text="Hide examples" if state["open"] else "Show examples")
+            if not state["open"]:
+                holder.pack_forget()
+                return
+            if not holder.winfo_children():
+                self._fill_examples(holder, c)
+            holder.pack(fill="x", pady=(6, 0))
+
+    def _fill_examples(self, holder, c):
+        items = c["items"]
+        show = items[:12]
+        for it in show:
+            tk.Label(holder, text=it["where"] + (f"   · {it['ai']}" if it.get("ai") else ""),
+                     bg=CARD, fg=MUTED, font=(FONT, 8)).pack(anchor="w", pady=(6, 0))
+            if c.get("lang"):
+                text = f"…{it['before']} {it['word']} {it['after']}…"
+                hl = [(len(it["before"]) + 2, len(it["before"]) + 2 + len(it["word"]))]
+            else:
+                text, hl = it["text"], it.get("hl") or []
+            t = tk.Text(holder, wrap="word", width=20, height=1, font=(FONT, 10), bg="#FBFAF8", fg=INK,
+                        relief="flat", padx=8, pady=4, borderwidth=0, highlightthickness=0)
+            t.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
+            t.insert("1.0", text)
+            for a, b in hl:
+                t.tag_add("w", f"1.0+{a}c", f"1.0+{b}c")
+            lines = max(1, min(8, len(text) // 88 + 1 + text.count("\n")))
+            t.configure(state="disabled", height=lines)
+            t.pack(fill="x")
+        if len(items) > len(show):
+            tk.Label(holder, text=f"…and {len(items) - len(show)} more in the full report.",
+                     bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(6, 0))
+
+    def _to_clean(self):
+        self.mode.set("clean")
+        self.settings["mode"] = "clean"
+        self.show_setup()
+
+    # ---------- page 2b: review before saving ----------
+    def show_review(self):
+        a = self.analysis
+        cuts, mutes = a["cuts"], a["mutes"]
+        sub = ("Nothing to remove was found in this book." if not cuts and not mutes else
+               "Everything ticked below will be taken out. Untick anything you want to keep.")
+        p = self._new_page("Review before saving", sub)
+        if a.get("ai_note"):
+            tk.Label(p, text=a["ai_note"], bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                     justify="left").pack(anchor="w", pady=(0, 4))
+        ttk.Button(self.footer, text="Save clean copy", style="Accent.TButton",
+                   command=self._save_from_review).pack(side="right")
+        ttk.Button(self.footer, text="Back", style="Plain.TButton",
+                   command=self.show_setup).pack(side="right", padx=(0, 10))
+        self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
+        self.summary_lbl.pack(side="left")
+        body = self._scroll_area(p)
+
+        def section(title, count, var_list):
+            head = tk.Frame(body, bg=BG)
+            head.pack(fill="x", pady=(10, 4))
+            tk.Label(head, text=f"{title}  ({count})", bg=BG, fg=INK, font=(FONT, 13, "bold")).pack(side="left")
+            if count > 1:
+                links = tk.Frame(head, bg=BG)
+                links.pack(side="right")
+                for label, val in (("Tick all", True), ("Untick all", False)):
+                    self._link(links, label, lambda v=val: ([x.set(v) for x, _ in var_list],
+                                                            self._update_summary())).pack(side="left", padx=6)
+
+        self.cut_vars = []
+        order = ["sex", "ref", "sleeping", "kiss", "flirt", "relationship", "gore", "religion",
+                 "crude", "bully", "substances"]
+        for kind in order:
+            items = [c for c in cuts if c["kind"] == kind]
+            if not items:
+                continue
+            group = []
+            section(engine.CLEAN_LABELS[kind] + " to cut", len(items), group)
+            for c in items:
+                card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
+                                highlightthickness=1)
+                card.pack(fill="x", pady=4)
+                v = tk.BooleanVar(value=c.get("cut", True))
+                self.cut_vars.append((v, c))
+                group.append((v, c))
+                size = (f"{len(c['paras'])} paragraph{'s' if len(c['paras']) != 1 else ''}" if c.get("paras")
+                        else f"{len(c['sents'])} sentence{'s' if len(c['sents']) != 1 else ''}")
+                top = tk.Frame(card, bg=CARD)
+                top.pack(fill="x")
+                ttk.Checkbutton(top, text=f"Cut this   ·   {c['where']}   ·   {size}",
+                                variable=v, command=self._update_summary).pack(side="left")
+                if c.get("ai_note"):
+                    soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests")
+                    tk.Label(top, text=c["ai_note"], bg="#FFF4D6" if soft else "#E3EFEC",
+                             fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 9), padx=6).pack(side="right")
+                txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(c["text"]) // 95),
+                              font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat", padx=8, pady=6,
+                              borderwidth=0)
+                txt.insert("1.0", c["text"])
+                txt.configure(state="disabled")
+                txt.pack(fill="x", pady=(6, 0))
+
+        self.mute_vars = []
+        if mutes:
+            section("Words to mark out", len(mutes), self.mute_vars)
+            box = tk.Frame(body, bg=CARD, highlightbackground=LINE, highlightthickness=1)
+            box.pack(fill="x", pady=4)
+            for n, m in enumerate(mutes):
+                row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
+                row.pack(fill="x")
+                rbg = row.cget("bg")
+                v = tk.BooleanVar(value=m.get("on", True))
+                self.mute_vars.append((v, m))
+                ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
+                tk.Label(row, text=m["where"], bg=rbg, fg=MUTED, font=(FONT, 9), width=22,
+                         anchor="w").pack(side="left")
+                show = tk.Label(row, text="Show", bg=rbg, fg=ACCENT, font=(FONT, 9, "underline"),
+                                cursor="hand2", padx=6)
+                show.pack(side="right")
+                if m.get("note"):
+                    soft = m["note"].startswith(("AI thinks", "AI suggests", "probably"))
+                    tk.Label(row, text=m["note"], bg="#FFF4D6" if soft else "#E3EFEC",
+                             fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 8), padx=4).pack(side="right")
+                line = tk.Text(row, wrap="word", width=20, height=1, font=(FONT, 10), bg=rbg, fg=MUTED,
+                               relief="flat", borderwidth=0, highlightthickness=0, cursor="arrow")
+                line.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
+
+                def fill(t=line, m=m, revealed=False):
+                    before = m["ctx_raw" if revealed else "ctx"]
+                    word = m["word_raw" if revealed else "word"]
+                    after = m["ctx_after_raw" if revealed else "ctx_after"]
+                    t.configure(state="normal")
+                    t.delete("1.0", "end")
+                    if before:
+                        t.insert("end", "…" + before + " ")
+                    t.insert("end", f" {word} ", "w")
+                    if after:
+                        t.insert("end", " " + after + "…")
+                    n_chars = len(before) + len(word) + len(after)
+                    t.configure(state="disabled", height=1 if n_chars < 70 else 2)
+
+                def toggle(_e=None, t=line, m=m, lbl=show, state={"on": False}):
+                    state["on"] = not state["on"]
+                    fill(t, m, state["on"])
+                    lbl.configure(text="Hide" if state["on"] else "Show")
+
+                show.bind("<Button-1>", toggle)
+                fill()
+                line.pack(side="left", fill="x", expand=True)
+        self._update_summary()
+
+    def _update_summary(self):
+        nc = sum(v.get() for v, _ in getattr(self, "cut_vars", []))
+        nm = sum(v.get() for v, _ in getattr(self, "mute_vars", []))
+        self.summary_lbl.config(text=f"{nm} word{'s' if nm != 1 else ''} marked out · "
+                                     f"{nc} cut{'s' if nc != 1 else ''}")
+
+    def _save_from_review(self):
+        cuts = [c for v, c in self.cut_vars if v.get()]
+        mutes = [m for v, m in self.mute_vars if v.get()]
+        self.show_working("Saving the clean copy…")
+        self.cancel_btn.destroy()
+        threading.Thread(target=self._write_thread, args=(cuts, mutes), daemon=True).start()
+
+    # ---------- page 3: done ----------
+    def show_done(self, res):
+        p = self._new_page("All done!", "Your clean copy is ready. The original book wasn't changed.")
+        stats = tk.Frame(p, bg=BG)
+        stats.pack(fill="x", pady=20)
+        for big, small in [(str(res["mutes"]), "words marked out"), (str(res["cut_sents"]), "sentences cut"),
+                           (str(res["cut_paras"]), "paragraphs cut")]:
+            box = tk.Frame(stats, bg=CARD, padx=24, pady=14, highlightbackground=LINE, highlightthickness=1)
+            box.pack(side="left", padx=(0, 12))
+            tk.Label(box, text=big, bg=CARD, fg=ACCENT, font=(FONT, 26, "bold")).pack()
+            tk.Label(box, text=small, bg=CARD, fg=MUTED, font=(FONT, 10)).pack()
+        tk.Label(p, text=f"Saved as:  {os.path.normpath(res['out'])}", bg=BG, fg=INK, font=(FONT, 10),
+                 wraplength=740, justify="left").pack(anchor="w", pady=(4, 6))
+        tk.Label(p, text="To read it on a Kindle, send the EPUB with Amazon's Send to Kindle (email, app "
+                 "or website). Kobo, Apple Books, Google Play Books and most reading apps open EPUB directly.",
+                 bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740, justify="left").pack(anchor="w", pady=(0, 16))
+        row = tk.Frame(p, bg=BG)
+        row.pack(anchor="w")
+        ttk.Button(row, text="Show in folder", style="Accent.TButton",
+                   command=lambda: show_in_folder(res["out"])).pack(side="left")
+        if res.get("report"):
+            ttk.Button(row, text="See what was removed", style="Plain.TButton",
+                       command=lambda: open_path(res["report"])).pack(side="left", padx=12)
+        ttk.Button(self.footer, text="Clean another book", style="Plain.TButton",
+                   command=self.reset).pack(side="right")
+
+    def reset(self):
+        self.book_path, self.book, self.outdir, self.report, self.analysis = None, None, None, None, None
+        self.show_setup()
+
+
+if __name__ == "__main__":
+    App().mainloop()

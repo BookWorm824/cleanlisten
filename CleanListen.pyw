@@ -734,12 +734,16 @@ class App(tk.Tk):
 
 
 def _make_shortcut():
-    # Adds the CleanView desktop shortcut (CleanView ships alongside CleanListen)
+    # Adds the CleanView and CleanRead desktop shortcuts (they ship alongside CleanListen)
     try:
         import shortcuts
-        shortcuts.ensure_cleanview_shortcut()
     except Exception:
-        pass
+        return
+    for make in ("ensure_cleanview_shortcut", "ensure_cleanread_shortcut"):
+        try:
+            getattr(shortcuts, make)()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

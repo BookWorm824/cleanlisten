@@ -1,7 +1,7 @@
-# CleanListen & CleanView
+# CleanListen, CleanView & CleanRead
 
-Two separate Windows apps for cleaning up media you own. Each has its own icon and
-window, so you can clean an audiobook and a movie at the same time. Everything runs on your own computer;
+Three separate Windows apps for cleaning up media you own. Each has its own icon and
+window, so you can clean an audiobook, a movie and an ebook at the same time. Everything runs on your own computer;
 nothing is uploaded.
 
 ## CleanListen — audiobooks
@@ -47,6 +47,26 @@ everything is shown to you before it's cut.
 One-time downloads: the picture and sound checkers (about 250 MB) the first time CleanView
 looks for scenes, and Ollama plus its AI model (about 4 GB) if the AI helper is on.
 
-CleanView gets its own desktop and Start-menu icon the first time CleanListen updates.
+## CleanRead — ebooks
+
+- **Check the content:** reads the whole book and makes a report for parents, with the actual
+  sentences and the chapters they're in. It looks for witches & spells, dark magic & the occult,
+  demons, ghosts, vampires, werewolves, zombies, magic & wizards, psychics & New Age ideas,
+  other gods & mythology, disrespect or rebellion toward parents, bullying, rude words kids copy,
+  lying & stealing, revenge, crude humor, romance & kissing, flirting, sexual references and
+  scenes, sleeping around, same-sex & non-traditional relationships, gender identity topics,
+  violence, gore, scary moments, death, suicide or self-harm, abuse, anger at God or mocking
+  faith, religious discussions, other religions, drinking/smoking/drugs, divorce, and every
+  kind of bad language. Each gets a rating (Mentioned / Some / A lot). The report is saved as a
+  web page next to the book; bad words are starred out unless you choose to show them.
+- **Make a clean copy:** the same filters as CleanListen and CleanView. Words are marked out
+  (a dash, d***, or removed); sentences and passages are cut, with an optional […] where
+  something was taken out. Kissing can be kept, cut when passionate, or cut entirely. Every
+  change is listed for review first. EPUBs stay EPUB with "(Clean)" added to the title.
+- Optional AI helper (the same local AI as the other apps) catches what the word lists miss.
+- Works with DRM-free EPUB, PDF and TXT books. Kindle and other copy-protected books can't be
+  opened.
+
+CleanView and CleanRead get their own desktop and Start-menu icons the first time CleanListen updates.
 
 The installed apps check this repository for updates each time they open.

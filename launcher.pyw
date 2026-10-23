@@ -1,6 +1,6 @@
 """CleanListen launcher: checks GitHub for a newer version, updates the
-program files if there is one, then opens the app (CleanListen, or CleanView
-when started with "view"). If the check fails (offline, GitHub down) the app
+program files if there is one, then opens the app (CleanListen, CleanView
+when started with "view", or CleanRead when started with "read"). If the check fails (offline, GitHub down) the app
 simply opens as-is."""
 import json
 import os
@@ -46,10 +46,12 @@ def update():
 
 if __name__ == "__main__":
     note = None
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    name = {"view": "CleanView", "read": "CleanRead"}.get(arg, "CleanListen")
     try:
         new = update()
         if new:
-            note = f"CleanListen was updated to version {new}."
+            note = f"{name} was updated to version {new}."
     except Exception as ex:  # never block the app over an update problem
         try:
             (HERE / "update_error.txt").write_text(str(ex), encoding="utf8")
@@ -57,7 +59,8 @@ if __name__ == "__main__":
             pass
     if note:
         os.environ["CLEANLISTEN_UPDATED"] = note
-    app = "CleanView.pyw" if (len(sys.argv) > 1 and sys.argv[1] == "view"
-                              and (HERE / "CleanView.pyw").exists()) else "CleanListen.pyw"
+    app = {"view": "CleanView.pyw", "read": "CleanRead.pyw"}.get(arg, "CleanListen.pyw")
+    if not (HERE / app).exists():
+        app = "CleanListen.pyw"
     sys.argv = [str(HERE / app)]
     runpy.run_path(str(HERE / app), run_name="__main__")
