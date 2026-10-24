@@ -887,6 +887,16 @@ def _masked_text(words):
     return " ".join(mask(t) if find_language([norm(t)], ALL_CATS) else t for t in words)
 
 
+def _learned_examples():
+    """Past choices (yours, then Claude's) for the AI on this PC to follow."""
+    try:
+        import cleanlisten_learn as learn
+        t = learn.examples_text().strip()
+        return (t + "\n\n") if t else ""
+    except Exception:
+        return ""
+
+
 def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cancel=None,
               chunk=40, overlap=6, mutes=None, cats=(), parts=None):
     """Checks every filter both ways: adds what the word lists missed (passages
@@ -945,7 +955,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         say(n / max(len(starts), 1), f"AI is reading the book · {100 * n // max(len(starts), 1)}%")
         part = sents[a:a + chunk]
         listing = "\n".join(f"- {t}" for _, _, t in part)
-        prompt = ("You help a family decide which sentences of an audiobook to cut. Here are "
+        prompt = _learned_examples() + ("You help a family decide which sentences of an audiobook to cut. Here are "
                   "sentences in order:\n\n" + listing + "\n\nFind sentences that CLEARLY contain "
                   "one of these:\n" + defs + "\n\nBe strict. Ordinary conversation, affection, "
                   "kissing, worry, danger, crime and death are NOT flagged unless they clearly fit "
@@ -1476,6 +1486,16 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
           "ai_note": ai_note, "sentences": sents, "filters": {"cats": cats, "kinds": kinds}}
+    try:   # what CleanListen has learned from your past choices (and Claude's, and the shared file)
+        import cleanlisten_learn as learn
+        import cleanlisten_claude as cc
+        st["learn_note"] = " ".join(learn.apply(
+            st, asr, lambda a_, b_, kind, on, note: cc._add_passage(st, asr, a_, b_, kind, on, note, "",
+                                                                    src="you"),
+            lambda n_, words, cat, note: cc._add_word(st, asr, n_, words, cat, True, note, "")))
+        st["scenes"].sort(key=lambda x: (x["part"], x["s"]))
+    except Exception as ex:
+        log(f"Learned choices not applied: {ex}")
     if use_claude:
         try:
             import cleanlisten_claude as cc

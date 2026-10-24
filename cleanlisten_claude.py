@@ -1,7 +1,8 @@
-"""Claude for CleanListen: a whole-book double-check and an "Ask Claude" chat.
+"""Claude (or ChatGPT) for CleanListen: a whole-book double-check and a chat.
 
-Runs through Claude Code (Anthropic's own program) signed in with the user's
-Claude plan, the same way CleanView does - no API key. Only the words of the
+Claude runs through Claude Code (Anthropic's own program) signed in with the
+user's Claude plan; ChatGPT runs through Codex (OpenAI's own program) with the
+user's ChatGPT plan - the same way CleanView does, no API keys. Only the words of the
 book (the transcript) and the list of findings are sent, never the audio.
 Claude gets no tools for the double-check; for the chat it can only read and
 search the two text files written for it (the book and the findings).
@@ -13,7 +14,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-import uuid
 from pathlib import Path
 
 import cleanlisten as E
@@ -55,7 +55,8 @@ CONTEXT_SENTS = 12       # sentences shown before a section, for context only
 
 KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "gory description",
               "religion": "religious content", "relationship": "same-sex / non-traditional relationship",
-              "crude": "crude humor", "bully": "bullying", "flirt": "flirting"}
+              "crude": "crude humor", "bully": "bullying", "flirt": "flirting",
+              "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
@@ -107,6 +108,60 @@ class ClaudeError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
+# Which online AI: Claude or ChatGPT (chosen in the app; remembered)
+# ---------------------------------------------------------------------------
+NAMES = {"claude": "Claude", "chatgpt": "ChatGPT"}
+PROVIDER = "claude"
+
+
+def _settings():
+    try:
+        return json.loads(SETTINGS.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_setting(k, v):
+    data = _settings()
+    data[k] = v
+    try:
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def use(provider):
+    """Pick Claude or ChatGPT for everything below (and remember it)."""
+    global PROVIDER
+    PROVIDER = provider if provider in NAMES else "claude"
+    _save_setting("reviewer", PROVIDER)
+
+
+def saved_provider():
+    p = _settings().get("reviewer")
+    return p if p in NAMES else "claude"
+
+
+def name(provider=None):
+    return NAMES.get(provider or PROVIDER, "Claude")
+
+
+def _gpt():
+    try:
+        import cleanlisten_gpt as gpt
+        return gpt
+    except Exception as ex:
+        raise ClaudeError("The ChatGPT files are missing. Reopen CleanListen so it can update.") from ex
+
+
+def _env():
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)   # always the Claude plan, never a paid API key
+    return env
+
+
+# ---------------------------------------------------------------------------
 # Claude Code: find it, install it, sign in
 # ---------------------------------------------------------------------------
 def find_claude():
@@ -121,8 +176,15 @@ def find_claude():
     return None
 
 
-def install(progress=None):
-    """One-time install of Claude Code with Anthropic's own installer."""
+def install(progress=None, provider=None):
+    """One-time install of Claude Code (or Codex for ChatGPT) with the maker's own installer."""
+    if (provider or PROVIDER) == "chatgpt":
+        gpt = _gpt()
+        try:
+            gpt.install(progress)
+            return gpt.find()
+        except gpt.GptError as ex:
+            raise ClaudeError(str(ex))
     say = progress or (lambda f, m: None)
     if find_claude():
         return find_claude()
@@ -138,14 +200,20 @@ def install(progress=None):
     return exe
 
 
-def status():
+def status(provider=None):
     """'ok', 'signed_out' or 'missing'."""
+    if (provider or PROVIDER) == "chatgpt":
+        try:
+            st = _gpt().status()
+        except ClaudeError:
+            return "missing"
+        return "ok" if st == "ready" else st
     exe = find_claude()
     if not exe:
         return "missing"
     try:
         r = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, timeout=60,
-                           creationflags=NO_WINDOW)
+                           creationflags=NO_WINDOW, env=_env())
     except Exception:
         return "signed_out"
     if r.returncode != 0:
@@ -158,12 +226,20 @@ def status():
     return "ok"
 
 
-def open_sign_in():
-    """Opens a small window that runs Claude's own sign-in (it opens the browser)."""
-    exe = find_claude() or install()
+def open_sign_in(provider=None):
+    """Opens a small window that runs Claude's (or ChatGPT's) own sign-in in the browser."""
+    if (provider or PROVIDER) == "chatgpt":
+        gpt = _gpt()
+        if not gpt.find():
+            install(provider="chatgpt")
+        try:
+            return gpt.open_sign_in()
+        except gpt.GptError as ex:
+            raise ClaudeError(str(ex))
+    exe = find_claude() or install(provider="claude")
     WORK.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
-        subprocess.Popen([exe, "auth", "login"])
+        subprocess.Popen([exe, "auth", "login"], env=_env())
         return
     bat = WORK / "sign_in.cmd"
     bat.write_text("@echo off\r\ntitle Sign in to Claude\r\n"
@@ -171,7 +247,7 @@ def open_sign_in():
                    "echo then come back to CleanListen.\r\necho.\r\n"
                    f'"{exe}" auth login\r\necho.\r\n'
                    "echo All set - you can close this window.\r\npause\r\n", encoding="utf-8")
-    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=subprocess.CREATE_NEW_CONSOLE)
+    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=subprocess.CREATE_NEW_CONSOLE, env=_env())
 
 
 def _friendly(text):
@@ -179,16 +255,26 @@ def _friendly(text):
     low = t.lower()
     if any(k in low for k in ("not logged in", "please run /login", "invalid api key", "authentication",
                               "oauth", "log in", "login")):
-        return "Claude isn't signed in. Press “Sign in to Claude” and try again."
+        return f"{name()} isn't signed in. Press “Set up / sign in” and try again."
     if "limit" in low and ("usage" in low or "reached" in low or "rate" in low):
-        return "Your Claude usage limit was reached. Try again after it resets."
+        return f"Your {name()} usage limit was reached. Try again after it resets."
     return t[-400:] or "Claude Code stopped without an answer."
 
 
 def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=None,
         timeout=1200, model=None):
-    """One `claude -p` call. Returns the parsed JSON result (structured_output when a
-    schema is given)."""
+    """One request. Claude: a `claude -p` call; ChatGPT: a `codex exec` call. Returns a dict
+    with "data" (the structured answer when a schema is given) and "session_id"."""
+    if PROVIDER == "chatgpt":
+        gpt = _gpt()
+        try:
+            answer, sid = gpt.ask(prompt, schema, system=system, session=resume, keep=persist,
+                                  timeout=timeout, folder=cwd if tools else None)
+        except gpt.GptError as ex:
+            raise ClaudeError(str(ex))
+        if not isinstance(answer, dict):
+            raise ClaudeError("ChatGPT didn't return its answer in the expected form.")
+        return {"data": answer, "session_id": sid}
     exe = find_claude()
     if not exe:
         raise ClaudeError("Claude Code isn't installed yet. Press “Sign in to Claude” to set it up.")
@@ -209,7 +295,7 @@ def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=N
         args += ["--resume", resume]
     try:
         r = subprocess.run(args, input=prompt.encode("utf-8"), capture_output=True, timeout=timeout,
-                           cwd=str(cwd or WORK), creationflags=NO_WINDOW)
+                           cwd=str(cwd or WORK), creationflags=NO_WINDOW, env=_env())
     except subprocess.TimeoutExpired:
         raise ClaudeError("Claude took too long to answer.")
     finally:
@@ -293,6 +379,8 @@ def findings_lines(st, asr, only=None):
         if only and not (only[0] <= a <= only[1]):
             continue
         note = f" · note: {sc['ai_note']}" if sc.get("ai_note") else ""
+        if sc.get("by_you"):
+            note += " · set by the family"
         rows.append((a, f"P{sc['id']} · cut passage · {KIND_NAMES.get(sc.get('kind'), sc.get('kind'))} "
                         f"· S{a + 1}" + (f"–S{b + 1}" if b != a else "") +
                         f" · {'ticked (will be cut)' if sc.get('cut', True) else 'UNticked (kept)'}{note}"))
@@ -301,6 +389,8 @@ def findings_lines(st, asr, only=None):
         if only and not (only[0] <= a <= only[1]):
             continue
         note = f" · note: {m['note']}" if m.get("note") else ""
+        if m.get("by_you"):
+            note += " · set by the family"
         rows.append((a, f"W{m['id']} · mute word · {CAT_NAMES.get(m.get('cat'), m.get('cat'))} "
                         f"· \"{_word_of(m)}\" in S{a + 1} · "
                         f"{'ticked (will be muted)' if m.get('on', True) else 'UNticked (kept)'}{note}"))
@@ -326,7 +416,9 @@ already gone through the book and listed FINDINGS: passages it plans to cut (IDs
 and single words it plans to mute (IDs starting with W). You read the book text yourself, in \
 context, and decide:
 1. For EVERY finding listed: is it really something the family's rules remove ("remove"), or is it \
-not an issue ("keep")?
+not an issue ("keep")? For a passage whose ONLY problem is one word or a few words (e.g. "one \
+sweet-ass deal"), answer "just_the_word" and put those exact words in "words" and their kind of \
+language in "word_type" - the family mutes just the word and keeps the sentence.
 2. What did the filter MISS that the family's rules say should be removed?
 
 {rules}
@@ -344,14 +436,17 @@ sentence number and the exact word or words as they appear in that sentence.
 - Don't list something again that is already a finding.
 - confidence "high" means you are sure. Use "medium" when it's a judgment call - the family will \
 decide those themselves.
-- Every reason: plain English, under 20 words."""
+- Some findings say "set by the family": they decided those themselves. Still give your view, but \
+know your answer won't change them.
+- Every reason: plain English, under 20 words.{examples}"""
 
 REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
         "decisions": {"type": "array", "items": {"type": "object", "properties": {
             "id": {"type": "string"},
-            "verdict": {"type": "string", "enum": ["remove", "keep"]},
+            "verdict": {"type": "string", "enum": ["remove", "keep", "just_the_word"]},
+            "words": {"type": "string"}, "word_type": {"type": "string"},
             "confidence": {"type": "string", "enum": ["high", "medium"]},
             "misheard": {"type": "boolean"},
             "reason": {"type": "string"}},
@@ -397,7 +492,7 @@ CLEAR_SWEARS = {"strong", "moderate"}
 # ---------------------------------------------------------------------------
 # Applying Claude's answers
 # ---------------------------------------------------------------------------
-def _add_passage(st, asr, a, b, kind, on, note, reason):
+def _add_passage(st, asr, a, b, kind, on, note, reason, src="claude"):
     sents = st["sentences"]
     if not (0 <= a <= b < len(sents)):
         return False
@@ -409,10 +504,14 @@ def _add_passage(st, asr, a, b, kind, on, note, reason):
     for x in st["scenes"]:   # already covered (edges may touch the neighbour by a fraction)
         if x["part"] == part and e_ - 0.3 > x["s"] and s_ + 0.3 < x["e"]:
             return False
-    st["scenes"].append({"id": max([x["id"] for x in st["scenes"]] + [0]) + 1, "kind": kind,
-                         "part": part, "s": s_, "e": e_, "cut": on, "claude": True,
-                         "ai_note": note, "claude_reason": reason,
-                         "text": " ".join(w["t"] for w in asr[wa:wb + 1])})
+    sc = {"id": max([x.get("id", 0) for x in st["scenes"]] + [0]) + 1, "kind": kind,
+          "part": part, "s": s_, "e": e_, "cut": on, "ai_note": note,
+          "text": " ".join(w["t"] for w in asr[wa:wb + 1])}
+    if src == "claude":
+        sc.update(claude=True, claude_reason=reason, claude_verdict="remove" if on else "suggested")
+    else:
+        sc.update(learned=src)
+    st["scenes"].append(sc)
     return True
 
 
@@ -442,7 +541,8 @@ def _add_word(st, asr, si, words, cat, on, note, reason):
                         "ctx": E._masked_text([w["t"] for w in asr[max(0, i - 6):i]]),
                         "ctx_after": E._masked_text([w["t"] for w in asr[j:j + 5]]),
                         **E.raw_fields(ctx, min(i, 6), min(i, 6) + (j - i)),
-                        "on": on, "note": note, "claude_reason": reason})
+                        "on": on, "note": note, "claude_reason": reason,
+                        "claude_verdict": "remove" if on else "suggested"})
     st["mutes"].sort(key=lambda m: (m["part"], m["s"]))
     return True
 
@@ -469,10 +569,13 @@ def _norm_cat(t, cats):
     return None
 
 
-def apply_review(st, data, counts):
-    """Apply one section's answer. counts collects totals for the summary line."""
+def apply_review(st, data, counts, asr=None):
+    """Apply one section's answer. counts collects totals for the summary line.
+    Anything the family set themselves keeps their choice (only the reason is shown)."""
+    N = name()
     by_id = {f"P{sc['id']}": ("P", sc) for sc in st["scenes"]}
     by_id.update({f"W{m['id']}": ("W", m) for m in st["mutes"]})
+    cats = (st.get("filters") or {}).get("cats", [])
     for d in data.get("decisions", []):
         hit = by_id.get(str(d.get("id", "")).strip().upper())
         if not hit:
@@ -481,22 +584,47 @@ def apply_review(st, data, counts):
         reason = str(d.get("reason", "")).strip()
         sure = d.get("confidence") == "high"
         key = "cut" if kind == "P" else "on"
+        verdict = d.get("verdict")
         it["claude_reason"] = reason
-        if d.get("verdict") == "keep":
+        it["claude_verdict"] = {"keep": "keep", "just_the_word": "just the word"}.get(verdict, "remove")
+        if it.get("by_you"):
+            it["ai_note" if kind == "P" else "note"] = (
+                f"{N} agrees" if (verdict == "remove") == bool(it.get(key, True)) else f"Your call ({N} differs)")
+            continue
+        if verdict == "just_the_word" and kind == "P" and asr is not None:
+            # keep the sentence, mute only the word(s)
+            loc = _Locator(st, asr)
+            a, b = loc.span(it)
+            words = str(d.get("words", "")).strip()
+            cat = _norm_cat(d.get("word_type") or "swearing", cats or list(CAT_RULES)) or "moderate"
+            first = E.norm(words.split()[0]) if words else ""
+            already = bool(first) and any(
+                m["part"] == it["part"] and it["s"] - 0.5 <= m["s"] <= it["e"] + 0.5
+                and first in E.norm(m.get("word_raw") or m.get("word", "")) for m in st["mutes"])
+            added = already or (any(_add_word(st, asr, si, words, cat, True, f"{N}: just the word", reason)
+                                    for si in range(a, b + 1)) if words else False)
+            if added or not sure:
+                it[key] = False if added else it.get(key, True)
+                it["ai_note"] = f"{N}: just the word" if added else f"{N} unsure"
+                it["claude_word"] = words
+                counts["word" if added else "unsure"] += 1
+                continue
+            verdict = "remove"
+        if verdict == "keep" or verdict == "just_the_word":
             if kind == "W" and it.get("cat") in CLEAR_SWEARS and not d.get("misheard"):
-                note = "Claude: maybe fine"   # clear swear words stay muted unless misheard
+                note = f"{N}: maybe fine"     # clear swear words stay muted unless misheard
             elif sure:
                 it[key] = False
-                note = "Claude: fine"
+                note = f"{N}: fine"
                 counts["off"] += 1
             else:
-                note = "Claude unsure"
+                note = f"{N} unsure"
                 counts["unsure"] += 1
         else:
             if sure and not it.get(key, True):
                 it[key] = True
                 counts["on"] += 1
-            note = "Claude agrees"
+            note = f"{N} agrees"
             counts["agree"] += 1
         it["ai_note" if kind == "P" else "note"] = note
     return counts
@@ -508,21 +636,27 @@ def review(st, asr, progress=None, cancel=None):
     say = progress or (lambda f, m: None)
     if not st.get("sentences"):
         raise ClaudeError("this result is from an older version - press Re-check first")
+    N = name()
     if status() != "ok":
-        raise ClaudeError("Claude isn't set up or signed in yet")
+        raise ClaudeError(f"{N} isn't set up or signed in yet")
     for n, m in enumerate(st["mutes"], 1):
         m.setdefault("id", n)
+    try:
+        import cleanlisten_learn as learn
+        examples = learn.examples_text()
+    except Exception:
+        learn, examples = None, ""
     f = st.get("filters") or {}
     kinds, cats = f.get("kinds", []), f.get("cats", [])
     texts = sentence_texts(st, asr)
-    system = SYSTEM_REVIEW.format(rules=rules_text(st))
+    system = SYSTEM_REVIEW.format(rules=rules_text(st), examples=examples)
     secs = _sections(texts)
-    counts = {"agree": 0, "off": 0, "unsure": 0, "on": 0, "found": 0, "suggested": 0}
+    counts = {"agree": 0, "off": 0, "unsure": 0, "on": 0, "found": 0, "suggested": 0, "word": 0}
     errors = []
     for n, (a, b) in enumerate(secs):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / len(secs), f"Claude is reading the book · section {n + 1} of {len(secs)}")
+        say(n / len(secs), f"{N} is reading the book · section {n + 1} of {len(secs)}")
         ctx0 = max(0, a - CONTEXT_SENTS)
         lines = []
         if ctx0 < a:
@@ -543,7 +677,7 @@ def review(st, asr, progress=None, cancel=None):
             if "signed in" in str(ex) or "limit" in str(ex):
                 break
             continue
-        apply_review(st, data, counts)
+        apply_review(st, data, counts, asr)
         for p in data.get("missed_passages", []):
             k = _norm_kind(p.get("type"), kinds)
             pa, pb = _snum(p.get("from")), _snum(p.get("to"))
@@ -551,7 +685,7 @@ def review(st, asr, progress=None, cancel=None):
                 continue
             sure = p.get("confidence") == "high"
             if _add_passage(st, asr, pa, pb if pb is not None else pa, k, sure,
-                            "Found by Claude" if sure else "Claude suggests", str(p.get("reason", ""))):
+                            f"Found by {N}" if sure else f"{N} suggests", str(p.get("reason", ""))):
                 counts["found" if sure else "suggested"] += 1
         for w in data.get("missed_words", []):
             c = _norm_cat(w.get("type"), cats)
@@ -560,18 +694,25 @@ def review(st, asr, progress=None, cancel=None):
                 continue
             sure = w.get("confidence") == "high"
             if _add_word(st, asr, si, w.get("words", ""), c, sure,
-                         "Found by Claude" if sure else "Claude suggests", str(w.get("reason", ""))):
+                         f"Found by {N}" if sure else f"{N} suggests", str(w.get("reason", ""))):
                 counts["found" if sure else "suggested"] += 1
     st["scenes"].sort(key=lambda x: (x["part"], x["s"]))
-    say(1.0, "Claude check done")
-    note = (f"Claude read the whole book: agreed with {counts['agree']}, unticked {counts['off']} it "
+    say(1.0, f"{N} check done")
+    note = (f"{N} read the whole book: agreed with {counts['agree']}, unticked {counts['off']} it "
             f"says aren't an issue, found {counts['found']} more (ticked) and suggested "
             f"{counts['suggested']} for you to decide (unticked)."
-            + (f" {counts['unsure']} it wasn't sure about are marked “Claude unsure”." if counts["unsure"] else ""))
+            + (f" For {counts['word']} it mutes just the bad word and keeps the sentence." if counts["word"] else "")
+            + (f" {counts['unsure']} it wasn't sure about are marked “{N} unsure”." if counts["unsure"] else ""))
     if errors:
         note += f" Some sections couldn't be checked: {errors[0]}"
     st["claude_note"] = note
     st["claude_checked"] = True
+    st["reviewer"] = N
+    if learn is not None:
+        try:   # Claude's calls teach the AI on this PC, and go in the findings spreadsheet
+            learn.record_claude(st, book=st.get("title", ""))
+        except Exception:
+            pass
     return st
 
 
@@ -623,7 +764,7 @@ class Chat:
     def _write_findings(self):
         head = []
         if self.st.get("claude_note"):
-            head.append("Claude's earlier whole-book check: " + self.st["claude_note"])
+            head.append("The earlier whole-book check: " + self.st["claude_note"])
         lines = findings_lines(self.st, self.asr)
         reasons = {}
         for sc in self.st["scenes"]:
@@ -635,7 +776,7 @@ class Chat:
         out = []
         for ln in lines:
             fid = ln.split(" ", 1)[0]
-            out.append(ln + (f" · Claude's reason: {reasons[fid]}" if fid in reasons else ""))
+            out.append(ln + (f" · reviewer's reason: {reasons[fid]}" if fid in reasons else ""))
         (self.dir / "findings.txt").write_text("\n".join(head + [""] + out), encoding="utf-8")
 
     def ask(self, question):
@@ -704,7 +845,8 @@ class Chat:
                 if hit:
                     key, it = hit
                     it[key] = a == "tick"
-                    it["ai_note" if key == "cut" else "note"] = "Claude chat"
+                    it["ai_note" if key == "cut" else "note"] = f"{name()} chat"
+                    it["by_you"] = True
                     if reason:
                         it["claude_reason"] = reason
                     done += 1
@@ -712,13 +854,15 @@ class Chat:
                 k = _norm_kind(c.get("type"), kinds)
                 pa, pb = _snum(c.get("from")), _snum(c.get("to"))
                 if k and pa is not None and _add_passage(self.st, self.asr, pa, pb if pb is not None else pa,
-                                                         k, True, "Claude chat", reason):
+                                                         k, True, f"{name()} chat", reason):
                     done += 1
             elif a == "add_word":
                 cat = _norm_cat(c.get("type"), cats) or (cats[0] if cats else "moderate")
                 si = _snum(c.get("sentence"))
                 if si is not None and _add_word(self.st, self.asr, si, c.get("words", ""), cat, True,
-                                                "Claude chat", reason):
+                                                f"{name()} chat", reason):
                     done += 1
         self.st["scenes"].sort(key=lambda x: (x["part"], x["s"]))
         return done
+
+PROVIDER = saved_provider()
