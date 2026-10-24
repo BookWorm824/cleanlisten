@@ -1121,11 +1121,17 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     return scenes
 
 
+def load_asr(workdir, parts):
+    """The transcript as one word list (same shape analyze() uses)."""
+    done = json.loads((Path(workdir) / "transcript.json").read_text())
+    return [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(parts) for w in done[p]]
+
+
 def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "sexual"),
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
             find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
             find_crude=False, use_ai=False,
-            threads=None, cancel=None, find_bully=False, find_flirt=False):
+            threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
     work = Path(workdir)
@@ -1428,11 +1434,11 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             scenes.append({"kind": kind, "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     ai_note = ""
+    kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
+                             ("religion", find_religion), ("relationship", find_relationships),
+                             ("crude", find_crude), ("bully", find_bully),
+                             ("flirt", find_flirt)) if on]
     if use_ai:
-        kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
-                                 ("religion", find_religion), ("relationship", find_relationships),
-                                 ("crude", find_crude), ("bully", find_bully),
-                                 ("flirt", find_flirt)) if on]
         try:
             for sc in scenes:
                 sc.setdefault("cut", True)
@@ -1457,10 +1463,29 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     for n, sc in enumerate(scenes, 1):
         sc["id"] = n
         sc.setdefault("cut", True)
+    for n, m in enumerate(mutes, 1):
+        m["id"] = n
+        m.setdefault("on", True)
+    # sentence word ranges, kept so Claude (and the Ask Claude chat) can read the book later
+    sents, k = [], 0
+    while k < len(asr):
+        a_, b_ = to_sentences(k, k)
+        sents.append([a_, b_])
+        k = b_ + 1
 
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
-          "ai_note": ai_note}
+          "ai_note": ai_note, "sentences": sents, "filters": {"cats": cats, "kinds": kinds}}
+    if use_claude:
+        try:
+            import cleanlisten_claude as cc
+            cc.review(st, asr, progress=lambda f, m: say(0.99, m), cancel=cancel)
+        except KeyboardInterrupt:
+            raise
+        except Exception as ex:
+            st["claude_note"] = (f"Claude couldn't check this book ({ex}). The results below are "
+                                 "from the word lists" + (" and the AI helper." if use_ai else "."))
+        log(st.get("claude_note", ""))
     (work / "analysis.json").write_text(json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st

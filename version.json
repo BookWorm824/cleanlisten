@@ -1,8 +1,9 @@
 {
- "version": "1.5.8",
+ "version": "1.5.9",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
+  "cleanlisten_claude.py",
   "launcher.pyw",
   "icon.ico",
   "cleanview.py",

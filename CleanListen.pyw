@@ -19,6 +19,9 @@ APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "shar
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
     "#F6F3EE", "#FFFFFF", "#23211F", "#6D6862", "#2F6F62", "#24574D", "#E3DED6")
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
+# notes shown in yellow: the item may not need removing (worth a look)
+YELLOW_NOTES = ("AI thinks", "AI suggests", "Claude: fine", "Claude: maybe", "Claude unsure",
+                "Claude suggests")
 
 
 def natural_key(p):
@@ -289,6 +292,21 @@ class App(tk.Tk):
                  "mistake. Runs on your PC; the first time it downloads about 4 GB (shared with "
                  "CleanView). Adds time to each book.", bg=CARD, fg=MUTED, font=(FONT, 9),
                  wraplength=600, justify="left").pack(anchor="w", padx=(22, 0))
+        self.claude_var = tk.BooleanVar(value=self.saved_opts.get("claude", False))
+        ttk.Checkbutton(b3, text="Claude check  (reads the whole book and checks everything)",
+                        variable=self.claude_var).pack(anchor="w", pady=(10, 0))
+        tk.Label(b3, text="Claude reads every finding in context, unticks what isn't really an issue "
+                 "and adds anything that was missed. Uses your Claude plan through Claude Code (set "
+                 "up once). Only the book's words are sent, never the audio.", bg=CARD, fg=MUTED,
+                 font=(FONT, 9), wraplength=600, justify="left").pack(anchor="w", padx=(22, 0))
+        crow = tk.Frame(b3, bg=CARD)
+        crow.pack(anchor="w", padx=(22, 0), pady=(4, 0), fill="x")
+        self.claude_lbl = tk.Label(crow, text="Checking Claude\u2026", bg=CARD, fg=MUTED,
+                                   font=(FONT, 9))
+        self.claude_lbl.pack(side="left")
+        self.claude_btn = ttk.Button(crow, text="Set up / sign in to Claude", style="Plain.TButton",
+                                     command=self.claude_setup)
+        threading.Thread(target=self._claude_status_thread, daemon=True).start()
 
         b4 = self._card(body, "4", "Save to")
         row = tk.Frame(b4, bg=CARD)
@@ -302,6 +320,208 @@ class App(tk.Tk):
         ttk.Checkbutton(b4, text="Also split into chapter files  (for Yoto and players "
                         "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(8, 0))
         self._refresh_labels()
+
+    # ---------- Claude ----------
+    def _cc(self):
+        try:
+            import cleanlisten_claude as cc
+            return cc
+        except Exception:
+            return None
+
+    def _claude_status_thread(self):
+        cc = self._cc()
+        st = cc.status() if cc else "broken"
+        self.q.put(("claude_status", st))
+
+    def _show_claude_status(self, st):
+        self.claude_state = st
+        if not getattr(self, "claude_lbl", None) or not self.claude_lbl.winfo_exists():
+            return
+        text = {"ok": "\u2713 Claude is ready", "signed_out": "Claude isn't signed in yet",
+                "missing": "Claude Code isn't set up yet (one time, about a minute)",
+                "broken": "Claude files are missing \u2014 reopen CleanListen to update"}.get(st, st)
+        self.claude_lbl.config(text=text, fg=ACCENT_DK if st == "ok" else "#8A5A00")
+        if st in ("signed_out", "missing"):
+            self.claude_btn.pack(side="left", padx=(10, 0))
+        else:
+            self.claude_btn.pack_forget()
+
+    def claude_setup(self):
+        cc = self._cc()
+        if not cc:
+            return
+        self.claude_lbl.config(text="Setting up Claude Code\u2026 (a browser will open to sign in)")
+        self.claude_btn.pack_forget()
+
+        def work():
+            try:
+                cc.install(lambda f, m: None)
+                cc.open_sign_in()
+            except Exception as ex:
+                self.q.put(("claude_status", "Couldn't set up Claude: " + str(ex)[:120]))
+                return
+            import time as _t
+            st = "signed_out"
+            for _ in range(120):          # wait up to 10 minutes for the sign-in to finish
+                _t.sleep(5)
+                st = cc.status()
+                if st == "ok":
+                    break
+            self.q.put(("claude_status", st))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _sync_ticks(self):
+        """Copy the review screen's ticks into the analysis (before Claude reads it)."""
+        for v, sc in getattr(self, "scene_vars", []):
+            sc["cut"] = bool(v.get())
+        for v, m in getattr(self, "mute_vars", []):
+            m["on"] = bool(v.get())
+
+    def _save_analysis(self):
+        try:
+            (self.workdir / "analysis.json").write_text(json.dumps(self.analysis, indent=1))
+        except Exception:
+            pass
+
+    def claude_check(self):
+        cc = self._cc()
+        if not cc:
+            messagebox.showerror("CleanListen", "Claude files are missing. Reopen CleanListen to update.")
+            return
+        self._sync_ticks()
+        self.show_working("Claude is checking the book\u2026", quick="claude")
+        self.cancel_flag = False
+
+        def work():
+            try:
+                asr = engine.load_asr(self.workdir, self.analysis["parts"])
+                cc.review(self.analysis, asr, progress=lambda f, m: self.q.put(("progress", f, m)),
+                          cancel=lambda: self.cancel_flag)
+                self.q.put(("claude_done",))
+            except KeyboardInterrupt:
+                self.q.put(("claude_done",))
+            except Exception as ex:
+                self.q.put(("claude_fail", str(ex)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def open_chat(self):
+        cc = self._cc()
+        if not cc:
+            messagebox.showerror("CleanListen", "Claude files are missing. Reopen CleanListen to update.")
+            return
+        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
+            self.chat_win.lift()
+            return
+        self._sync_ticks()
+        try:
+            asr = engine.load_asr(self.workdir, self.analysis["parts"])
+            self.chat = cc.Chat(self.analysis, asr, self.workdir)
+        except Exception as ex:
+            messagebox.showerror("CleanListen", f"Couldn't open the chat ({ex}).")
+            return
+        w = tk.Toplevel(self)
+        self.chat_win = w
+        w.title("Ask Claude about this book")
+        w.configure(bg=BG)
+        scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        w.geometry(f"{int(620 * scale)}x{int(640 * scale)}")
+        tk.Label(w, text="Ask Claude", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(w, text="Claude can read the whole book and everything CleanListen found. Ask it to "
+                 "look for anything missed, or anything flagged that isn't really a problem. It "
+                 "suggests changes; nothing changes until you press Apply.", bg=BG, fg=MUTED,
+                 font=(FONT, 9), wraplength=int(580 * scale), justify="left").pack(anchor="w", padx=16)
+        bottom = tk.Frame(w, bg=BG)
+        bottom.pack(side="bottom", fill="x", padx=16, pady=(6, 12))
+        quick = tk.Frame(bottom, bg=BG)
+        quick.pack(fill="x", pady=(0, 6))
+        self.chat_changes = tk.Frame(w, bg=BG)
+        self.chat_changes.pack(side="bottom", fill="x", padx=16)
+        self.chat_log = tk.Text(w, wrap="word", font=(FONT, 10), bg=CARD, fg=INK, relief="flat",
+                                padx=10, pady=8, height=10, width=20)
+        self.chat_log.tag_configure("me", foreground=ACCENT_DK, font=(FONT, 10, "bold"))
+        self.chat_log.tag_configure("them", foreground=INK)
+        self.chat_log.tag_configure("info", foreground=MUTED, font=(FONT, 9, "italic"))
+        self.chat_log.pack(fill="both", expand=True, padx=16, pady=8)
+        self.chat_log.configure(state="disabled")
+        entry_row = tk.Frame(bottom, bg=BG)
+        entry_row.pack(fill="x")
+        self.chat_entry = tk.Text(entry_row, height=3, wrap="word", font=(FONT, 10), width=20,
+                                  relief="flat", highlightthickness=1, highlightbackground=LINE)
+        self.chat_entry.pack(side="left", fill="x", expand=True)
+        self.chat_send = ttk.Button(entry_row, text="Send", style="Accent.TButton",
+                                    command=lambda: self._chat_send())
+        self.chat_send.pack(side="left", padx=(8, 0))
+        self.chat_entry.bind("<Return>", lambda e: (self._chat_send(), "break")[1])
+        for label, q in (("Did it miss anything?", "Read through the whole book and the findings. "
+                          "Did CleanListen miss anything my filters should remove?"),
+                         ("Anything flagged by mistake?", "Look over every finding in context. Is "
+                          "anything flagged that isn't really a problem under my rules?")):
+            ttk.Button(quick, text=label, style="Plain.TButton",
+                       command=lambda q=q: self._chat_send(q)).pack(side="left", padx=(0, 8))
+        self._chat_say("info", "Tip: Claude looks over the whole book every time you ask, so "
+                               "answers can take a minute or two.")
+
+    def _chat_say(self, who, text):
+        if not getattr(self, "chat_log", None) or not self.chat_log.winfo_exists():
+            return
+        self.chat_log.configure(state="normal")
+        prefix = {"me": "You: ", "them": "Claude: ", "info": ""}[who]
+        self.chat_log.insert("end", prefix + text.strip() + "\n\n", who)
+        self.chat_log.configure(state="disabled")
+        self.chat_log.see("end")
+
+    def _chat_send(self, text=None):
+        if str(self.chat_send.cget("state")) == "disabled":
+            return
+        q = (text or self.chat_entry.get("1.0", "end")).strip()
+        if not q:
+            return
+        self.chat_entry.delete("1.0", "end")
+        for c in self.chat_changes.winfo_children():
+            c.destroy()
+        self._chat_say("me", q)
+        self._chat_say("info", "Claude is reading the book\u2026")
+        self.chat_send.configure(state="disabled")
+        self._sync_ticks()
+
+        def work():
+            try:
+                ans, changes = self.chat.ask(q)
+                self.q.put(("chat_reply", ans, changes))
+            except Exception as ex:
+                self.q.put(("chat_reply", f"Sorry, that didn't work: {ex}", []))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _chat_reply(self, ans, changes):
+        if not getattr(self, "chat_win", None) or not self.chat_win.winfo_exists():
+            return
+        self.chat_send.configure(state="normal")
+        self._chat_say("them", ans or "(no answer)")
+        for c in self.chat_changes.winfo_children():
+            c.destroy()
+        if not changes:
+            return
+        tk.Label(self.chat_changes, text="Suggested changes (untick any you don't want):", bg=BG,
+                 fg=INK, font=(FONT, 10, "bold")).pack(anchor="w")
+        picks = []
+        for c in changes:
+            v = tk.BooleanVar(value=True)
+            picks.append((v, c))
+            line = self.chat.describe(c) + (f"  \u2014 {c['reason']}" if c.get("reason") else "")
+            tk.Checkbutton(self.chat_changes, text=line, variable=v, bg=BG, anchor="w",
+                           justify="left", wraplength=540, font=(FONT, 9)).pack(anchor="w", fill="x")
+
+        def apply():
+            self._sync_ticks()
+            n = self.chat.apply([c for v, c in picks if v.get()])
+            self._save_analysis()
+            for c in self.chat_changes.winfo_children():
+                c.destroy()
+            self._chat_say("info", f"Applied {n} change{'s' if n != 1 else ''} to the review list.")
+            self.show_review()
+        ttk.Button(self.chat_changes, text="Apply these changes", style="Plain.TButton",
+                   command=apply).pack(anchor="w", pady=(4, 6))
 
     def _refresh_labels(self):
         if self.audio:
@@ -452,6 +672,7 @@ class App(tk.Tk):
         self.find_crude = self.opts["crude"].get()
         self.find_bully, self.find_flirt = self.opts["bully"].get(), self.opts["flirt"].get()
         self.use_ai = self.ai_var.get()
+        self.use_claude = self.claude_var.get()
         self.split_chapters = self.split_var.get()
         if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
                                or self.find_relationships or self.find_crude
@@ -459,7 +680,16 @@ class App(tk.Tk):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         self.saved_opts = {k: v.get() for k, v in self.opts.items()}
-        self.saved_opts.update(ai=self.use_ai, split=self.split_chapters)
+        self.saved_opts.update(ai=self.use_ai, split=self.split_chapters, claude=self.use_claude)
+        if self.use_claude:
+            cc = self._cc()
+            state = getattr(self, "claude_state", None) or (cc.status() if cc else "broken")
+            if state != "ok":
+                if not messagebox.askyesno("CleanListen", "Claude isn't set up or signed in yet, so "
+                                           "the Claude check can't run.\n\nStart without it? (You "
+                                           "can still run it from the review screen later.)"):
+                    return
+                self.use_claude = False
         heard = self._already_heard()
         self.workdir, old_dir = self._job_dirs()
         if not (self.workdir / "transcript.json").exists() and (old_dir / "transcript.json").exists():
@@ -482,9 +712,12 @@ class App(tk.Tk):
 
     def show_working(self, title, quick=False):
         dur = sum(engine.probe_duration(a) for a in self.audio) if self.audio else 0
-        if quick:
+        if quick == "claude":
+            sub = ("Claude is reading the whole book with everything that was found. Long books "
+                   "take a few minutes. Cancel keeps the list as it was.")
+        elif quick:
             sub = ("Already listened to, so this skips straight to checking. It takes a few "
-                   "minutes (longer with the AI helper on).")
+                   "minutes (longer with the AI helper or Claude check on).")
         else:
             sub = (f"This book is {fmt_len(dur)} long. You can leave this running "
                    "and come back — closing the window pauses it, and it picks up "
@@ -511,6 +744,7 @@ class App(tk.Tk):
                 find_refs=self.find_refs, find_gore=self.find_gore, find_religion=self.find_religion,
                 find_relationships=self.find_relationships, find_crude=self.find_crude,
                 use_ai=self.use_ai, find_bully=self.find_bully, find_flirt=self.find_flirt,
+                use_claude=getattr(self, "use_claude", False),
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -543,6 +777,16 @@ class App(tk.Tk):
                     self.show_review()
                 elif kind == "rendered":
                     self.show_done(msg[1])
+                elif kind == "claude_status":
+                    self._show_claude_status(msg[1])
+                elif kind == "claude_done":
+                    self._save_analysis()
+                    self.show_review()
+                elif kind == "claude_fail":
+                    messagebox.showerror("Claude check", msg[1])
+                    self.show_review()
+                elif kind == "chat_reply":
+                    self._chat_reply(msg[1], msg[2])
                 elif kind == "cancelled":
                     self.show_setup()
                 elif kind == "error":
@@ -563,10 +807,18 @@ class App(tk.Tk):
         else:
             sub = "Everything ticked below will be removed. Untick anything you want to keep."
         p = self._new_page("Review before saving", sub)
-        for note in (a.get("ai_note"), a.get("ebook_note")):
+        for note in (a.get("claude_note"), a.get("ai_note"), a.get("ebook_note")):
             if note:
                 tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=720,
                          justify="left").pack(anchor="w", pady=(0, 4))
+        if a.get("sentences"):
+            bar = tk.Frame(p, bg=BG)
+            bar.pack(fill="x", pady=(2, 4))
+            ttk.Button(bar, text=("Check everything with Claude again" if a.get("claude_checked")
+                                  else "Check everything with Claude"), style="Plain.TButton",
+                       command=self.claude_check).pack(side="left")
+            ttk.Button(bar, text="Ask Claude\u2026", style="Plain.TButton",
+                       command=self.open_chat).pack(side="left", padx=(8, 0))
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
         self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
         btns = tk.Frame(self.footer, bg=BG)
@@ -623,10 +875,14 @@ class App(tk.Tk):
                 ttk.Checkbutton(top, text=f"Cut this   \u00b7   {where(sc)}   \u00b7   {length}",
                                 variable=v, command=self._update_summary).pack(side="left")
                 if sc.get("ai_note"):
-                    good = sc["ai_note"] in ("AI thinks this one is fine", "AI suggests")
+                    good = sc["ai_note"].startswith(YELLOW_NOTES)
                     tk.Label(top, text=sc["ai_note"], bg="#FFF4D6" if good else "#E3EFEC",
                              fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 9),
                              padx=6).pack(side="right")
+                if sc.get("claude_reason"):
+                    tk.Label(card, text="Claude: " + sc["claude_reason"], bg=CARD, fg=MUTED,
+                             font=(FONT, 9, "italic"), wraplength=680, justify="left"
+                             ).pack(anchor="w", pady=(4, 0))
                 txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(sc["text"]) // 95),
                               font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
                               padx=8, pady=6, borderwidth=0)
@@ -655,7 +911,7 @@ class App(tk.Tk):
                 if m.get("word_raw"):
                     show.pack(side="right")
                 if m.get("note"):
-                    good = m["note"].startswith(("AI thinks", "AI suggests"))
+                    good = m["note"].startswith(YELLOW_NOTES)
                     tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
                              fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 8),
                              padx=4).pack(side="right")
@@ -672,6 +928,8 @@ class App(tk.Tk):
                     before = m.get("ctx_raw" if revealed else "ctx", "")
                     word = m.get("word_raw" if revealed else "word", "")
                     after = m.get("ctx_after_raw" if revealed else "ctx_after", "")
+                    if revealed and m.get("claude_reason"):
+                        after += "   (Claude: " + m["claude_reason"] + ")"
                     t.configure(state="normal")
                     t.delete("1.0", "end")
                     if before:
@@ -718,7 +976,7 @@ class App(tk.Tk):
              f"Exported {__import__('time').strftime('%Y-%m-%d %H:%M')}",
              "Filters ticked: " + (", ".join(k for k, v in opts.items() if v) or "(not recorded)"),
              f"Ebook used: {'yes' if a.get('ebook') else 'no'}"]
-        for note in (a.get("ai_note"), a.get("ebook_note")):
+        for note in (a.get("claude_note"), a.get("ai_note"), a.get("ebook_note")):
             if note:
                 L.append("Note: " + note)
         names = {"sex": "EXPLICIT SCENE", "ref": "SEXUAL REFERENCE", "gore": "GORE",
@@ -735,11 +993,13 @@ class App(tk.Tk):
             mute_vars = [(_V(m.get("on", True)), m) for m in a.get("mutes", [])]
         L += ["", f"===== PASSAGES TO CUT ({len(scene_vars)}) ====="]
         for n, (v, sc) in enumerate(scene_vars, 1):
-            src = "AI" if sc.get("ai") else "word list"
+            src = "Claude" if sc.get("claude") else ("AI" if sc.get("ai") else "word list")
             L.append(f"\n[{n}] {names.get(sc.get('kind', 'sex'), sc.get('kind', '?').upper())} · "
                      f"{where(sc)} · {sc['e'] - sc['s']:.0f} sec · found by {src} · "
                      f"{'TICKED (will cut)' if v.get() else 'unticked (kept)'}"
                      + (f" · {sc['ai_note']}" if sc.get("ai_note") else ""))
+            if sc.get("claude_reason"):
+                L.append("    Claude: " + sc["claude_reason"])
             L.append("    " + sc.get("text", "").strip())
         L += ["", f"===== WORDS TO MUTE ({len(mute_vars)}) ====="]
         for n, (v, m) in enumerate(mute_vars, 1):
@@ -748,6 +1008,7 @@ class App(tk.Tk):
             L.append(f"[{n}] {m.get('cat', '?')} · {where(m)} · "
                      f"{'TICKED' if v.get() else 'unticked'}"
                      + (f" · {m['note']}" if m.get("note") else "")
+                     + (f" · Claude: {m['claude_reason']}" if m.get("claude_reason") else "")
                      + f"\n    {ctx}")
         L += ["", "(Real words are shown here so Claude can see exactly what was flagged.)"]
         text = "\n".join(L)
