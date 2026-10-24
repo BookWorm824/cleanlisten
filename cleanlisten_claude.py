@@ -419,7 +419,10 @@ context, and decide:
 1. For EVERY finding listed: is it really something the family's rules remove ("remove"), or is it \
 not an issue ("keep")? For a passage whose ONLY problem is one word or a few words (e.g. "one \
 sweet-ass deal"), answer "just_the_word" and put those exact words in "words" and their kind of \
-language in "word_type" - the family mutes just the word and keeps the sentence.
+language in "word_type" - the family mutes just the word and keeps the sentence. For a long \
+passage where only some sentences need cutting (e.g. one suggestive line in an ordinary \
+paragraph), answer "trim" with "from" and "to" = the first and last sentence numbers of the part \
+to cut; the rest stays. Cut as little as possible - never a whole paragraph for one line.
 2. What did the filter MISS that the family's rules say should be removed?
 
 {rules}
@@ -451,7 +454,8 @@ REVIEW_SCHEMA = {
     "properties": {
         "decisions": {"type": "array", "items": {"type": "object", "properties": {
             "id": {"type": "string"},
-            "verdict": {"type": "string", "enum": ["remove", "keep", "just_the_word"]},
+            "verdict": {"type": "string", "enum": ["remove", "keep", "just_the_word", "trim"]},
+            "from": {"type": "string"}, "to": {"type": "string"},
             "words": {"type": "string"}, "word_type": {"type": "string"},
             "confidence": {"type": "string", "enum": ["high", "medium"]},
             "misheard": {"type": "boolean"},
@@ -553,6 +557,27 @@ def _add_word(st, asr, si, words, cat, on, note, reason):
     return True
 
 
+def _trim(st, asr, it, a, b):
+    """Shrink passage `it` to its sentences a..b (only inside what it covers now).
+    Returns True if it got smaller."""
+    loc = _Locator(st, asr)
+    pa, pb = loc.span(it)
+    if a is None:
+        return False
+    b = a if b is None else b
+    a, b = max(a, pa), min(b, pb)
+    if a > b or (a == pa and b == pb):
+        return False
+    sents = st["sentences"]
+    wa, wb = sents[a][0], sents[b][1]
+    if asr[wa]["part"] != it["part"] or asr[wb]["part"] != it["part"]:
+        return False
+    it["s"], it["e"] = E.span_times(asr, wa, wb)
+    it["text"] = " ".join(w["t"] for w in asr[wa:wb + 1])
+    it["trimmed"] = True
+    return True
+
+
 def _norm_kind(t, kinds):
     t = str(t).lower()
     for k in kinds:
@@ -592,11 +617,20 @@ def apply_review(st, data, counts, asr=None):
         key = "cut" if kind == "P" else "on"
         verdict = d.get("verdict")
         it["claude_reason"] = reason
-        it["claude_verdict"] = {"keep": "keep", "just_the_word": "just the word"}.get(verdict, "remove")
+        it["claude_verdict"] = {"keep": "keep", "just_the_word": "just the word",
+                                "trim": "trimmed"}.get(verdict, "remove")
         if it.get("by_you"):
             it["ai_note" if kind == "P" else "note"] = (
                 f"{N} agrees" if (verdict == "remove") == bool(it.get(key, True)) else f"Your call ({N} differs)")
             continue
+        if verdict == "trim" and kind == "P" and asr is not None:
+            # cut only the sentences that need it; the rest of the passage stays
+            if _trim(st, asr, it, _snum(d.get("from")), _snum(d.get("to"))):
+                it[key] = True
+                it["ai_note"] = f"{N}: trimmed"
+                counts["trim"] += 1
+                continue
+            verdict = "remove"
         if verdict == "just_the_word" and kind == "P" and asr is not None:
             # keep the sentence, mute only the word(s)
             loc = _Locator(st, asr)
@@ -632,6 +666,8 @@ def apply_review(st, data, counts, asr=None):
                 note = f"{N} unsure"
                 it["claude_verdict"] = "unsure"
                 counts["unsure"] += 1
+                if kind == "P":
+                    it[key] = False      # a passage it doubts stays in; you can tick it to cut
         else:
             if sure and not it.get(key, True):
                 it[key] = True
@@ -663,7 +699,8 @@ def review(st, asr, progress=None, cancel=None):
     texts = sentence_texts(st, asr)
     system = SYSTEM_REVIEW.format(rules=rules_text(st), examples=examples)
     secs = _sections(texts)
-    counts = {"agree": 0, "off": 0, "unsure": 0, "on": 0, "found": 0, "suggested": 0, "word": 0}
+    counts = {"agree": 0, "off": 0, "unsure": 0, "on": 0, "found": 0, "suggested": 0, "word": 0,
+              "trim": 0}
     errors = []
     for n, (a, b) in enumerate(secs):
         if cancel and cancel():
@@ -714,6 +751,8 @@ def review(st, asr, progress=None, cancel=None):
             f"says aren't an issue, found {counts['found']} more (ticked) and suggested "
             f"{counts['suggested']} for you to decide (unticked)."
             + (f" For {counts['word']} it mutes just the bad word and keeps the sentence." if counts["word"] else "")
+            + (f" It trimmed {counts['trim']} long passage(s) down to just the part that needs cutting."
+               if counts["trim"] else "")
             + (f" {counts['unsure']} it wasn't sure about are marked “{N} unsure”." if counts["unsure"] else ""))
     if errors:
         note += f" Some sections couldn't be checked: {errors[0]}"
@@ -747,16 +786,22 @@ line. When asked to check something, check the whole book, not just one scene.
 Answer in plain, friendly English, short and to the point (the family is not technical). Never \
 mention IDs like P12, W40 or S300 in your answer - the family can't see them; quote a few words \
 of the sentence instead. Don't spell out swear words in your answer (write s***). If your answer \
-means the list should change, put each change in "changes":
+means the list should change, put each change in "changes" - they are made RIGHT AWAY on the \
+family's list (they can undo them), so when they ask for a change, make it:
 - {{"action": "untick", "id": "P12"}} or {{"action": "tick", "id": "W40"}} for existing findings
+- {{"action": "trim", "id": "P12", "from": "S301", "to": "S301"}} to cut only part of a passage
+- {{"action": "just_the_word", "id": "P12", "words": "exact words", "type": one of {cats}}} to keep \
+a passage and mute only a word in it
 - {{"action": "add_passage", "from": "S300", "to": "S302", "type": one of {kinds}, "reason": "..."}}
 - {{"action": "add_word", "sentence": "S410", "words": "exact words", "type": one of {cats}, "reason": "..."}}
-Only include changes you are confident about; the family will see them and choose to apply them."""
+For changes they didn't ask for, only include ones you're sure about. Say in your answer what \
+you changed."""
 
 CHAT_SCHEMA = {"type": "object", "properties": {
     "answer": {"type": "string"},
     "changes": {"type": "array", "items": {"type": "object", "properties": {
-        "action": {"type": "string", "enum": ["untick", "tick", "add_passage", "add_word"]},
+        "action": {"type": "string", "enum": ["untick", "tick", "add_passage", "add_word", "trim",
+                                              "just_the_word"]},
         "id": {"type": "string"}, "from": {"type": "string"}, "to": {"type": "string"},
         "sentence": {"type": "string"}, "words": {"type": "string"}, "type": {"type": "string"},
         "reason": {"type": "string"}}, "required": ["action"]}}},
@@ -825,6 +870,18 @@ class Chat:
                             f"{m.get('word', '')} {m.get('ctx_after', '')}…")
             return ("Tick" if a == "tick" else "Untick") + " an item"
         texts = sentence_texts(self.st, self.asr)
+        if a in ("trim", "just_the_word"):
+            fid = str(c.get("id", "")).strip().upper()
+            sc = next((x for x in self.st["scenes"] if f"P{x['id']}" == fid), None)
+            what = KIND_NAMES.get(sc.get("kind"), "passage") if sc else "passage"
+            if a == "just_the_word":
+                w = E._masked_text(str(c.get("words", "")).split())
+                return f"Keep the {what}, mute only \u201c{w}\u201d"
+            pa, pb = _snum(c.get("from")), _snum(c.get("to"))
+            pb = pb if pb is not None else pa
+            if pa is not None and 0 <= pa <= pb < len(texts):
+                return f"Cut only part of the {what}: " + self._snip(" ".join(texts[pa:pb + 1]), 18)
+            return f"Cut only part of the {what}"
         if a == "add_passage":
             pa, pb = _snum(c.get("from")), _snum(c.get("to"))
             pb = pb if pb is not None else pa
@@ -862,6 +919,23 @@ class Chat:
                     if reason:
                         it["claude_reason"] = reason
                     done += 1
+            elif a == "trim":
+                hit = by_id.get(str(c.get("id", "")).strip().upper())
+                if hit and hit[0] == "cut" and _trim(self.st, self.asr, hit[1], _snum(c.get("from")),
+                                                     _snum(c.get("to"))):
+                    hit[1].update(cut=True, by_you=True, ai_note=f"{name()} chat: trimmed")
+                    done += 1
+            elif a == "just_the_word":
+                hit = by_id.get(str(c.get("id", "")).strip().upper())
+                if hit and hit[0] == "cut":
+                    sc = hit[1]
+                    loc = _Locator(self.st, self.asr)
+                    sa, sb = loc.span(sc)
+                    cat = _norm_cat(c.get("type"), cats) or (cats[0] if cats else "moderate")
+                    if any(_add_word(self.st, self.asr, si, c.get("words", ""), cat, True,
+                                     f"{name()} chat", reason) for si in range(sa, sb + 1)):
+                        sc.update(cut=False, by_you=True, ai_note=f"{name()} chat: just the word")
+                        done += 1
             elif a == "add_passage":
                 k = _norm_kind(c.get("type"), kinds)
                 pa, pb = _snum(c.get("from")), _snum(c.get("to"))

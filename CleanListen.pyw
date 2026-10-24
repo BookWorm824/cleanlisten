@@ -657,8 +657,9 @@ class App(tk.Tk):
         w.geometry(f"{int(620 * scale)}x{int(640 * scale)}")
         tk.Label(w, text=f"Ask {N}", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
         tk.Label(w, text=f"{N} can read the whole book and everything CleanListen found. Ask it to "
-                 "look for anything missed, or anything flagged that isn't really a problem. It "
-                 "suggests changes; nothing changes until you press Apply.", bg=BG, fg=MUTED,
+                 "look for anything missed, or anything flagged that isn't really a problem, or tell "
+                 "it what to change. Changes show up on your list right away, with an Undo button.",
+                 bg=BG, fg=MUTED,
                  font=(FONT, 9), wraplength=int(580 * scale), justify="left").pack(anchor="w", padx=16)
         bottom = tk.Frame(w, bg=BG)
         bottom.pack(side="bottom", fill="x", padx=16, pady=(6, 12))
@@ -731,26 +732,30 @@ class App(tk.Tk):
             c.destroy()
         if not changes:
             return
-        tk.Label(self.chat_changes, text="Suggested changes (untick any you don't want):", bg=BG,
-                 fg=INK, font=(FONT, 10, "bold")).pack(anchor="w")
-        picks = []
-        for c in changes:
-            v = tk.BooleanVar(value=True)
-            picks.append((v, c))
-            line = self.chat.describe(c) + (f"  \u2014 {c['reason']}" if c.get("reason") else "")
-            tk.Checkbutton(self.chat_changes, text=line, variable=v, bg=BG, anchor="w",
-                           justify="left", wraplength=540, font=(FONT, 9)).pack(anchor="w", fill="x")
+        # the chat changes the list right away (with an Undo), and the review screen updates
+        import copy
+        self._sync_ticks()
+        a = self.analysis
+        snapshot = (copy.deepcopy(a["scenes"]), copy.deepcopy(a["mutes"]))
+        lines = [self.chat.describe(c) for c in changes]
+        n = self.chat.apply(changes)
+        self._save_analysis()
+        self.show_review()
+        if not n:
+            self._chat_say("info", "(Nothing on the list needed changing.)")
+            return
+        self._chat_say("info", f"Changed {n} thing{'s' if n != 1 else ''} on your list:\n" +
+                       "\n".join("\u2022 " + ln for ln in lines))
 
-        def apply():
-            self._sync_ticks()
-            n = self.chat.apply([c for v, c in picks if v.get()])
+        def undo():
+            a["scenes"][:], a["mutes"][:] = snapshot
             self._save_analysis()
+            self.show_review()
             for c in self.chat_changes.winfo_children():
                 c.destroy()
-            self._chat_say("info", f"Applied {n} change{'s' if n != 1 else ''} to the review list.")
-            self.show_review()
-        ttk.Button(self.chat_changes, text="Apply these changes", style="Plain.TButton",
-                   command=apply).pack(anchor="w", pady=(4, 6))
+            self._chat_say("info", "Undone \u2014 the list is back the way it was.")
+        ttk.Button(self.chat_changes, text="Undo these changes", style="Plain.TButton",
+                   command=undo).pack(anchor="w", pady=(4, 6))
 
     def _refresh_labels(self):
         if self.audio:
