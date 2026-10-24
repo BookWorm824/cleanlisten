@@ -866,6 +866,7 @@ class App(tk.Tk):
                     self.analysis["title"] = book_title(self.audio) if self.audio else ""
                     self.show_review()
                 elif kind == "rendered":
+                    self._saving = False
                     self.show_done(msg[1])
                 elif kind == "claude_status":
                     self._show_claude_status(*msg[1:])
@@ -883,7 +884,11 @@ class App(tk.Tk):
                     (self.workdir / "last_error.txt").parent.mkdir(parents=True, exist_ok=True)
                     (self.workdir / "last_error.txt").write_text(msg[2], encoding="utf8")
                     messagebox.showerror("CleanListen ran into a problem", msg[1])
-                    self.show_setup()
+                    if getattr(self, "_saving", False) and self.analysis:
+                        self._saving = False
+                        self.show_review()       # keep your review; just press Save again
+                    else:
+                        self.show_setup()
         except queue.Empty:
             pass
         self.after(150, self._poll)
@@ -1292,6 +1297,7 @@ class App(tk.Tk):
         self.save(cuts, mutes)
 
     def save(self, cuts, mutes):
+        self._saving = True
         self.show_working("Saving the clean audiobook\u2026")
         self.cancel_btn.destroy()
         threading.Thread(target=self._render_thread, args=(cuts, mutes), daemon=True).start()

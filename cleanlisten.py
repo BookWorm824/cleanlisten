@@ -1757,21 +1757,60 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
             name, k = f"{stem} ({k}){out_ext}", k + 1
         used_names.add(name.lower())
         dst = out / name
+        # Write to a temporary file first, then swap it in (so a half-written file
+        # never replaces a good one, and a file that's open elsewhere is reported).
+        tmp = out / f"~saving~ {name}"
         # ffmpeg 7+ reads filter files with "-/filter:a"; older builds use
-        # "-filter_script:a". Try both, and fall back to dropping cover art /
-        # chapters if the output container objects to them.
-        r = None
-        for fopt in (["-/filter:a", str(fs)], ["-filter_script:a", str(fs)]):
+        # "-filter_script:a"; a short filter can also go straight on the command line.
+        # For each, fall back to dropping cover art / chapters, then to just the
+        # first audio stream, if the output container objects to them.
+        text_filter = fs.read_text()
+        fopts = [["-/filter:a", str(fs)], ["-filter_script:a", str(fs)]]
+        if len(text_filter) < 20000:
+            fopts.append(["-filter:a", text_filter])
+        extras = (["-map", "0:a", "-map", "0:v?", "-c:v", "copy", "-map_metadata", "0",
+                   "-map_chapters", "0"],
+                  ["-map", "0:a", "-map_metadata", "0"],
+                  ["-map", "0:a:0", "-vn", "-sn", "-dn", "-map_chapters", "-1"])
+        r, errors = None, []
+        for fopt in fopts:
             base = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(src), *fopt]
-            for extra in (["-map", "0:a", "-map", "0:v?", "-c:v", "copy", "-map_metadata", "0",
-                           "-map_chapters", "0"], ["-map", "0:a", "-map_metadata", "0"]):
-                r = run(base + extra + codec + [str(dst)], capture_output=True, text=True)
-                if r.returncode == 0 or "Unrecognized option" in r.stderr:
+            for extra in extras:
+                r = run(base + extra + codec + [str(tmp)], capture_output=True, text=True)
+                if r.returncode == 0:
                     break
+                errors.append((" ".join(fopt[:1] + extra), r.stderr.strip()))
+                if "Unrecognized option" in r.stderr or "Error splitting the argument" in r.stderr:
+                    break      # this ffmpeg doesn't know that option; try the next way
             if r.returncode == 0:
                 break
         if r.returncode != 0:
-            raise RuntimeError(f"Couldn't save {src.name}:\n{r.stderr[-800:]}")
+            try:
+                (work / "save_error.txt").write_text(
+                    "\n\n".join(f"[{how}]\n{err}" for how, err in errors), encoding="utf8")
+            except OSError:
+                pass
+            real = [e for _, e in errors if "Unrecognized option" not in e
+                    and "Error splitting the argument" not in e] or [e for _, e in errors] or [""]
+            msg = real[0][-600:]
+            if any(k in msg for k in ("Permission denied", "being used by another process")):
+                msg = ("The file is open in another program (a player, Yoto app or cloud sync?). "
+                       "Close it and press Save again.\n\n" + msg)
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise RuntimeError(f"Couldn't save {src.name}:\n{msg}")
+        try:
+            os.replace(tmp, dst)
+        except OSError:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise RuntimeError(f"Couldn't replace {dst.name} in {out} — it's open in another "
+                               "program (a player, the Yoto app or cloud sync?). Close it and press "
+                               "Save again.")
         clean_files.append(str(dst))
         report.append(f"\n{src.name}\n" + "-" * len(src.name))
         for m in (m for m in st["mutes"] if m["part"] == pi):
