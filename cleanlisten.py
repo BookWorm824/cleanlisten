@@ -887,6 +887,24 @@ def _masked_text(words):
     return " ".join(mask(t) if find_language([norm(t)], ALL_CATS) else t for t in words)
 
 
+# Words from the lists that can have an innocent meaning ("hell" the place, "bloody" covered in
+# blood, "ass" a donkey, "gay" cheerful, "screw it in"). Only these (and God's name, which can be
+# a sincere prayer) may be unticked by the AI helper, Claude or ChatGPT; every other listed word
+# is muted every time it's said - even in a denial ("it's not sexual") or a question - unless the
+# narrator didn't actually say it (misheard).
+INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
+                  "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
+                  "peed", "peeing", "screw"}
+
+
+def may_untick_word(m, words=None):
+    """Can a checker leave this listed word in? (see INNOCENT_WORDS)"""
+    if m.get("cat") in ("deity", "ai", "claude"):
+        return True
+    ws = words if words is not None else [norm(w) for w in str(m.get("word_raw") or m.get("word", "")).split()]
+    return any(w in INNOCENT_WORDS for w in ws)
+
+
 def _learned_examples():
     """Past choices (yours, then Claude's) for the AI on this PC to follow."""
     try:
@@ -1033,12 +1051,9 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
 
     # ---- 4. muted words: the AI only gets a say on words with an innocent meaning
     # too (hell, bloody, ass, Jesus, gay...). Clear swear words are never unticked.
-    AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
-                 "bugger", "tits", "sex", "sexes", "sexual", "sexually", "climaxed", "homo",
-                 "homos", "queer", "queers", "pee", "peed", "peeing", "screw"}
     checkable = [m for m in mutes if m.get("i") is not None and
-                 (m.get("cat") in ("deity", "orientation") or
-                  any(norm(asr[x]["t"]) in AMBIGUOUS for x in range(m["i"], m["j"])))]
+                 (m.get("cat") == "deity" or
+                  any(norm(asr[x]["t"]) in INNOCENT_WORDS for x in range(m["i"], m["j"])))]
     fine_schema = {"type": "object", "properties": {"fine": {"type": "array", "items": {
         "type": "integer"}}}, "required": ["fine"]}
     for b0 in range(0, len(checkable), 20):

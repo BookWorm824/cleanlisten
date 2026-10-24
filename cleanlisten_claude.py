@@ -97,7 +97,8 @@ CAT_RULES = {
     "deity": "God's name as a swear: 'Oh my God', 'Jesus Christ', 'good Lord' as exclamations. "
              "'Thank God' is FINE (the family keeps it), as are prayers and sincere talk about God.",
     "minced": "Soft substitutes: gosh, heck, darn, dang, jeez, freaking, fricking.",
-    "sexual": "Sexual words: sex, sexy, horny, and crude words for body parts - mute the word.",
+    "sexual": "Sexual words: sex, sexual, sexually, sexy, horny, aroused, orgasm and crude words for "
+              "body parts - mute the word every time.",
     "orientation": "Orientation words: gay, lesbian, homosexual, bisexual, queer and slurs - mute "
                    "the word (e.g. 'Are you gay?'). 'Gay' meaning cheerful or bright is fine.",
 }
@@ -427,6 +428,11 @@ How to judge:
 - Judge by the family's rules above, in context - not by single words. Read the sentences around \
 each finding. Ordinary story content (romance, kissing, marriage, danger, crime, death, a body \
 being found, plain violence, praying) stays unless a rule above covers it.
+- Listed words (the W findings) are muted EVERY time they're said - in a denial ("it's not \
+sexual"), a question, a quote or a joke. Say "keep" for a word only when it has a different, \
+innocent meaning right there (hell as the place, bloody meaning covered in blood, ass meaning a \
+donkey, gay meaning cheerful, God or Jesus in a sincere prayer, screwing something in) or the \
+narrator didn't actually say it (misheard).
 - The text comes from speech recognition, so some words are misheard. Judge what the narrator \
 really said: a misheard swear word is still swearing; a normal word that was misheard as a swear \
 word is not (say so and set misheard to true).
@@ -611,14 +617,20 @@ def apply_review(st, data, counts, asr=None):
                 continue
             verdict = "remove"
         if verdict == "keep" or verdict == "just_the_word":
-            if kind == "W" and it.get("cat") in CLEAR_SWEARS and not d.get("misheard"):
-                note = f"{N}: maybe fine"     # clear swear words stay muted unless misheard
+            if kind == "W" and not d.get("misheard") and not E.may_untick_word(it):
+                # listed words are always muted unless misheard or innocent in meaning
+                if not it.get(key, True):
+                    it[key] = True            # e.g. unticked earlier by the AI on this PC
+                    counts["on"] += 1
+                it["claude_verdict"] = "unsure"
+                note = f"Muted ({N} questioned it)"
             elif sure:
                 it[key] = False
                 note = f"{N}: fine"
                 counts["off"] += 1
             else:
                 note = f"{N} unsure"
+                it["claude_verdict"] = "unsure"
                 counts["unsure"] += 1
         else:
             if sure and not it.get(key, True):

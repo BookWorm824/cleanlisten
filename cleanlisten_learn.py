@@ -169,7 +169,7 @@ def apply(st, asr, add_passage, add_word=None):
             for ctx, words, cat in word_mutes:
                 if ctx and " " + ctx + " " in t and add_word(n, words, cat, "You muted this before"):
                     n_added += 1
-    ok_words = set(d["claude_ok_words"]) | set(sh["ok_words"])
+    ok_words = {p for p in set(d["claude_ok_words"]) | set(sh["ok_words"]) if _may_be_fine(p)}
     for m in st.get("mutes", []):
         s = d["words"].get(_word(m))
         if s and s["kept"] >= 2 and s["muted"] == 0:
@@ -210,6 +210,17 @@ def examples_text():
     if ex["kept"]:
         t += "\nThey KEPT (not a problem) sentences like:\n" + "\n".join(f'- "{s}"' for s in ex["kept"])
     return t
+
+
+def _may_be_fine(phrase_):
+    """Only words that can be innocent ("dinner at hell") are ever learned as fine in a phrase;
+    listed words like "sexual" are always muted (this also drops older wrong entries)."""
+    try:
+        import cleanlisten as E
+        last = phrase_.split()[-1:] or [""]
+        return E.may_untick_word({"cat": ""}, last) or not E.find_language(last, list(E.ALL_CATS))
+    except Exception:
+        return True
 
 
 def record_claude(st, book=""):
