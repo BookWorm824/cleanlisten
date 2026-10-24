@@ -306,6 +306,7 @@ class App(tk.Tk):
         self.claude_lbl.pack(side="left")
         self.claude_btn = ttk.Button(crow, text="Set up / sign in to Claude", style="Plain.TButton",
                                      command=self.claude_setup)
+        self._model_picker(b3, bg=CARD).pack(anchor="w", padx=(22, 0), pady=(6, 0))
         threading.Thread(target=self._claude_status_thread, daemon=True).start()
 
         b4 = self._card(body, "4", "Save to")
@@ -370,6 +371,22 @@ class App(tk.Tk):
                     break
             self.q.put(("claude_status", st))
         threading.Thread(target=work, daemon=True).start()
+
+    def _model_picker(self, parent, bg):
+        """A drop-down to choose the Claude model; the choice is remembered."""
+        cc = self._cc()
+        row = tk.Frame(parent, bg=bg)
+        if not cc:
+            return row
+        names = dict(cc.MODELS)
+        tk.Label(row, text="Claude model:", bg=bg, fg=INK, font=(FONT, 9)).pack(side="left")
+        var = tk.StringVar(value=names[cc.get_model()])
+        box = ttk.Combobox(row, textvariable=var, values=[n for _, n in cc.MODELS], state="readonly",
+                           width=16, font=(FONT, 9))
+        box.pack(side="left", padx=(6, 0))
+        box.bind("<<ComboboxSelected>>", lambda e: cc.set_model(
+            next(k for k, n in cc.MODELS if n == var.get())))
+        return row
 
     def _sync_ticks(self):
         """Copy the review screen's ticks into the analysis (before Claude reads it)."""
@@ -819,6 +836,7 @@ class App(tk.Tk):
                        command=self.claude_check).pack(side="left")
             ttk.Button(bar, text="Ask Claude\u2026", style="Plain.TButton",
                        command=self.open_chat).pack(side="left", padx=(8, 0))
+            self._model_picker(bar, bg=BG).pack(side="left", padx=(14, 0))
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
         self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
         btns = tk.Frame(self.footer, bg=BG)

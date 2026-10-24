@@ -21,7 +21,35 @@ import cleanlisten as E
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 WORK = APP_DATA / "claude"
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
-MODEL = "sonnet"
+# Which Claude model to use (chosen in the app; remembered in settings.json)
+MODELS = [("opus", "Opus (smartest)"), ("sonnet", "Sonnet (faster)"), ("haiku", "Haiku (fastest)")]
+DEFAULT_MODEL = "opus"
+SETTINGS = APP_DATA / "settings.json"
+
+
+def get_model():
+    try:
+        m = json.loads(SETTINGS.read_text(encoding="utf-8")).get("claude_model")
+        if m in dict(MODELS):
+            return m
+    except Exception:
+        pass
+    return DEFAULT_MODEL
+
+
+def set_model(m):
+    if m not in dict(MODELS):
+        return
+    try:
+        data = json.loads(SETTINGS.read_text(encoding="utf-8")) if SETTINGS.exists() else {}
+    except Exception:
+        data = {}
+    data["claude_model"] = m
+    try:
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    except Exception:
+        pass
 CHUNK_WORDS = 30000      # book text per request (about 40k tokens); long books go in sections
 CONTEXT_SENTS = 12       # sentences shown before a section, for context only
 
@@ -158,7 +186,7 @@ def _friendly(text):
 
 
 def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=None,
-        timeout=1200, model=MODEL):
+        timeout=1200, model=None):
     """One `claude -p` call. Returns the parsed JSON result (structured_output when a
     schema is given)."""
     exe = find_claude()
@@ -168,6 +196,7 @@ def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=N
     fd, sp = tempfile.mkstemp(prefix="system_", suffix=".txt", dir=WORK)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(system)
+    model = model or get_model()
     args = [exe, "-p", "--output-format", "json", "--model", model, "--tools", tools,
             "--disallowedTools", "mcp__*", "--strict-mcp-config", "--system-prompt-file", sp]
     if tools:
