@@ -16,6 +16,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cleanlisten as engine  # noqa: E402
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
+HERE = Path(__file__).resolve().parent
+RESUME = APP_DATA / "resume.json"     # your review, kept across an update or closing the window
+
+
+def app_version():
+    try:
+        return json.loads((HERE / "version.json").read_text())["version"]
+    except Exception:
+        return "?"
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
     "#F6F3EE", "#FFFFFF", "#23211F", "#6D6862", "#2F6F62", "#24574D", "#E3DED6")
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
@@ -139,8 +148,11 @@ class App(tk.Tk):
         self.saved_opts = {}   # filter ticks, kept when re-checking a book
         self._style()
         self.page = None
+        self.page_name = None
         self.show_setup()
         self.after(100, self._poll)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._restore()
 
     # ---------- look ----------
     def _style(self):
@@ -173,6 +185,12 @@ class App(tk.Tk):
         self.footer = tk.Frame(self.page, bg=BG)
         self.footer.pack(side="bottom", fill="x", pady=(12, 0))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold")).pack(anchor="w")
+        self.page_name = "other"
+        # "Check for updates" on every screen: updates and comes straight back to where you were
+        self._upd_lbl = tk.Label(self.page, text=f"v{app_version()} \u00b7 Check for updates", bg=BG,
+                                 fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
+        self._upd_lbl.place(relx=1.0, y=2, anchor="ne")
+        self._upd_lbl.bind("<Button-1>", lambda e: self.check_updates())
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
                      wraplength=700, justify="left").pack(anchor="w", pady=(2, 12))
@@ -345,6 +363,128 @@ class App(tk.Tk):
         ttk.Checkbutton(b4, text="Also split into chapter files  (for Yoto and players "
                         "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(8, 0))
         self._refresh_labels()
+
+    # ---------- updates without losing your place ----------
+    def _launcher(self):
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader("cl_launcher", str(HERE / "launcher.pyw"))
+        spec = importlib.util.spec_from_loader("cl_launcher", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        return mod
+
+    def check_updates(self):
+        if getattr(self, "_updating", False):
+            return
+        if self.page_name == "working":
+            messagebox.showinfo("CleanListen", "Let it finish first (or press Cancel), then check "
+                                "for updates. Your review will be kept.")
+            return
+        self._updating = True
+        self._upd_lbl.config(text="Checking for updates\u2026")
+
+        def work():
+            try:
+                L = self._launcher()
+                import urllib.request
+                with urllib.request.urlopen(L.RAW + "version.json", timeout=10) as r:
+                    remote = json.loads(r.read().decode("utf8"))
+                if L._ver(remote["version"]) <= L._ver(app_version()):
+                    self.q.put(("update_none", app_version()))
+                    return
+                self.q.put(("update_progress", f"Updating to {remote['version']}\u2026"))
+                new = L.update()
+                self.q.put(("updated", new or remote["version"]))
+            except Exception as ex:
+                self.q.put(("update_fail", str(ex)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _update_msg(self, kind, val):
+        self._updating = kind == "update_progress"
+        lbl = getattr(self, "_upd_lbl", None)
+        if kind == "update_progress":
+            if lbl and lbl.winfo_exists():
+                lbl.config(text=val)
+        elif kind == "update_none":
+            if lbl and lbl.winfo_exists():
+                lbl.config(text=f"v{val} \u00b7 \u2713 You have the latest version")
+        elif kind == "update_fail":
+            if lbl and lbl.winfo_exists():
+                lbl.config(text=f"v{app_version()} \u00b7 Check for updates")
+            messagebox.showerror("CleanListen", f"Couldn't update right now ({val[:200]}). "
+                                 "Try again in a few minutes.")
+        elif kind == "updated":
+            self._save_resume(note=f"CleanListen was updated to version {val}. Everything is just "
+                                   "as you left it.")
+            env = dict(os.environ, CLEANLISTEN_UPDATED=f"CleanListen was updated to version {val}.")
+            try:
+                subprocess.Popen([sys.executable, str(HERE / "CleanListen.pyw")], cwd=str(HERE), env=env)
+            except Exception as ex:
+                messagebox.showinfo("CleanListen", f"Updated to {val}. Close CleanListen and open it "
+                                    f"again to finish ({ex}).")
+                return
+            self.destroy()
+
+    def _save_resume(self, note=""):
+        """Remember where you are (the review with all its ticks, or the book you picked)."""
+        try:
+            data = {"time": __import__("time").time(), "note": note, "audio": self.audio,
+                    "ebook": self.ebook, "outdir": self.outdir, "saved_opts": self.saved_opts}
+            if self.page_name == "review" and self.analysis and self.workdir:
+                self._sync_ticks()
+                self._save_analysis()
+                data.update(page="review", workdir=str(self.workdir),
+                            split=getattr(self, "split_chapters", False),
+                            show_fine=bool(getattr(self, "show_fine", None) and self.show_fine.get()))
+            elif self.audio:
+                data["page"] = "setup"
+            else:
+                return
+            APP_DATA.mkdir(parents=True, exist_ok=True)
+            RESUME.write_text(json.dumps(data, indent=1), encoding="utf8")
+        except Exception:
+            pass
+
+    def _restore(self):
+        """Back where you were after an update (or after closing the window on the review)."""
+        try:
+            data = json.loads(RESUME.read_text(encoding="utf8"))
+        except Exception:
+            return
+        try:
+            RESUME.unlink()
+        except OSError:
+            pass
+        import time as _t
+        if _t.time() - data.get("time", 0) > 14 * 86400:
+            return
+        self.audio = [a for a in data.get("audio") or [] if Path(a).exists()]
+        self.ebook = data.get("ebook")
+        self.outdir = data.get("outdir")
+        self.saved_opts = data.get("saved_opts") or {}
+        self.resume_note = data.get("note") or "Picked up where you left off."
+        if data.get("page") == "review" and data.get("workdir"):
+            wd = Path(data["workdir"])
+            try:
+                self.analysis = json.loads((wd / "analysis.json").read_text())
+            except Exception:
+                self.analysis = None
+            if self.analysis:
+                self.workdir = wd
+                self.split_chapters = data.get("split", False)
+                self.show_fine = tk.BooleanVar(value=data.get("show_fine", False))
+                self.show_review()
+                return
+        if self.audio:
+            if data.get("note"):
+                os.environ["CLEANLISTEN_UPDATED"] = data["note"]
+            self.show_setup()
+
+    def _on_close(self):
+        if self.page_name == "review":
+            self._save_resume()        # reopen straight onto this review
+        self.destroy()
 
     # ---------- Claude ----------
     def _cc(self):
@@ -812,6 +952,7 @@ class App(tk.Tk):
                    "and come back — closing the window pauses it, and it picks up "
                    "where it left off next time.")
         p = self._new_page(title, sub)
+        self.page_name = "working"
         box = tk.Frame(p, bg=BG)
         box.pack(fill="x", pady=40)
         self.pb = ttk.Progressbar(box, style="Green.Horizontal.TProgressbar", maximum=1000,
@@ -868,6 +1009,8 @@ class App(tk.Tk):
                 elif kind == "rendered":
                     self._saving = False
                     self.show_done(msg[1])
+                elif kind in ("update_none", "update_fail", "update_progress", "updated"):
+                    self._update_msg(kind, msg[1])
                 elif kind == "claude_status":
                     self._show_claude_status(*msg[1:])
                 elif kind == "claude_done":
@@ -902,6 +1045,12 @@ class App(tk.Tk):
         else:
             sub = "Everything ticked below will be removed. Untick anything you want to keep."
         p = self._new_page("Review before saving", sub)
+        self.page_name = "review"
+        note = getattr(self, "resume_note", None)
+        if note:
+            self.resume_note = None
+            tk.Label(p, text="\u2713 " + note, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), padx=10,
+                     pady=6, anchor="w").pack(fill="x", pady=(0, 8))
         for note in (a.get("claude_note"), a.get("learn_note"), a.get("ai_note"), a.get("ebook_note")):
             if note:
                 tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=720,
