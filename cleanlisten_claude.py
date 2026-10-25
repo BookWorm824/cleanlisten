@@ -75,10 +75,16 @@ KIND_RULES = {
             "wounds, mutilation or bodies (several sentences of it). A single violent sentence - "
             "even a split skull or blood seeping - stays, as does saying someone was shot, stabbed, "
             "beaten, killed or found dead. This family is fine with mystery-level violence.",
-    "religion": "Religious content: cut people explaining, preaching or debating religious "
-                "beliefs, and anyone angry with, blaming, hating or denying God or losing their "
-                "faith (e.g. 'I'm angry with God', 'God took my daughter', 'there is no God'). "
-                "Fine: someone prayed, said grace, thanked God, believes in God, goes to church.",
+    "religion": "Religious content: cut people explaining, preaching, teaching or debating "
+                "religious beliefs (including scripture quoted or read as part of it, and an "
+                "author's own religious commentary); statements of belief or testimony ('There is a "
+                "God, and He listens', 'My faith is in Jesus'); doubting or questioning whether God "
+                "exists or cares ('I have trouble believing in God', 'if you're there, if you care at "
+                "all', 'I don't know if I believe'); and anyone angry with, blaming, mocking, hating "
+                "or denying God or losing their faith. Fine (keep): a brief mention that someone "
+                "prayed or a short simple prayer ('please, Jesus'), saying grace, thanking God, going "
+                "to church or a prayer service. This family cuts borderline religious talk - when "
+                "unsure, choose remove.",
     "relationship": "Same-sex and non-traditional relationships: cut sentences that show a "
                     "same-sex couple, romance or flirting (including a man flirting with a man), "
                     "throuples, polyamory, open marriages, swingers, polygamy. A man and woman "
@@ -670,8 +676,9 @@ def apply_review(st, data, counts, asr=None):
                 note = f"{N} unsure"
                 it["claude_verdict"] = "unsure"
                 counts["unsure"] += 1
-                if kind == "P":
+                if kind == "P" and it.get("kind") != "religion":
                     it[key] = False      # a passage it doubts stays in; you can tick it to cut
+                # (borderline religious talk stays cut: this family cut every one of those)
         else:
             if sure and not it.get(key, True):
                 it[key] = True
