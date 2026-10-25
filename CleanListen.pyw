@@ -201,6 +201,7 @@ class App(tk.Tk):
         wrap = tk.Frame(parent, bg=BG)
         wrap.pack(fill="both", expand=True)
         canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
+        self._canvas = canvas
         sb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
         inner = tk.Frame(canvas, bg=BG)
         win = canvas.create_window((0, 0), window=inner, anchor="nw")
@@ -643,8 +644,7 @@ class App(tk.Tk):
             return
         self._sync_ticks()
         try:
-            asr = engine.load_asr(self.workdir, self.analysis["parts"])
-            self.chat = cc.Chat(self.analysis, asr, self.workdir)
+            self._ensure_chat()
         except Exception as ex:
             messagebox.showerror("CleanListen", f"Couldn't open the chat ({ex}).")
             return
@@ -692,6 +692,106 @@ class App(tk.Tk):
         self._chat_say("info", f"Tip: {N} looks over the whole book every time you ask, so "
                                "answers can take a minute or two.")
 
+    # ---------- ask about one passage or word, right on the review list ----------
+    def _ensure_chat(self):
+        cc = self._cc()
+        if not cc:
+            raise RuntimeError("Claude files are missing. Reopen CleanListen to update.")
+        if getattr(self, "chat", None) is None or self.chat.st is not self.analysis:
+            asr = engine.load_asr(self.workdir, self.analysis["parts"])
+            self.chat = cc.Chat(self.analysis, asr, self.workdir)
+        return self.chat
+
+    def _ask_inline(self, holder, item, txt, link, kind):
+        """A small box under that passage/word: type what you want, and it changes right away."""
+        if getattr(link, "_open", False):
+            return
+        link._open = True
+        N = self._ai_name()
+        box = tk.Frame(holder, bg="#EEF5F3", padx=8, pady=6)
+        box.pack(fill="x", pady=(4, 0), side="bottom" if kind == "W" else None)
+        hint = ("Tip: highlight part of the text above first to point at it. " if txt is not None else "")
+        tk.Label(box, text=hint + "e.g. \u201cjust cut the bed line\u201d, \u201ckeep this\u201d, "
+                 "\u201cmute only that word\u201d", bg="#EEF5F3", fg=MUTED, font=(FONT, 8),
+                 wraplength=640, justify="left").pack(anchor="w")
+        row = tk.Frame(box, bg="#EEF5F3")
+        row.pack(fill="x", pady=(2, 0))
+        entry = ttk.Entry(row)
+        entry.pack(side="left", fill="x", expand=True)
+        status = tk.Label(box, text="", bg="#EEF5F3", fg=ACCENT_DK, font=(FONT, 9))
+
+        def send(_e=None):
+            q = entry.get().strip()
+            if not q:
+                return
+            picked = ""
+            if txt is not None:
+                try:
+                    picked = txt.get("sel.first", "sel.last").strip()
+                except tk.TclError:
+                    picked = ""
+            btn.configure(state="disabled")
+            status.config(text=f"{N} is reading\u2026")
+            status.pack(anchor="w")
+            self._sync_ticks()
+            try:
+                chat = self._ensure_chat()
+            except Exception as ex:
+                status.config(text=str(ex))
+                return
+            fid = ("P" if kind == "P" else "W") + str(item.get("id"))
+            if kind == "P":
+                what = (f"this passage on my list ({fid}): \"{item.get('text', '')}\"")
+            else:
+                what = (f"this muted word on my list ({fid}): \"{item.get('word_raw') or item.get('word')}\" in "
+                        f"\"\u2026{item.get('ctx_raw', '')} {item.get('word_raw', '')} {item.get('ctx_after_raw', '')}\u2026\"")
+            msg = (f"About {what}" + (f"\nI highlighted: \"{picked}\"" if picked else "") +
+                   f"\n\n{q}\n\n(Make the change on my list for {fid} - or nearby sentences - as I ask.)")
+            self._chat_history().append(("me", f"[about {fid}] " + q))
+
+            def work():
+                try:
+                    ans, changes = chat.ask(msg)
+                    self.q.put(("card_reply", item, ans, changes))
+                except Exception as ex:
+                    self.q.put(("card_reply", item, f"Sorry, that didn't work: {ex}", []))
+            threading.Thread(target=work, daemon=True).start()
+        btn = ttk.Button(row, text="Send", style="Plain.TButton", command=send)
+        btn.pack(side="left", padx=(6, 0))
+        entry.bind("<Return>", send)
+        entry.focus_set()
+
+    def _card_reply(self, item, ans, changes):
+        import copy
+        self._sync_ticks()
+        a = self.analysis
+        snapshot = (copy.deepcopy(a["scenes"]), copy.deepcopy(a["mutes"]))
+        lines = [self.chat.describe(c) for c in changes] if changes else []
+        n = self.chat.apply(changes) if changes else 0
+        text = ans or "(no answer)"
+        if n:
+            text += "\nChanged: " + "; ".join(lines)
+            self._undo = snapshot
+        item["chat_answer"] = text
+        self._chat_history().append(("them", text))
+        self._chat_say("them", text)
+        self._save_analysis()
+        self.show_review(True)
+
+    def _undo_last(self):
+        snap = getattr(self, "_undo", None)
+        if not snap:
+            return
+        self.analysis["scenes"][:], self.analysis["mutes"][:] = snap
+        self._undo = None
+        self._chat_history().append(("info", "Undid the last change."))
+        self._save_analysis()
+        self.show_review(True)
+
+    def _chat_history(self):
+        a = self.analysis if self.analysis is not None else {}
+        return a.setdefault("chat_history", [])
+
     def _chat_say(self, who, text):
         if not getattr(self, "chat_log", None) or not self.chat_log.winfo_exists():
             return
@@ -711,6 +811,7 @@ class App(tk.Tk):
         for c in self.chat_changes.winfo_children():
             c.destroy()
         self._chat_say("me", q)
+        self._chat_history().append(("me", q))
         self._chat_say("info", f"{self._ai_name()} is reading the book\u2026")
         self.chat_send.configure(state="disabled")
         self._sync_ticks()
@@ -728,6 +829,7 @@ class App(tk.Tk):
             return
         self.chat_send.configure(state="normal")
         self._chat_say("them", ans or "(no answer)")
+        self._chat_history().append(("them", ans or ""))
         for c in self.chat_changes.winfo_children():
             c.destroy()
         if not changes:
@@ -740,7 +842,8 @@ class App(tk.Tk):
         lines = [self.chat.describe(c) for c in changes]
         n = self.chat.apply(changes)
         self._save_analysis()
-        self.show_review()
+        self._undo = snapshot
+        self.show_review(True)
         if not n:
             self._chat_say("info", "(Nothing on the list needed changing.)")
             return
@@ -749,8 +852,9 @@ class App(tk.Tk):
 
         def undo():
             a["scenes"][:], a["mutes"][:] = snapshot
+            self._undo = None
             self._save_analysis()
-            self.show_review()
+            self.show_review(True)
             for c in self.chat_changes.winfo_children():
                 c.destroy()
             self._chat_say("info", "Undone \u2014 the list is back the way it was.")
@@ -1024,6 +1128,8 @@ class App(tk.Tk):
                 elif kind == "claude_fail":
                     messagebox.showerror("Claude check", msg[1])
                     self.show_review()
+                elif kind == "card_reply":
+                    self._card_reply(*msg[1:])
                 elif kind == "chat_reply":
                     self._chat_reply(msg[1], msg[2])
                 elif kind == "cancelled":
@@ -1042,7 +1148,20 @@ class App(tk.Tk):
         self.after(150, self._poll)
 
     # ---------- page 3: review everything before saving ----------
-    def show_review(self):
+    def show_review(self, keep_scroll=False):
+        """The review list. keep_scroll: redraw without jumping back to the top."""
+        frac = None
+        if keep_scroll and self.page_name == "review" and getattr(self, "_canvas", None):
+            try:
+                frac = self._canvas.yview()[0]
+            except Exception:
+                frac = None
+        self._show_review()
+        if frac:
+            self.update_idletasks()
+            self.after(30, lambda: self._canvas.yview_moveto(frac))
+
+    def _show_review(self):
         a = self.analysis
         scenes, mutes = a["scenes"], a["mutes"]
         if not scenes and not mutes:
@@ -1082,7 +1201,10 @@ class App(tk.Tk):
         if hidden:
             ttk.Checkbutton(bar2, text=f"Also show the {len(hidden)} marked fine (left in the book)",
                             variable=self.show_fine, style="Bg.TCheckbutton",
-                            command=lambda: (self._sync_ticks(), self.show_review())).pack(side="left")
+                            command=lambda: (self._sync_ticks(), self.show_review(True))).pack(side="left")
+        if getattr(self, "_undo", None):
+            ttk.Button(bar2, text=f"Undo {N}'s last change", style="Plain.TButton",
+                       command=self._undo_last).pack(side="left", padx=(10, 0))
         if a.get("sentences"):
             ttk.Button(bar2, text="Search all text\u2026", style="Plain.TButton",
                        command=self.open_all_text).pack(side="right")
@@ -1160,6 +1282,16 @@ class App(tk.Tk):
                 txt.insert("1.0", sc["text"])
                 txt.configure(state="disabled")
                 txt.pack(fill="x", pady=(6, 0))
+                if sc.get("chat_answer"):
+                    tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg="#EEF5F3", fg=ACCENT_DK,
+                             font=(FONT, 9), wraplength=680, justify="left", padx=8, pady=4,
+                             anchor="w").pack(fill="x", pady=(6, 0))
+                if a.get("sentences"):
+                    ask = tk.Label(card, text=f"Ask {N} about this\u2026", bg=CARD, fg=ACCENT,
+                                   font=(FONT, 9, "underline"), cursor="hand2")
+                    ask.pack(anchor="e", pady=(4, 0))
+                    ask.bind("<Button-1>", lambda e, c=card, it=sc, t=txt, l=ask:
+                             self._ask_inline(c, it, t, l, "P"))
 
         # words
         self.mute_vars = []
@@ -1182,6 +1314,12 @@ class App(tk.Tk):
                                 cursor="hand2", padx=6)
                 if m.get("word_raw"):
                     show.pack(side="right")
+                if a.get("sentences"):
+                    ask = tk.Label(row, text="Ask", bg=rbg, fg=ACCENT, font=(FONT, 9, "underline"),
+                                   cursor="hand2", padx=4)
+                    ask.pack(side="right")
+                    ask.bind("<Button-1>", lambda e, c=box, it=m, l=ask, r=row:
+                             self._ask_inline(r, it, None, l, "W"))
                 if m.get("note"):
                     good = _yellow(m["note"])
                     tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
@@ -1296,7 +1434,7 @@ class App(tk.Tk):
 
         def after_change(msg):
             self._save_analysis()
-            self.show_review()
+            self.show_review(True)
             status.config(text=msg)
 
         def cut():
@@ -1486,10 +1624,33 @@ class App(tk.Tk):
         ttk.Button(row, text="See what was removed", style="Plain.TButton",
                    command=lambda: open_path(str(Path(res["out"]) / "CleanListen report.txt"))
                    ).pack(side="left", padx=12)
+        exp = tk.Frame(p, bg=CARD, padx=16, pady=12, highlightbackground=LINE, highlightthickness=1)
+        exp.pack(fill="x", pady=(18, 0))
+        tk.Label(exp, text="Help teach CleanListen", bg=CARD, fg=INK,
+                 font=(FONT, 12, "bold")).pack(anchor="w")
+        tk.Label(exp, text="Saves one file with everything we refined on this book \u2014 what you "
+                 "cut, kept and changed, Claude's reasons and your chat \u2014 so it can be added to "
+                 "the knowledge every copy of CleanListen starts with. No audio.", bg=CARD, fg=MUTED,
+                 font=(FONT, 9), wraplength=680, justify="left").pack(anchor="w", pady=(2, 8))
+        ttk.Button(exp, text="Export what we refined\u2026", style="Accent.TButton",
+                   command=self.export_refined).pack(anchor="w")
         ttk.Button(self.footer, text="Clean another book", style="Plain.TButton",
                    command=self.reset).pack(side="right")
         ttk.Button(self.footer, text="Re-check this book", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
+
+    def export_refined(self):
+        try:
+            import cleanlisten_learn as learn
+            path = learn.export_book(self.analysis, title=(self.analysis or {}).get("title", ""))
+        except Exception as ex:
+            messagebox.showerror("CleanListen", f"Couldn't save the file: {ex}")
+            return
+        if os.name == "nt":
+            subprocess.Popen(f'explorer /select,"{path}"')
+        messagebox.showinfo("CleanListen", f"Saved as \u201c{path.name}\u201d in {path.parent}.\n\n"
+                            "Attach that file in your chat with Claude and ask for it to be added "
+                            "to CleanListen. Every copy gets it with the next update.")
 
     def reset(self):
         self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None

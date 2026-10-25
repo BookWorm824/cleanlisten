@@ -279,6 +279,60 @@ def record_claude(st, book=""):
         pass
 
 
+def export_book(st, title="", dest_dir=None):
+    """Everything refined on one book (final decisions, your changes, Claude's/ChatGPT's
+    reasons, the chat), plus everything learned so far - one file to send in."""
+    out = {"what": "CleanListen refined", "date": date.today().isoformat(), "book": title,
+           "filters": st.get("filters"), "notes": [st.get(k) for k in ("claude_note", "learn_note",
+                                                                         "ai_note") if st.get(k)],
+           "chat": st.get("chat_history", []), "items": [], "learned": load(), "findings": []}
+    try:
+        out["version"] = json.loads((HERE / "version.json").read_text())["version"]
+    except Exception:
+        pass
+
+    def origin(x):
+        if x.get("by_you"):
+            return "you"
+        if x.get("claude") or x.get("src") == "claude":
+            return "Claude/ChatGPT"
+        if x.get("learned"):
+            return "learned"
+        if x.get("ai") or x.get("src") == "ai":
+            return "AI on PC"
+        return "word lists"
+    for sc in st.get("scenes", []):
+        out["items"].append({"type": "passage", "kind": sc.get("kind"), "part": sc.get("part"),
+                             "start": sc.get("s"), "removed": bool(sc.get("cut", True)),
+                             "origin": origin(sc), "note": sc.get("ai_note"),
+                             "reason": sc.get("claude_reason"), "verdict": sc.get("claude_verdict"),
+                             "trimmed": bool(sc.get("trimmed")), "chat": sc.get("chat_answer"),
+                             "text": sc.get("text", "")})
+    for m in st.get("mutes", []):
+        out["items"].append({"type": "word", "kind": m.get("cat"), "part": m.get("part"),
+                             "start": m.get("s"), "removed": bool(m.get("on", True)),
+                             "origin": origin(m), "note": m.get("note"),
+                             "reason": m.get("claude_reason"), "verdict": m.get("claude_verdict"),
+                             "word": m.get("word_raw") or m.get("word"),
+                             "text": f"{m.get('ctx_raw', '')} [{m.get('word_raw') or m.get('word', '')}] "
+                                     f"{m.get('ctx_after_raw', '')}".strip()})
+    if FINDINGS.exists():
+        for f in sorted(FINDINGS.glob("*.json")):
+            try:
+                out["findings"].append(json.loads(f.read_text("utf8")))
+            except Exception:
+                pass
+    home = Path(os.environ.get("USERPROFILE") or Path.home())
+    dest = Path(dest_dir) if dest_dir else next(
+        (d for d in (home / "OneDrive" / "Desktop", home / "Desktop", home / "Documents") if d.exists()),
+        APP_DATA)
+    dest.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r'[<>:"/\\|?*]', "", title)[:60].strip() or "book"
+    path = dest / f"CleanListen refined - {safe} {out['date']}.json"
+    path.write_text(json.dumps(out, indent=1), encoding="utf8")
+    return path
+
+
 def export(dest_dir=None):
     """Everything CleanListen has learned on this PC, in one file to send in."""
     out = {"what": "CleanListen learned", "date": date.today().isoformat(), "learned": load(),

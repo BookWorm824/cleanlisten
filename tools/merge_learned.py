@@ -1,5 +1,6 @@
 """Merge 'CleanListen learned <date>.json' files (from the "Send what CleanListen
-learned" button) into the app's shared_learned.json, which ships with updates.
+learned" button) and 'CleanListen refined - <book> <date>.json' files (from "Export what
+we refined" after a book) into the app's shared_learned.json, which ships with updates.
 
     python tools/merge_learned.py shared_learned.json "CleanListen learned 2026-10-24.json" [...]
 
