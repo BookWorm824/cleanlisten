@@ -72,7 +72,8 @@ MODERATE = [
     r"bugger.*", r"wanker.*", r"twats?", r"sluts?", r"slutty", r"whores?",
     r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*",
 ]
-MILD = [r"damn.*", r"dammit", r"goddamn.*", r"goddam", r"hell", r"hellhole",
+# ("damning" = incriminating and "damnation" are left alone)
+MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"hell", r"hellhole",
         r"crap", r"crappy", r"craps", r"sod", r"sodding", r"bloody"]
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"jeez", r"geez",
           r"gosh", r"darn.*", r"heck", r"dang"]
@@ -894,7 +895,7 @@ def _masked_text(words):
 # narrator didn't actually say it (misheard).
 INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
-                  "peed", "peeing", "screw"}
+                  "peed", "peeing", "screw", "craps"}
 
 
 def may_untick_word(m, words=None):
@@ -903,6 +904,27 @@ def may_untick_word(m, words=None):
         return True
     ws = words if words is not None else [norm(w) for w in str(m.get("word_raw") or m.get("word", "")).split()]
     return any(w in INNOCENT_WORDS for w in ws)
+
+
+def _ai_backed(kind, words):
+    """Does a passage the AI on this PC flagged contain anything the word lists recognise
+    for that kind? (Its unbacked finds are mostly false alarms, so they start unticked.)"""
+    try:
+        if kind in ("sex", "ref"):
+            return is_explicit(words) or bool(find_language(words, ["sexual"]))
+        if kind == "gore":
+            return is_gory(words)
+        if kind == "religion":
+            return religion_score(words) > 0 or blames_god(words)
+        if kind == "crude":
+            return crude_hit(words)
+        if kind == "bully":
+            return bully_hit(words)
+        if kind == "flirt":
+            return flirt_hit(words)
+    except Exception:
+        pass
+    return False
 
 
 def _learned_examples():
@@ -922,7 +944,9 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     ai = _ai_module()
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
-    kinds = [k for k in kinds if k in AI_TYPES]
+    # relationship talk is left to the word lists and Claude/ChatGPT: the small AI here
+    # flagged almost every man-and-woman scene as a same-sex relationship
+    kinds = [k for k in kinds if k in AI_TYPES and k != "relationship"]
     lang = [c for c in cats if c in LANGUAGE_DEFS]
     mutes = mutes if mutes is not None else []
     if not kinds and not lang:
@@ -1139,6 +1163,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
             if any(x["part"] == part and not (e_ < x["s"] or s_ > x["e"]) for x in scenes):
                 continue  # already flagged by the word lists
             sure = any(idx_conf[i] == "high" for i in run_)
+            # only ticked when the word lists back it up; otherwise left for you to decide
+            sure = sure and _ai_backed(kind, [asr[k]["n"] for k in range(a_, b_ + 1)])
             scenes.append({"kind": kind, "part": part, "s": s_, "e": e_, "ai": True,
                            "cut": sure, "ai_note": "found by AI" if sure else "AI suggests",
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
@@ -1463,6 +1489,11 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                              ("religion", find_religion), ("relationship", find_relationships),
                              ("crude", find_crude), ("bully", find_bully),
                              ("flirt", find_flirt)) if on]
+    if use_ai and use_claude:
+        # Claude/ChatGPT reads the whole book anyway; the AI on this PC mostly added noise
+        # (in one book it flagged 406 things and Claude cleared 387), so it's skipped
+        ai_note = "Skipped the AI on this PC because the final check reads everything."
+        use_ai = False
     if use_ai:
         try:
             for sc in scenes:

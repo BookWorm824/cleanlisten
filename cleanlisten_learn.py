@@ -217,8 +217,12 @@ def _may_be_fine(phrase_):
     listed words like "sexual" are always muted (this also drops older wrong entries)."""
     try:
         import cleanlisten as E
-        last = phrase_.split()[-1:] or [""]
-        return E.may_untick_word({"cat": ""}, last) or not E.find_language(last, list(E.ALL_CATS))
+        words = phrase_.split()
+        for i, j, cat in E.find_language(words, list(E.ALL_CATS)):
+            if j == len(words) or i >= len(words) - 2:   # the listed word(s) the phrase ends on
+                if not E.may_untick_word({"cat": cat}, words[i:j]):
+                    return False
+        return True
     except Exception:
         return True
 

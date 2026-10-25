@@ -66,12 +66,15 @@ KIND_RULES = {
     "sex": "Explicit sex scenes: cut the explicit part of the scene. Kissing, romance, a couple "
            "going to bed or waking up together, beds and sheets are fine - only explicit sexual "
            "content is cut.",
-    "ref": "Sexual references: cut sentences that talk about sex, sexual jokes or innuendo, "
-           "someone being sexy or aroused, sleeping around, one-night stands. Ordinary romance, "
-           "affection, dating, marriage and kissing are fine.",
-    "gore": "Gory descriptions: cut overly graphic, gory descriptions of wounds, bodies or "
-            "violence. Saying someone was shot, stabbed, killed or found dead, or some blood, is "
-            "normal for a mystery and fine.",
+    "ref": "Sexual references: cut sentences that talk about sex, describe sexual desire, or are "
+           "sexual jokes or innuendo, someone being sexy or aroused, one-night stands. A sentence "
+           "that only MENTIONS that someone slept with someone or made love (e.g. 'I should never "
+           "have told him I'd slept with someone else') stays - those words are muted on their own "
+           "(answer just_the_word). Ordinary romance, affection, dating, marriage and kissing are fine.",
+    "gore": "Gory descriptions: cut only prolonged, very graphic descriptions that dwell on "
+            "wounds, mutilation or bodies (several sentences of it). A single violent sentence - "
+            "even a split skull or blood seeping - stays, as does saying someone was shot, stabbed, "
+            "beaten, killed or found dead. This family is fine with mystery-level violence.",
     "religion": "Religious content: cut people explaining, preaching or debating religious "
                 "beliefs, and anyone angry with, blaming, hating or denying God or losing their "
                 "faith (e.g. 'I'm angry with God', 'God took my daughter', 'there is no God'). "
@@ -94,7 +97,8 @@ CAT_RULES = {
     "mild": "Mild words: damn, hell used as a curse, crap, bloody used as a curse, 'screw you' / "
             "'screw it'. 'Hell' as the place in religious talk, 'bloody' meaning covered in blood, "
             "or screwing something in, are fine.",
-    "deity": "God's name as a swear: 'Oh my God', 'Jesus Christ', 'good Lord' as exclamations. "
+    "deity": "God's name as a swear: 'Oh my God', 'Jesus Christ', 'good Lord', 'God knows (what)', "
+             "'God, I hope not' as exclamations. "
              "'Thank God' is FINE (the family keeps it), as are prayers and sincere talk about God.",
     "minced": "Soft substitutes: gosh, heck, darn, dang, jeez, freaking, fricking.",
     "sexual": "Sexual words: sex, sexual, sexually, sexy, horny, aroused, orgasm and crude words for "
