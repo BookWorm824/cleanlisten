@@ -204,6 +204,7 @@ class App(tk.Tk):
         self._canvas = canvas
         sb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
         inner = tk.Frame(canvas, bg=BG)
+        self._inner = inner
         win = canvas.create_window((0, 0), window=inner, anchor="nw")
 
         def refresh(_=None):
@@ -776,7 +777,7 @@ class App(tk.Tk):
         self._chat_history().append(("them", text))
         self._chat_say("them", text)
         self._save_analysis()
-        self.show_review(True)
+        self.show_review(True, focus=item)
 
     def _undo_last(self):
         snap = getattr(self, "_undo", None)
@@ -1148,21 +1149,58 @@ class App(tk.Tk):
         self.after(150, self._poll)
 
     # ---------- page 3: review everything before saving ----------
-    def show_review(self, keep_scroll=False):
-        """The review list. keep_scroll: redraw without jumping back to the top."""
-        frac = None
+    def _y_in_list(self, w):
+        """How far down the review list a card/row sits (pixels from the top)."""
+        y = 0
+        inner = getattr(self, "_inner", None)
+        while w is not None and w is not inner:
+            y += w.winfo_y()
+            w = w.master
+        return y
+
+    def show_review(self, keep_scroll=False, focus=None):
+        """The review list. keep_scroll: redraw without moving - the list stays on the same
+        passage you were looking at (focus: the passage/word you just asked about)."""
+        anchor = None
         if keep_scroll and self.page_name == "review" and getattr(self, "_canvas", None):
             try:
-                frac = self._canvas.yview()[0]
+                c, inner = self._canvas, self._inner
+                h = max(1, inner.winfo_height())
+                top = c.yview()[0] * h
+                if focus is not None and id(focus) in getattr(self, "_item_widgets", {}):
+                    w = self._item_widgets[id(focus)]
+                    anchor = (id(focus), self._y_in_list(w) - top, c.yview()[0])
+                else:   # the passage/word at the top of the view right now
+                    best = None
+                    for key, w in getattr(self, "_item_widgets", {}).items():
+                        y = self._y_in_list(w)
+                        if y <= top + 5 and (best is None or y > best[1]):
+                            best = (key, y)
+                    anchor = (best[0], best[1] - top, c.yview()[0]) if best else (None, 0, c.yview()[0])
             except Exception:
-                frac = None
+                anchor = None
         self._show_review()
-        if frac:
-            self.update_idletasks()
-            self.after(30, lambda: self._canvas.yview_moveto(frac))
+        if anchor:
+            # the new list takes a moment to lay out; put it back, then check again as it settles
+            for delay in (10, 80, 250, 600):
+                self.after(delay, lambda a=anchor: self._scroll_back(*a))
+
+    def _scroll_back(self, key, offset, frac):
+        try:
+            c, inner = self._canvas, self._inner
+            c.configure(scrollregion=c.bbox("all"))
+            h = max(1, inner.winfo_height())
+            w = getattr(self, "_item_widgets", {}).get(key)
+            if w is not None and w.winfo_exists():
+                c.yview_moveto(max(0.0, (self._y_in_list(w) - offset) / h))
+            else:
+                c.yview_moveto(frac)
+        except Exception:
+            pass
 
     def _show_review(self):
         a = self.analysis
+        self._item_widgets = {}
         scenes, mutes = a["scenes"], a["mutes"]
         if not scenes and not mutes:
             sub = "Nothing to remove was found in this book."
@@ -1257,6 +1295,7 @@ class App(tk.Tk):
             for sc in items:
                 card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
                                 highlightthickness=1)
+                self._item_widgets[id(sc)] = card
                 card.pack(fill="x", pady=4)
                 v = tk.BooleanVar(value=sc.get("cut", True))
                 self.scene_vars.append((v, sc))
@@ -1302,6 +1341,7 @@ class App(tk.Tk):
             box.pack(fill="x", pady=4)
             for n, m in enumerate(shown_mutes):
                 row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
+                self._item_widgets[id(m)] = row
                 row.pack(fill="x")
                 rbg = row.cget("bg")
                 v = tk.BooleanVar(value=m.get("on", True))
