@@ -99,6 +99,13 @@ def test_analyze_then_render(clip):
     assert _rms(a, damn["s"] + 0.05, damn["e"] - 0.05) < 0.01     # muted (before the cut, so same time)
     assert _rms(a, 1.0, 3.0) > 0.05                               # untouched tone (RMS ~0.09) still there
 
+    # the review screen's Play button: a WAV of the passage with a second either side
+    wav = out / "preview.wav"
+    a0, b0 = E.extract_clip(audio, cut["s"], cut["e"], wav)
+    assert (a0, b0) == pytest.approx((cut["s"] - 1, cut["e"] + 1))
+    assert E.probe_duration(wav) == pytest.approx(b0 - a0, abs=0.05)
+    assert E.extract_clip(audio, 0.2, 0.5, wav)[0] == 0.0             # never before the start
+
     report = (out / "CleanListen report.txt").read_text(encoding="utf8")
     assert "2 words/phrases muted, 1 passages cut" in report
     assert "D***" in report and "Damn" not in report               # the report stars the words

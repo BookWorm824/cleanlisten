@@ -1765,6 +1765,19 @@ def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print)
 # ---------------------------------------------------------------------------
 # Render
 # ---------------------------------------------------------------------------
+def extract_clip(path, s, e, dst, pad=1.0, longest=300.0):
+    """A WAV of the book from `pad` seconds before s to `pad` after e (at most `longest`
+    seconds), for the review screen's Play button. Returns the clip's (start, end)."""
+    a = max(0.0, s - pad)
+    b = min(e + pad, a + longest)
+    r = run([_tool("ffmpeg"), "-y", "-v", "error", "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", str(path),
+             "-vn", "-ac", "1", "-ar", "22050", "-c:a", "pcm_s16le", str(dst)],
+            capture_output=True, text=True)
+    if r.returncode != 0 or not Path(dst).exists():
+        raise RuntimeError(f"Couldn't play that part ({(r.stderr or '').strip()[-200:] or 'no audio'}).")
+    return a, b
+
+
 def _ranges(rs):
     return "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in rs)
 

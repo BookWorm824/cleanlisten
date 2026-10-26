@@ -30,9 +30,9 @@ def s2():
     print("1st run:", *state(), sep="\n  ")
     print("visible scenes:", len(app.scene_vars), "visible words:", len(app.mute_vars))
     shot("15_2_review_default")
-    app.show_fine.set(True); app._sync_ticks(); app.show_review(); shot("15_3_review_all")
+    app._sync_ticks(); app.view_mode = "all"; app.show_review(); shot("15_3_review_all")
     print("with fine shown:", len(app.scene_vars), len(app.mute_vars))
-    app.show_fine.set(False); app._sync_ticks(); app.show_review()
+    app._sync_ticks(); app.view_mode = "list"; app.show_review()
     # untick 'Screw you' by hand, then re-run Claude: it must stay unticked
     for v, m in app.mute_vars:
         if (m.get("word_raw") or "").lower().startswith("screw"): v.set(False)

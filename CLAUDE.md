@@ -79,10 +79,13 @@ child environment on purpose).
    examples → JSON per finding: `remove | keep | just_the_word | trim` (+ confidence, reason), plus
    missed passages/words. `apply_review` applies it (rules in §5). Things the family changed by
    hand (`by_you`) are never overridden.
-8. **Review screen**: everything grouped by type with checkboxes; items marked fine are hidden by
-   default ("Also show the N marked fine"); per-item "Ask Claude about this…" (highlight text,
+8. **Review screen**: everything grouped by type with checkboxes; "▶ Play" on every passage and
+   word (`engine.extract_clip` writes `preview0/1.wav` in APP_DATA, played with `winsound`);
+   "Show:" filter (`REVIEW_VIEWS`: everything to remove / only the ones to decide / only ticked /
+   everything incl. marked fine; marked-fine items hidden by default; kept across resume as
+   `view`); "Jump to" links per group; per-item "Ask Claude about this…" (highlight text,
    type a request, list updates in place with Undo); "Ask Claude…" chat window (changes apply
-   live); "Search all text…" to cut/mute by hand; exports.
+   live); "Search all text…" to cut/mute by hand; exports and the Claude model under "More".
 9. **Render**: per file, ffmpeg `volume=0:enable='between(t,a,b)+…'` for mutes and
    `aselect='not(…)',asetpts` for cuts, from a filter file (`-/filter:a`, fallbacks
    `-filter_script:a`, inline `-filter:a`), written to `~saving~ name` then swapped in. Output in a
@@ -173,9 +176,13 @@ Claude's reasons, chat, plus the PC's `learned.json`). Lauren sends these in. To
   one gets fixed, pytest reports XPASS as a failure, so remove its mark.
 - `test_apply_review.py`: every `apply_review` verdict path, plus `review()` with `run` stubbed.
 - `test_smoke.py`: `analyze()` on a generated tone with a ready-made `transcript.json` (no
-  speech model), then `render()`; checks the mute is silent and the cut shortens the file.
+  speech model), then `render()`; checks the mute is silent and the cut shortens the file, and
+  that `extract_clip` (the Play button) cuts the right stretch.
   Needs ffmpeg on PATH or in the installed app's `bin`, else skipped.
 `conftest.py` points `LOCALAPPDATA` at a temp folder, so tests never touch the real app data.
+The GUI has no automated tests. On Windows it was checked by loading `CleanListen.pyw` with a
+made-up analysis, faking `winsound`, and grabbing the window with Pillow's `ImageGrab`
+(like `dev/gui_test_*.py`, which use Xvfb on Linux).
 
 Before the suite, development used Linux + Xvfb (`xvfb-run -s "-screen 0 1600x1000x24 -dpi 144"`) to drive the
 tkinter app from scripts and screenshot it. `dev/` has:

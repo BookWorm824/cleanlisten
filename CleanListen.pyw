@@ -43,6 +43,27 @@ def _marked_fine(it, key, note_key):
     return bool(re.search(r": fine|Learned|usually keep|just the word|AI thinks", it.get(note_key) or ""))
 
 
+def _to_decide(it, key, note_key):
+    """Worth a look: left unticked for you to decide, or the checker wasn't sure."""
+    return not it.get(key, True) or bool(re.search(r"unsure|suggests|questioned|Your call",
+                                                   it.get(note_key) or ""))
+
+
+# the review screen's "Show:" choices
+REVIEW_VIEWS = (("list", "Everything to remove"), ("decide", "Only the ones to decide"),
+                ("ticked", "Only what's ticked"), ("all", "Everything, even what's marked fine"))
+# passage groups on the review screen: kind, heading, short name for "Jump to"
+REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
+                ("ref", "Sexual references to cut", "Sexual references"),
+                ("gore", "Gory descriptions to cut", "Gory"),
+                ("religion", "Religious content to cut", "Religious"),
+                ("relationship", "Same-sex & non-traditional relationships to cut", "Relationships"),
+                ("crude", "Crude humor to cut", "Crude humor"), ("bully", "Bullying to cut", "Bullying"),
+                ("flirt", "Flirting to cut", "Flirting"), ("added", "Added by you (or cut before)", "Added"))
+CAT_LABELS = {"strong": "swearing", "moderate": "swearing", "mild": "mild word", "deity": "God's name",
+              "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation"}
+
+
 def natural_key(p):
     """Sort by folder, then file, with numbers in numeric order, so a book in
     Disc 1, Disc 2... folders plays disc by disc (not every disc's track 01 first)."""
@@ -133,7 +154,7 @@ class App(tk.Tk):
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         w = min(int(820 * scale), sw - 40)
-        h = min(int(780 * scale), sh - 90)
+        h = min(int(880 * scale), sh - 90)
         self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
         self.minsize(min(w, int(640 * scale)), min(h, int(480 * scale)))
         self.configure(bg=BG)
@@ -167,13 +188,73 @@ class App(tk.Tk):
         s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
         s.configure("Bg.TCheckbutton", background=BG, font=(FONT, 10))
         s.map("Bg.TCheckbutton", background=[("active", BG)])
+        # rounded tick boxes with a real tick (the built-in ones show an old-fashioned X)
+        try:
+            size = round(15 * max(1.0, self.winfo_fpixels("1i") / 96.0))
+            self._ticks = {k: self._tick_image(size, *v) for k, v in {
+                "off": ("#FFFFFF", "#9C958C", False), "hover": ("#FFFFFF", ACCENT, False),
+                "on": (ACCENT, ACCENT, True), "on_hover": (ACCENT_DK, ACCENT_DK, True),
+                "off_dis": ("#F1EEEA", "#C9C3BB", False), "on_dis": ("#A9C2BC", "#A9C2BC", True)}.items()}
+            t = self._ticks
+            s.element_create("Tick.indicator", "image", t["off"],
+                             ("disabled", "selected", t["on_dis"]), ("disabled", t["off_dis"]),
+                             ("active", "selected", t["on_hover"]), ("selected", t["on"]),
+                             ("active", t["hover"]), width=size + round(size * 0.5), sticky="w")
+            for name in ("TCheckbutton", "Bg.TCheckbutton"):
+                s.layout(name, [("Checkbutton.padding", {"sticky": "nswe", "children": [
+                    ("Tick.indicator", {"side": "left", "sticky": ""}),
+                    ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
+                        ("Checkbutton.label", {"sticky": "nswe"})]})]})])
+        except tk.TclError:
+            pass      # keep the built-in tick boxes
         s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
                     borderwidth=0, font=(FONT, 10))
         s.map("Plain.TButton", background=[("active", "#E0D9CF")])
+        s.configure("Plain.TMenubutton", background="#ECE7E0", foreground=INK, padding=(14, 6),
+                    borderwidth=0, font=(FONT, 10), arrowcolor=INK)
+        s.map("Plain.TMenubutton", background=[("active", "#E0D9CF")])
         s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
 
+    @staticmethod
+    def _tick_image(size, fill, border, tick):
+        """A rounded tick box drawn pixel by pixel (tkinter can't load SVG)."""
+        img = tk.PhotoImage(width=size, height=size)
+        r = size * 0.22
+
+        def inside(x, y, inset):
+            # is pixel (x, y) inside the rounded square shrunk by `inset`?
+            lo, hi, rr = inset, size - inset, max(0.0, r - inset)
+            px, py = x + 0.5, y + 0.5
+            if not (lo <= px <= hi and lo <= py <= hi):
+                return False
+            cx = min(max(px, lo + rr), hi - rr)
+            cy = min(max(py, lo + rr), hi - rr)
+            return (px - cx) ** 2 + (py - cy) ** 2 <= rr * rr
+
+        def near_tick(x, y):
+            # the tick: two strokes, short one down to the right, long one up to the right
+            px, py = (x + 0.5) / size, (y + 0.5) / size
+            for (ax, ay), (bx, by) in (((0.24, 0.52), (0.43, 0.70)), ((0.43, 0.70), (0.77, 0.32))):
+                dx, dy = bx - ax, by - ay
+                k = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+                if (px - ax - k * dx) ** 2 + (py - ay - k * dy) ** 2 <= 0.075 ** 2:
+                    return True
+            return False
+
+        width = max(1.0, size / 14)
+        for y in range(size):
+            for x in range(size):
+                if not inside(x, y, 0):
+                    continue
+                c = fill if inside(x, y, width) else border
+                if tick and near_tick(x, y):
+                    c = "#FFFFFF"
+                img.put(c, (x, y))
+        return img
+
     def _new_page(self, title, subtitle=""):
+        self._stop_playing()
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.unbind_all(seq)
         if self.page:
@@ -231,8 +312,8 @@ class App(tk.Tk):
 
     def _card(self, parent, step, heading, note=""):
         outer = tk.Frame(parent, bg=LINE)
-        outer.pack(fill="x", pady=6)
-        c = tk.Frame(outer, bg=CARD, padx=16, pady=12)
+        outer.pack(fill="x", pady=4)
+        c = tk.Frame(outer, bg=CARD, padx=16, pady=10)
         c.pack(fill="x", padx=1, pady=1)
         top = tk.Frame(c, bg=CARD)
         top.pack(fill="x")
@@ -242,7 +323,7 @@ class App(tk.Tk):
         if note:
             tk.Label(top, text=note, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=8)
         body = tk.Frame(c, bg=CARD)
-        body.pack(fill="x", pady=(8, 0), padx=(32, 0))
+        body.pack(fill="x", pady=(6, 0), padx=(32, 0))
         return body
 
     # ---------- page 1: setup ----------
@@ -270,6 +351,9 @@ class App(tk.Tk):
                        style="Plain.TButton", command=self.show_past).pack(side="left")
         ttk.Button(self.footer, text="Send what CleanListen learned\u2026", style="Plain.TButton",
                    command=self.share_learned).pack(side="left", padx=(8, 0))
+        self.start_hint = tk.Label(self.footer, text="Choose an audiobook first", bg=BG, fg=MUTED,
+                                   font=(FONT, 9))
+        self.start_hint.pack(side="right", padx=(0, 10))
         body = self._scroll_area(p)
         self.heard_lbl = tk.Label(body, text="", bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
                                   padx=10, pady=6, anchor="w", justify="left", wraplength=680)
@@ -278,92 +362,96 @@ class App(tk.Tk):
         self.b1_outer = b1.master.master
         row = tk.Frame(b1, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Choose folder\u2026", style="Plain.TButton",
-                   command=self.pick_folder).pack(side="left")
-        ttk.Button(row, text="Choose files\u2026", style="Plain.TButton",
-                   command=self.pick_audio).pack(side="left", padx=(8, 0))
-        self.audio_lbl = tk.Label(b1, text="No audiobook chosen yet", bg=CARD, fg=MUTED,
-                                  font=(FONT, 10), wraplength=620, justify="left")
-        self.audio_lbl.pack(anchor="w", pady=(8, 0))
+        ttk.Button(row, text="Choose folder…", style="Plain.TButton",
+                   command=self.pick_folder).pack(side="left", anchor="n")
+        ttk.Button(row, text="Choose files…", style="Plain.TButton",
+                   command=self.pick_audio).pack(side="left", anchor="n", padx=(8, 0))
+        self.audio_lbl = tk.Label(row, text="No audiobook chosen yet", bg=CARD, fg=MUTED,
+                                  font=(FONT, 10), wraplength=380, justify="left")
+        self.audio_lbl.pack(side="left", padx=(12, 0))
+        row = tk.Frame(b1, bg=CARD)
+        row.pack(fill="x", pady=(8, 0))
+        tk.Label(row, text="Ebook (optional):", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
+        ttk.Button(row, text="Choose ebook…", style="Plain.TButton",
+                   command=self.pick_ebook).pack(side="left", padx=(8, 0))
+        self.ebook_lbl = tk.Label(row, text="catches words the narrator mumbles", bg=CARD, fg=MUTED,
+                                  font=(FONT, 9), wraplength=400, justify="left")
+        self.ebook_lbl.pack(side="left", padx=10)
 
-        b2 = self._card(body, "2", "Ebook", "optional \u2014 catches words the narrator mumbles")
-        row = tk.Frame(b2, bg=CARD)
-        row.pack(fill="x")
-        ttk.Button(row, text="Choose ebook\u2026", style="Plain.TButton",
-                   command=self.pick_ebook).pack(side="left")
-        self.ebook_lbl = tk.Label(row, text="None", bg=CARD, fg=MUTED, font=(FONT, 10),
-                                  wraplength=480, justify="left")
-        self.ebook_lbl.pack(side="left", padx=12)
-
-        b3 = self._card(body, "3", "What to remove")
+        b3 = self._card(body, "2", "What to remove")
         self.opts = {}
         grid = tk.Frame(b3, bg=CARD)
         grid.pack(fill="x")
-        items = [("swearing", "Swearing  (f-word, s-word, b-word\u2026)", True),
-                 ("mild", "Mild words  (damn, hell, crap)", True),
-                 ("deity", "God's name used as a swear", True),
-                 ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
-                 ("crude", "Crude humor  (toilet & gross-out jokes)", True),
-                 ("bully", "Bullying  (taunts, name-calling)", False),
-                 ("sexual", "Sexual words  (sex, sexy, horny\u2026)", True),
-                 ("refs", "Sexual references  (cut sentences about sex)", True),
-                 ("sex", "Explicit sex scenes  (cut whole scenes)", True),
-                 ("flirt", "Flirting  (cut flirty sentences)", False),
-                 ("gore", "Gory descriptions  (cut graphic passages)", True),
-                 ("religion", "Religious content  (beliefs, preaching, anger at God)", True),
-                 ("relationships", "Same-sex & non-traditional relationships", True)]
-        left = 6  # language-type options on the left, content options on the right
-        for n, (key, label, on) in enumerate(items):
-            v = tk.BooleanVar(value=self.saved_opts.get(key, on))
-            self.opts[key] = v
-            ttk.Checkbutton(grid, text=label, variable=v).grid(
-                row=n if n < left else n - left, column=0 if n < left else 1, sticky="w",
-                padx=(0, 26), pady=2)
+        columns = (("Words to mute", [
+            ("swearing", "Swearing  (f-word, s-word…)", True),
+            ("mild", "Mild words  (damn, hell, crap)", True),
+            ("deity", "God's name used as a swear", True),
+            ("minced", "Soft swears  (gosh, heck, freaking)", False),
+            ("sexual", "Sexual words  (sex, sexy…)", True)]),
+                   ("Sentences and scenes to cut", [
+            ("refs", "Sexual references", True),
+            ("sex", "Explicit sex scenes", True),
+            ("gore", "Gory descriptions", True),
+            ("religion", "Religious content  (preaching, anger at God)", True),
+            ("relationships", "Same-sex & non-traditional relationships", True),
+            ("crude", "Crude humor  (toilet jokes)", True),
+            ("bully", "Bullying  (taunts, name-calling)", False),
+            ("flirt", "Flirting", False)]))
+        for col, (heading, items) in enumerate(columns):
+            tk.Label(grid, text=heading, bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
+                row=0, column=col, sticky="w", pady=(0, 2))
+            for n, (key, label, on) in enumerate(items, 1):
+                v = tk.BooleanVar(value=self.saved_opts.get(key, on))
+                self.opts[key] = v
+                ttk.Checkbutton(grid, text=label, variable=v).grid(
+                    row=n, column=col, sticky="w", padx=(0, 26), pady=1)
+
+        b4 = self._card(body, "3", "Extra checks", "optional")
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
-        ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
-                        variable=self.ai_var).pack(anchor="w", pady=(10, 0))
-        tk.Label(b3, text="Catches what the word lists missed and unticks anything flagged by "
-                 "mistake. Runs on your PC; the first time it downloads about 4 GB (shared with "
-                 "CleanView). Adds time to each book.", bg=CARD, fg=MUTED, font=(FONT, 9),
-                 wraplength=600, justify="left").pack(anchor="w", padx=(22, 0))
+        ttk.Checkbutton(b4, text="AI helper on this PC  (double-checks every filter)",
+                        variable=self.ai_var).pack(anchor="w")
+        tk.Label(b4, text="Catches what the word lists miss. Downloads about 4 GB the first time. "
+                 "Not used when the final check is on.", bg=CARD, fg=MUTED, font=(FONT, 9),
+                 wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
         self.claude_var = tk.BooleanVar(value=self.saved_opts.get("claude", False))
-        ttk.Checkbutton(b3, text="Final check by Claude or ChatGPT  (reads the whole book and "
-                        "checks everything)", variable=self.claude_var).pack(anchor="w", pady=(10, 0))
-        tk.Label(b3, text="It reads every finding in context, unticks what isn't really an issue "
-                 "and adds anything that was missed. Uses your own Claude or ChatGPT plan (set up "
-                 "once). Only the book's words are sent, never the audio. Everything works without "
-                 "it too.", bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=600,
-                 justify="left").pack(anchor="w", padx=(22, 0))
+        ttk.Checkbutton(b4, text="Final check by Claude or ChatGPT  (reads the whole book)",
+                        variable=self.claude_var).pack(anchor="w", pady=(8, 0))
+        tk.Label(b4, text="Uses your own plan. Only the book's words are sent, never the audio.",
+                 bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
         cc = self._cc()
-        prow = tk.Frame(b3, bg=CARD)
-        prow.pack(anchor="w", padx=(22, 0), pady=(4, 0))
+        # which one, sign-in and model: only shown while the final check is ticked
+        self.claude_more = tk.Frame(b4, bg=CARD)
+        prow = tk.Frame(self.claude_more, bg=CARD)
+        prow.pack(anchor="w", padx=(22, 0), pady=(4, 0), fill="x")
         self.provider_var = tk.StringVar(value=cc.PROVIDER if cc else "claude")
         for val, label in (("claude", "Claude  (your Claude plan)"),
                            ("chatgpt", "ChatGPT  (your ChatGPT plan)")):
             tk.Radiobutton(prow, text=label, value=val, variable=self.provider_var, bg=CARD,
                            activebackground=CARD, font=(FONT, 9),
                            command=self._provider_changed).pack(side="left", padx=(0, 14))
-        crow = tk.Frame(b3, bg=CARD)
-        crow.pack(anchor="w", padx=(22, 0), pady=(4, 0), fill="x")
-        self.claude_lbl = tk.Label(crow, text="Checking\u2026", bg=CARD, fg=MUTED,
+        crow = tk.Frame(self.claude_more, bg=CARD)
+        crow.pack(anchor="w", padx=(22, 0), pady=(2, 0), fill="x")
+        self.claude_lbl = tk.Label(crow, text="Checking…", bg=CARD, fg=MUTED,
                                    font=(FONT, 9))
         self.claude_lbl.pack(side="left")
         self.claude_btn = ttk.Button(crow, text="Set up / sign in", style="Plain.TButton",
                                      command=self.claude_setup)
-        self.model_row = self._model_picker(b3, bg=CARD)
+        self.model_row = self._model_picker(prow, bg=CARD)
         self._provider_changed(first=True)
+        self.claude_var.trace_add("write", lambda *_: self._show_claude_more())
+        self._show_claude_more()
 
-        b4 = self._card(body, "4", "Save to")
-        row = tk.Frame(b4, bg=CARD)
+        b5 = self._card(body, "4", "Save to")
+        row = tk.Frame(b5, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Change\u2026", style="Plain.TButton",
+        ttk.Button(row, text="Change…", style="Plain.TButton",
                    command=self.pick_out).pack(side="right")
-        self.out_lbl = tk.Label(row, text="A \u201cClean\u201d folder next to the audiobook", bg=CARD,
+        self.out_lbl = tk.Label(row, text="A “Clean” folder next to the audiobook", bg=CARD,
                                 fg=MUTED, font=(FONT, 10), wraplength=480, justify="left")
         self.out_lbl.pack(side="left")
         self.split_var = tk.BooleanVar(value=self.saved_opts.get("split", False))
-        ttk.Checkbutton(b4, text="Also split into chapter files  (for Yoto and players "
-                        "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(8, 0))
+        ttk.Checkbutton(b5, text="Also split into chapter files  (for Yoto and players "
+                        "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(6, 0))
         self._refresh_labels()
 
     # ---------- updates without losing your place ----------
@@ -438,7 +526,7 @@ class App(tk.Tk):
                 self._save_analysis()
                 data.update(page="review", workdir=str(self.workdir),
                             split=getattr(self, "split_chapters", False),
-                            show_fine=bool(getattr(self, "show_fine", None) and self.show_fine.get()))
+                            view=getattr(self, "view_mode", "list"))
             elif self.audio:
                 data["page"] = "setup"
             else:
@@ -475,7 +563,8 @@ class App(tk.Tk):
             if self.analysis:
                 self.workdir = wd
                 self.split_chapters = data.get("split", False)
-                self.show_fine = tk.BooleanVar(value=data.get("show_fine", False))
+                # (older versions saved show_fine: True meant "show everything")
+                self.view_mode = data.get("view") or ("all" if data.get("show_fine") else "list")
                 self.show_review()
                 return
         if self.audio:
@@ -508,12 +597,18 @@ class App(tk.Tk):
         self.claude_state = None
         if getattr(self, "model_row", None):
             if cc.PROVIDER == "claude":
-                self.model_row.pack(anchor="w", padx=(22, 0), pady=(6, 0))
+                self.model_row.pack(side="left", padx=(6, 0))
             else:
                 self.model_row.pack_forget()
         self.claude_lbl.config(text="Checking\u2026", fg=MUTED)
         self.claude_btn.pack_forget()
         threading.Thread(target=self._claude_status_thread, daemon=True).start()
+
+    def _show_claude_more(self):
+        if self.claude_var.get():
+            self.claude_more.pack(anchor="w", fill="x")
+        else:
+            self.claude_more.pack_forget()
 
     def _claude_status_thread(self):
         cc = self._cc()
@@ -873,6 +968,7 @@ class App(tk.Tk):
             self.audio_lbl.config(text=f"{len(self.audio)} file{'s' if len(self.audio) != 1 else ''}"
                                   f" \u00b7 {fmt_len(dur)}   in  {folder}\n{first}{extra}", fg=INK)
             self.start_btn.config(state="normal")
+            self.start_hint.pack_forget()
             if not self.outdir:
                 self.out_lbl.config(text=os.path.normpath(str(Path(self.audio[0]).parent / "Clean")),
                                     fg=INK)
@@ -1129,6 +1225,12 @@ class App(tk.Tk):
                 elif kind == "claude_fail":
                     messagebox.showerror("Claude check", msg[1])
                     self.show_review()
+                elif kind == "play":
+                    self._play_ready(*msg[1:])
+                elif kind == "play_fail":
+                    if getattr(self, "_playing", None) is msg[1]:
+                        self._stop_playing()
+                        messagebox.showerror("CleanListen", msg[2])
                 elif kind == "card_reply":
                     self._card_reply(*msg[1:])
                 elif kind == "chat_reply":
@@ -1201,72 +1303,125 @@ class App(tk.Tk):
     def _show_review(self):
         a = self.analysis
         self._item_widgets = {}
+        self._sections = []
         scenes, mutes = a["scenes"], a["mutes"]
         if not scenes and not mutes:
             sub = "Nothing to remove was found in this book."
         else:
-            sub = "Everything ticked below will be removed. Untick anything you want to keep."
+            sub = ("Everything ticked below will be removed. Untick anything you want to keep. "
+                   "▶ Play lets you hear it first.")
         p = self._new_page("Review before saving", sub)
         self.page_name = "review"
         note = getattr(self, "resume_note", None)
         if note:
             self.resume_note = None
-            tk.Label(p, text="\u2713 " + note, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), padx=10,
+            tk.Label(p, text="✓ " + note, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), padx=10,
                      pady=6, anchor="w").pack(fill="x", pady=(0, 8))
-        for note in (a.get("claude_note"), a.get("learn_note"), a.get("ai_note"), a.get("ebook_note")):
-            if note:
-                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=720,
-                         justify="left").pack(anchor="w", pady=(0, 4))
+        # what the checks said, folded to one line ("More" shows all of it)
+        notes = [n for n in (a.get("claude_note"), a.get("learn_note"), a.get("ai_note"),
+                             a.get("ebook_note")) if n]
+        if notes:
+            nrow = tk.Frame(p, bg=BG)
+            nrow.pack(fill="x", pady=(0, 4))
+            full, first = "\n".join(notes), notes[0]
+            short = first if len(first) <= 115 else first[:112].rsplit(" ", 1)[0] + "…"
+            nlbl = tk.Label(nrow, text=full if getattr(self, "_notes_open", False) else short, bg=BG,
+                            fg=MUTED, font=(FONT, 9), wraplength=660, justify="left")
+            nlbl.pack(side="left", anchor="w")
+            if full != short:
+                more = tk.Label(nrow, text="Less" if getattr(self, "_notes_open", False) else "More",
+                                bg=BG, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
+                more.pack(side="left", anchor="n", padx=(6, 0))
+
+                def flip(_e=None):
+                    self._notes_open = not getattr(self, "_notes_open", False)
+                    nlbl.config(text=full if self._notes_open else short)
+                    more.config(text="Less" if self._notes_open else "More")
+                more.bind("<Button-1>", flip)
         N = self._ai_name()
+        bar = tk.Frame(p, bg=BG)
+        bar.pack(fill="x", pady=(2, 6))
         if a.get("sentences"):
-            bar = tk.Frame(p, bg=BG)
-            bar.pack(fill="x", pady=(2, 4))
-            ttk.Button(bar, text=(f"Check everything with {N} again" if a.get("claude_checked")
+            ttk.Button(bar, text=f"Ask {N}…", style="Plain.TButton",
+                       command=self.open_chat).pack(side="left")
+            ttk.Button(bar, text=(f"Check again with {N}" if a.get("claude_checked")
                                   else f"Check everything with {N}"), style="Plain.TButton",
-                       command=self.claude_check).pack(side="left")
-            ttk.Button(bar, text=f"Ask {N}\u2026", style="Plain.TButton",
-                       command=self.open_chat).pack(side="left", padx=(8, 0))
-            cc = self._cc()
-            if cc and cc.PROVIDER == "claude":
-                self._model_picker(bar, bg=BG).pack(side="left", padx=(14, 0))
-        # what's hidden: things Claude/ChatGPT (or what CleanListen learned) marked fine
-        hidden = [x for x in scenes if _marked_fine(x, "cut", "ai_note")] + \
-                 [x for x in mutes if _marked_fine(x, "on", "note")]
-        bar2 = tk.Frame(p, bg=BG)
-        bar2.pack(fill="x", pady=(0, 4))
-        if not hasattr(self, "show_fine"):
-            self.show_fine = tk.BooleanVar(value=False)
-        if hidden:
-            ttk.Checkbutton(bar2, text=f"Also show the {len(hidden)} marked fine (left in the book)",
-                            variable=self.show_fine, style="Bg.TCheckbutton",
-                            command=lambda: (self._sync_ticks(), self.show_review(True))).pack(side="left")
+                       command=self.claude_check).pack(side="left", padx=(8, 0))
         if getattr(self, "_undo", None):
-            ttk.Button(bar2, text=f"Undo {N}'s last change", style="Plain.TButton",
-                       command=self._undo_last).pack(side="left", padx=(10, 0))
+            ttk.Button(bar, text=f"Undo {N}'s last change", style="Plain.TButton",
+                       command=self._undo_last).pack(side="left", padx=(8, 0))
+        # the things used now and then go in one menu
+        more_btn = ttk.Menubutton(bar, text="More", style="Plain.TMenubutton", width=6)
+        menu = tk.Menu(more_btn, tearoff=0, font=(FONT, 10))
+        menu.add_command(label=f"Save a list of everything for {N}…", command=self.export_findings)
+        menu.add_command(label=f"Open {N}'s past findings (spreadsheet)", command=self._open_findings)
+        cc = self._cc()
+        if cc and cc.PROVIDER == "claude":
+            models = tk.Menu(menu, tearoff=0, font=(FONT, 10))
+            self._model_var = tk.StringVar(value=cc.get_model())
+            for key, label in cc.MODELS:
+                models.add_radiobutton(label=label, value=key, variable=self._model_var,
+                                       command=lambda k=key: cc.set_model(k))
+            menu.add_separator()
+            menu.add_cascade(label="Claude model", menu=models)
+        more_btn["menu"] = menu
+        more_btn.pack(side="right")
         if a.get("sentences"):
-            ttk.Button(bar2, text="Search all text\u2026", style="Plain.TButton",
-                       command=self.open_all_text).pack(side="right")
-        ttk.Button(bar2, text="Findings spreadsheet", style="Plain.TButton",
-                   command=self._open_findings).pack(side="right", padx=(0, 8))
-        show_fine = self.show_fine.get()
-        hidden_ids = set(id(x) for x in hidden) if not show_fine else set()
-        self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
+            ttk.Button(bar, text="Search all text…", style="Plain.TButton",
+                       command=self.open_all_text).pack(side="right", padx=(0, 8))
+
+        # which items to show; things Claude/ChatGPT (or what CleanListen learned) marked fine
+        # stay in the book and are hidden unless you ask for everything
+        view = getattr(self, "view_mode", "list")
+        hidden_fine = ([x for x in scenes if _marked_fine(x, "cut", "ai_note")] +
+                       [x for x in mutes if _marked_fine(x, "on", "note")])
+
+        def shown(x, key, note_key):
+            if view == "all":
+                return True
+            if _marked_fine(x, key, note_key):
+                return False
+            if view == "decide":
+                return _to_decide(x, key, note_key)
+            if view == "ticked":
+                return bool(x.get(key, True))
+            return True
+        vrow = tk.Frame(p, bg=BG)
+        vrow.pack(fill="x", pady=(0, 2))
+        tk.Label(vrow, text="Show:", bg=BG, fg=INK, font=(FONT, 10)).pack(side="left")
+        labels = dict(REVIEW_VIEWS)
+        vvar = tk.StringVar(value=labels.get(view, labels["list"]))
+        vbox = ttk.Combobox(vrow, textvariable=vvar, values=[lbl for _, lbl in REVIEW_VIEWS],
+                            state="readonly", width=34, font=(FONT, 10))
+        vbox.pack(side="left", padx=(6, 0))
+
+        def pick(_e=None):
+            self._sync_ticks()
+            self.view_mode = next(k for k, lbl in REVIEW_VIEWS if lbl == vvar.get())
+            self.show_review()
+        vbox.bind("<<ComboboxSelected>>", pick)
+        if hidden_fine and view != "all":
+            tk.Label(vrow, text=f"{len(hidden_fine)} marked fine (left in the book) not shown", bg=BG,
+                     fg=MUTED, font=(FONT, 9)).pack(side="left", padx=(10, 0))
+        jump = tk.Frame(p, bg=BG)
+        jump.pack(fill="x", pady=(2, 0))
+
+        self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=INK, font=(FONT, 10))
         self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
-        btns = tk.Frame(self.footer, bg=BG)
-        btns.pack(side="top", fill="x")
-        ttk.Button(btns, text="Save clean audiobook", style="Accent.TButton",
+        row = tk.Frame(self.footer, bg=BG)
+        row.pack(fill="x")
+        ttk.Button(row, text="Save clean audiobook", style="Accent.TButton",
                    command=self._save_from_review).pack(side="right")
-        ttk.Button(btns, text="Re-check", style="Plain.TButton",
+        ttk.Button(row, text="Change filters & re-check", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
-        ttk.Button(btns, text="Export for Claude", style="Plain.TButton",
-                   command=self.export_findings).pack(side="left")
         body = self._scroll_area(p)
         multi = len(a["parts"]) > 1
-        where = lambda x: (f"Part {x['part'] + 1} \u00b7 " if multi else "") + engine.fmt_t(x["s"])
+        where = lambda x: (f"Part {x['part'] + 1} · " if multi else "") + engine.fmt_t(x["s"])
 
-        def section(title, count, var_list):
+        def section(title, short, count, var_list):
             head = tk.Frame(body, bg=BG)
             head.pack(fill="x", pady=(10, 4))
+            self._sections.append((short, count, head))
             tk.Label(head, text=f"{title}  ({count})", bg=BG, fg=INK,
                      font=(FONT, 13, "bold")).pack(side="left")
             if count > 1:
@@ -1279,19 +1434,30 @@ class App(tk.Tk):
                     l.bind("<Button-1>", lambda e, v=val: ([x.set(v) for x, _ in var_list],
                                                             self._update_summary()))
 
+        def link(parent, text, bg, command, padx=0):
+            l = tk.Label(parent, text=text, bg=bg, fg=ACCENT, font=(FONT, 9, "underline"),
+                         cursor="hand2", padx=padx)
+            l.bind("<Button-1>", lambda e: command(l))
+            return l
+
+        def fit(t):
+            """Make a text box exactly as tall as its wrapped lines (at most 8)."""
+            try:
+                n = t.count("1.0", "end", "displaylines")
+                want = max(1, min(8, int((n[0] if isinstance(n, tuple) else n) or 1)))
+                if int(t.cget("height")) != want:
+                    t.configure(height=want)
+            except (tk.TclError, ValueError):
+                pass
+
         # passages, grouped by kind
         self.scene_vars = []
-        kinds = [("sex", "Explicit scenes to cut"), ("ref", "Sexual references to cut"),
-                 ("gore", "Gory descriptions to cut"), ("religion", "Religious content to cut"),
-                 ("relationship", "Same-sex & non-traditional relationships to cut"),
-                 ("crude", "Crude humor to cut"), ("bully", "Bullying to cut"),
-                 ("flirt", "Flirting to cut"), ("added", "Added by you (or cut before)")]
-        for kind, heading in kinds:
-            items = [sc for sc in scenes if sc.get("kind", "sex") == kind and id(sc) not in hidden_ids]
+        for kind, heading, short in REVIEW_KINDS:
+            items = [sc for sc in scenes if sc.get("kind", "sex") == kind and shown(sc, "cut", "ai_note")]
             if not items:
                 continue
             group_vars = []
-            section(heading, len(items), group_vars)
+            section(heading, short, len(items), group_vars)
             for sc in items:
                 card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
                                 highlightthickness=1)
@@ -1304,39 +1470,39 @@ class App(tk.Tk):
                 length = f"{secs / 60:.1f} min" if secs >= 60 else f"{secs:.0f} sec"
                 top = tk.Frame(card, bg=CARD)
                 top.pack(fill="x")
-                ttk.Checkbutton(top, text=f"Cut this   \u00b7   {where(sc)}   \u00b7   {length}",
+                ttk.Checkbutton(top, text=f"Cut this   ·   {where(sc)}   ·   {length}",
                                 variable=v, command=self._update_summary).pack(side="left")
+                link(top, "▶ Play", CARD, lambda l, it=sc: self._play(it, l)).pack(side="left", padx=(16, 0))
                 if sc.get("ai_note"):
                     good = _yellow(sc["ai_note"])
                     tk.Label(top, text=sc["ai_note"], bg="#FFF4D6" if good else "#E3EFEC",
                              fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 9),
                              padx=6).pack(side="right")
                 if sc.get("claude_reason"):
-                    tk.Label(card, text=a.get("reviewer", "Claude") + ": " + sc["claude_reason"], bg=CARD, fg=MUTED,
-                             font=(FONT, 9, "italic"), wraplength=680, justify="left"
+                    tk.Label(card, text=a.get("reviewer", "Claude") + ": " + sc["claude_reason"], bg=CARD,
+                             fg=MUTED, font=(FONT, 9, "italic"), wraplength=680, justify="left"
                              ).pack(anchor="w", pady=(4, 0))
-                txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(sc["text"]) // 95),
+                txt = tk.Text(card, wrap="word", width=20, height=min(8, 1 + len(sc["text"]) // 95),
                               font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
                               padx=8, pady=6, borderwidth=0)
                 txt.insert("1.0", sc["text"])
                 txt.configure(state="disabled")
                 txt.pack(fill="x", pady=(6, 0))
+                txt.bind("<Configure>", lambda e, t=txt: fit(t))
                 if sc.get("chat_answer"):
                     tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg="#EEF5F3", fg=ACCENT_DK,
                              font=(FONT, 9), wraplength=680, justify="left", padx=8, pady=4,
                              anchor="w").pack(fill="x", pady=(6, 0))
                 if a.get("sentences"):
-                    ask = tk.Label(card, text=f"Ask {N} about this\u2026", bg=CARD, fg=ACCENT,
-                                   font=(FONT, 9, "underline"), cursor="hand2")
-                    ask.pack(anchor="e", pady=(4, 0))
-                    ask.bind("<Button-1>", lambda e, c=card, it=sc, t=txt, l=ask:
-                             self._ask_inline(c, it, t, l, "P"))
+                    link(card, f"Ask {N} about this…", CARD,
+                         lambda l, c=card, it=sc, t=txt: self._ask_inline(c, it, t, l, "P")
+                         ).pack(anchor="e", pady=(4, 0))
 
         # words
         self.mute_vars = []
-        shown_mutes = [m for m in mutes if id(m) not in hidden_ids]
+        shown_mutes = [m for m in mutes if shown(m, "on", "note")]
         if shown_mutes:
-            section("Words to mute", len(shown_mutes), self.mute_vars)
+            section("Words to mute", "Words", len(shown_mutes), self.mute_vars)
             box = tk.Frame(body, bg=CARD, highlightbackground=LINE, highlightthickness=1)
             box.pack(fill="x", pady=4)
             for n, m in enumerate(shown_mutes):
@@ -1347,19 +1513,19 @@ class App(tk.Tk):
                 v = tk.BooleanVar(value=m.get("on", True))
                 self.mute_vars.append((v, m))
                 ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
-                tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=16,
+                tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=16 if multi else 8,
                          anchor="w").pack(side="left")
+                tk.Label(row, text=CAT_LABELS.get(m.get("cat"), m.get("cat") or ""), bg=rbg, fg=MUTED,
+                         font=(FONT, 8), width=12, anchor="w").pack(side="left")
                 # "Show" reveals the real word and its sentence; hidden (starred) by default
                 show = tk.Label(row, text="Show", bg=rbg, fg=ACCENT, font=(FONT, 9, "underline"),
                                 cursor="hand2", padx=6)
                 if m.get("word_raw"):
                     show.pack(side="right")
                 if a.get("sentences"):
-                    ask = tk.Label(row, text="Ask", bg=rbg, fg=ACCENT, font=(FONT, 9, "underline"),
-                                   cursor="hand2", padx=4)
-                    ask.pack(side="right")
-                    ask.bind("<Button-1>", lambda e, c=box, it=m, l=ask, r=row:
-                             self._ask_inline(r, it, None, l, "W"))
+                    link(row, "Ask", rbg, lambda l, it=m, r=row: self._ask_inline(r, it, None, l, "W"),
+                         padx=4).pack(side="right")
+                link(row, "▶ Play", rbg, lambda l, it=m: self._play(it, l), padx=4).pack(side="right")
                 if m.get("note"):
                     good = _yellow(m["note"])
                     tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
@@ -1383,12 +1549,12 @@ class App(tk.Tk):
                     t.configure(state="normal")
                     t.delete("1.0", "end")
                     if before:
-                        t.insert("end", "\u2026" + before + " ")
+                        t.insert("end", "…" + before + " ")
                     t.insert("end", f" {word} ", "w")
                     if after:
-                        t.insert("end", " " + after + "\u2026")
-                    n_chars = len(before) + len(word) + len(after)
-                    t.configure(state="disabled", height=1 if n_chars < 70 else 2)
+                        t.insert("end", " " + after + "…")
+                    t.configure(state="disabled")
+                    fit(t)
 
                 def toggle(_e=None, t=line, m=m, lbl=show, state={"on": False}):
                     state["on"] = not state["on"]
@@ -1398,7 +1564,25 @@ class App(tk.Tk):
                 show.bind("<Button-1>", toggle)
                 fill()
                 line.pack(side="left", fill="x", expand=True)
+                line.bind("<Configure>", lambda e, t=line: fit(t))
+        if not self._sections and (scenes or mutes):
+            tk.Label(body, text="Nothing to show here. Choose “Everything to remove” next to Show.",
+                     bg=BG, fg=MUTED, font=(FONT, 10)).pack(anchor="w", pady=20)
+
+        # jump straight to a group (long books have hundreds of items)
+        if len(self._sections) > 1:
+            tk.Label(jump, text="Jump to:", bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left")
+            for short, count, head in self._sections:
+                link(jump, f"{short} ({count})", BG, lambda l, h=head: self._jump_to(h),
+                     padx=5).pack(side="left")
+        else:
+            jump.pack_forget()
         self._update_summary()
+
+    def _jump_to(self, widget):
+        c, inner = self._canvas, self._inner
+        c.update_idletasks()
+        c.yview_moveto(max(0.0, (self._y_in_list(widget) - 4) / max(1, inner.winfo_height())))
 
     def _open_findings(self):
         try:
@@ -1524,11 +1708,64 @@ class App(tk.Tk):
         status.pack(side="left", padx=(12, 0))
         self.all_text_win = w
 
+    # ---------- listen to a passage or word ----------
+    def _play(self, item, link):
+        """Play that part of the book, with a second either side. Click again to stop."""
+        was = getattr(self, "_playing", None)
+        self._stop_playing()
+        if was is item:
+            return
+        self._playing, self._play_link = item, link
+        link.config(text="■ Stop")
+        self._play_n = getattr(self, "_play_n", 0) + 1     # two files: never overwrite the one playing
+        dst = APP_DATA / f"preview{self._play_n % 2}.wav"
+        path = self.analysis["parts"][item["part"]]
+
+        def work():
+            try:
+                APP_DATA.mkdir(parents=True, exist_ok=True)
+                a, b = engine.extract_clip(path, item["s"], item["e"], dst)
+                self.q.put(("play", item, str(dst), b - a))
+            except Exception as ex:
+                self.q.put(("play_fail", item, str(ex)))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _play_ready(self, item, wav, secs):
+        if getattr(self, "_playing", None) is not item:
+            return             # stopped (or another one started) while the clip was being made
+        try:
+            import winsound
+            winsound.PlaySound(wav, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        except ImportError:
+            open_path(wav)
+        token = self._play_n
+        self.after(int(secs * 1000) + 300, lambda: self._play_n == token and self._stop_playing())
+
+    def _stop_playing(self):
+        if getattr(self, "_playing", None) is None:
+            return
+        self._playing = None
+        try:
+            import winsound
+            winsound.PlaySound(None, 0)
+        except ImportError:
+            pass
+        link = getattr(self, "_play_link", None)
+        if link is not None and link.winfo_exists():
+            link.config(text="▶ Play")
+
     def _update_summary(self):
-        ns = sum(v.get() for v, _ in getattr(self, "scene_vars", []))
-        nm = sum(v.get() for v, _ in getattr(self, "mute_vars", []))
-        self.summary_lbl.config(text=f"{nm} word{'s' if nm != 1 else ''} muted \u00b7 "
-                                     f"{ns} passage{'s' if ns != 1 else ''} cut")
+        """What saving will do: the ticks on screen, plus items the "Show" choice hides."""
+        a = self.analysis or {}
+        on_screen = {id(sc): v.get() for v, sc in getattr(self, "scene_vars", [])}
+        on_screen.update({id(m): v.get() for v, m in getattr(self, "mute_vars", [])})
+        cuts = [sc for sc in a.get("scenes", []) if on_screen.get(id(sc), sc.get("cut", True))]
+        nm = sum(1 for m in a.get("mutes", []) if on_screen.get(id(m), m.get("on", True)))
+        ns, secs = len(cuts), sum(sc["e"] - sc["s"] for sc in cuts)
+        removed = (f" ({secs / 60:.1f} min removed)" if secs >= 60 else
+                   f" ({secs:.0f} sec removed)" if secs else "")
+        self.summary_lbl.config(text=f"Saving will mute {nm} word{'s' if nm != 1 else ''} and cut "
+                                     f"{ns} passage{'s' if ns != 1 else ''}{removed}")
 
     def export_findings(self, analysis=None, audio=None, outdir=None):
         """Write everything on the review screen (real words, not starred out,
