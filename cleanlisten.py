@@ -278,7 +278,7 @@ GOD_WORDS = {"god", "god's", "gods", "lord", "jesus", "christ", "heaven", "almig
 BLAME_C = _c([r"hate[sd]?", r"hating", r"blame[sd]?", r"blaming", r"cruel(ty)?", r"punish.*",
               r"abandon(ed|s)?", r"forsak(en|e)", r"unfair", r"curse[sd]?", r"cursing", r"angry",
               r"furious", r"fault", r"monster", r"sadist.*", r"spite", r"rage[ds]?", r"betray.*",
-              r"turned", r"deserted", r"useless", r"heartless", r"evil", r"mad", r"upset",
+              r"deserted", r"useless", r"heartless", r"evil", r"mad", r"upset",
               r"resent.*", r"bitter(ness|ly)?", r"unanswered", r"furiously", r"livid",
               r"allow(s|ed|ing)?", r"permit(s|ted)?"])
 NO_GOD_PHRASES = [("there", "is", "no", "god"), ("there's", "no", "god"), ("god", "is", "dead"),
@@ -299,6 +299,9 @@ NO_GOD_PHRASES = [("there", "is", "no", "god"), ("there's", "no", "god"), ("god"
                   ("if", "god", "loved"), ("if", "god", "cared"), ("if", "god", "really"),
                   ("god", "never", "answered"), ("god", "didn't", "answer"), ("god", "wasn't", "listening"),
                   ("god", "never", "listened"), ("god", "didn't", "listen"),
+                  # ("turned" on its own isn't blame: "oh my God ... she's turned up")
+                  ("god", "turned", "his", "back"), ("god", "turned", "away"), ("god", "has", "turned"),
+                  ("god", "had", "turned"),
                   ("god", "took"), ("god", "takes"), ("god", "let"), ("god", "lets"),
                   ("god", "has", "taken"), ("god", "had", "taken"), ("taken", "by", "god"),
                   ("god", "gave", "up"), ("god", "forgot"), ("god", "left", "us"), ("god", "left", "me"),
@@ -314,7 +317,7 @@ NO_GOD_PHRASES = [("there", "is", "no", "god"), ("there's", "no", "god"), ("god"
 # any sentence that makes such a relationship clear is offered for cutting.
 RELATIONSHIP_WORDS = _c([
     r"gay", r"gays", r"lesbians?", r"bisexuals?", r"bi-?curious", r"queer", r"homosexual(s|ity)?",
-    r"throuples?", r"polyamor.*", r"polygam.*", r"polyandr.*", r"swingers?", r"swinging"])
+    r"throuples?", r"polyamor.*", r"polygam.*", r"polyandr.*", r"swingers?"])
 RELATIONSHIP_PHRASES = [
     ("same", "sex"), ("same-sex",), ("his", "husband"), ("his", "husband's"), ("his", "husbands"),
     ("her", "wife"), ("her", "wife's"), ("her", "wives"), ("his", "boyfriend"), ("his", "boyfriend's"),
@@ -323,11 +326,29 @@ RELATIONSHIP_PHRASES = [
     ("open", "marriage"), ("open", "relationship"), ("wife", "swapping"), ("wife", "swap"),
     ("sister", "wives"), ("sister", "wife"), ("our", "girlfriend"), ("our", "boyfriend"),
     ("both", "of", "us", "are", "dating"), ("dating", "both", "of"), ("married", "to", "both"),
-    ("came", "out", "as"), ("coming", "out", "as"), ("came", "out", "to"), ("came", "out", "of", "the", "closet"),
-    ("in", "the", "closet"),
+    ("came", "out", "as"), ("coming", "out", "as"), ("came", "out", "of", "the", "closet"),
+    ("in", "the", "closet"), ("swinging", "couple"), ("swinging", "couples"), ("swinging", "lifestyle"),
 ]
 KISS_AFTER = {"", "again", "back", "gently", "softly", "hard", "deeply", "passionately", "then",
               "and", "slowly", "hungrily", "tenderly", "fiercely"}
+# "came out to his parents" is coming out; "came out to my office" / "to the car" isn't
+OUT_TO_PEOPLE = {"me", "him", "them", "us", "everyone", "everybody", "family", "friends", "parents"}
+OUT_TO_OWNER = {"my", "his", "her", "their", "our", "your"}
+OUT_TO_FAMILY = {"parents", "family", "folks", "mom", "mum", "mother", "dad", "father", "friends",
+                 "friend", "sister", "sisters", "brother", "brothers", "wife", "husband", "kids",
+                 "children", "son", "daughter", "grandparents", "grandmother", "grandfather", "grandma",
+                 "grandpa", "boss", "coworkers", "colleagues", "teammates", "team", "class", "pastor",
+                 "church", "congregation", "roommate", "best"}
+
+
+def _came_out_to(words, i):
+    if words[i] not in ("came", "coming", "come", "comes") or words[i + 1:i + 3] != ["out", "to"]:
+        return False
+    nxt, after = (words[i + 3:i + 5] + ["", ""])[:2]
+    if nxt in OUT_TO_PEOPLE:
+        return True
+    # "came out to her" (and nothing more) vs "came out to her car"
+    return nxt in OUT_TO_OWNER and (after in OUT_TO_FAMILY or (nxt == "her" and after in KISS_AFTER))
 
 
 def relationship_hit(words):
@@ -338,6 +359,8 @@ def relationship_hit(words):
         for ph in RELATIONSHIP_PHRASES:
             if tuple(words[i:i + len(ph)]) == ph:
                 return True
+        if _came_out_to(words, i):
+            return True
         # "my husband, he said" / "my wife, she told him": partner word + same-gender speaker tag
         for partner, tags in (((("my", "husband"), ("my", "boyfriend")), ("he",)),
                               ((("my", "wife"), ("my", "girlfriend")), ("she",))):

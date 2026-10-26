@@ -164,24 +164,47 @@ def test_not_crude(text):
     assert not E.crude_hit(words(text))
 
 
-# --- sentences Lauren KEPT in real books (shared_learned.json) that a detector still flags.
-# These are known false alarms, not yet fixed. When one is fixed its test starts passing and
-# pytest reports XPASS(strict) as a failure: then delete the xfail mark so it stays fixed.
-@pytest.mark.xfail(strict=True, reason="'came out to' matches even when it's 'came out to my office'")
+# --- sentences Lauren KEPT in real books (shared_learned.json) that used to be flagged ----
 def test_came_out_to_a_place_is_not_a_relationship():
     assert not E.relationship_hit(words(
         "it's coming up to twelve and i haven't done any work since i came out to my office at nine"))
 
 
-@pytest.mark.xfail(strict=True, reason="'swinging' is on the relationship list (swingers)")
+@pytest.mark.parametrize("text", [
+    "He came out to his parents last summer.",
+    "She finally came out to her mom.",
+    "When he came out to me, I hugged him.",
+    "He came out to everyone at dinner.",
+])
+def test_coming_out_to_people_still_found(text):
+    assert E.relationship_hit(words(text))
+
+
+@pytest.mark.parametrize("text", ["She came out to the car.", "He came out to her car with a coffee.",
+                                  "The kids came out to play."])
+def test_came_out_to_somewhere_is_fine(text):
+    assert not E.relationship_hit(words(text))
+
+
 def test_swinging_from_a_vine_is_not_a_relationship():
     assert not E.relationship_hit(words("swinging from a vine and dropping into a ravine"))
 
 
-@pytest.mark.xfail(strict=True, reason="'turned' counts as blame anywhere in a sentence with God")
+@pytest.mark.parametrize("text", ["They were swingers.", "The swinging couple next door invited them.",
+                                  "They lived a swinging lifestyle."])
+def test_swingers_still_found(text):
+    assert E.relationship_hit(words(text))
+
+
 def test_oh_my_god_turned_up_is_not_blaming_god():
     assert not E.blames_god(words(
         "oh my god she says pointing towards the house as if layla has turned up"))
+
+
+@pytest.mark.parametrize("text", ["God turned his back on me.", "I turned away from God.",
+                                  "God has turned away from us."])
+def test_god_turning_away_still_found(text):
+    assert E.blames_god(words(text))
 
 
 # --- timing helper used for every cut -------------------------------------------------
