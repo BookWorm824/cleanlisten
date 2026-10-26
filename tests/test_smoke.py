@@ -52,12 +52,16 @@ def _rms(a, s, e, sr=16000):
 @pytest.fixture
 def clip(tmp_path):
     """A 14-second tone standing in for the narrator, and its transcript."""
+    return _book(tmp_path, SCRIPT)
+
+
+def _book(tmp_path, script):
     audio = tmp_path / "Book" / "Chapter One.wav"
     audio.parent.mkdir()
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", f"sine=frequency=440:duration={DUR}",
                     "-ar", "16000", "-ac", "1", str(audio)], check=True)
     words = []
-    for t, sentence in SCRIPT:
+    for t, sentence in script:
         for w in sentence.split():
             words.append({"t": w, "s": round(t, 3), "e": round(t + 0.25, 3)})
             t += 0.3
@@ -110,3 +114,21 @@ def test_analyze_then_render(clip):
     assert "2 words/phrases muted, 1 passages cut" in report
     assert "D***" in report and "Damn" not in report               # the report stars the words
     assert "sexual reference" in report
+
+
+def test_strict_religion(tmp_path):
+    """Strict religion cuts "thank God" and a verse; the normal setting leaves them."""
+    audio, work, _ = _book(tmp_path, [
+        (0.5, "We drove home in the rain."),
+        (3.0, "Thank God you're safe, she said."),
+        (6.0, "She prayed for her mother."),
+        (8.5, "The Lord is my shepherd."),
+    ])
+    found = {}
+    for strict in (False, True):
+        st = E.analyze([audio], work, groups=(), find_sex=False, find_religion=True,
+                       strict_religion=strict, log=lambda *a: None)
+        found[strict] = [sc["text"] for sc in st["scenes"]]
+        assert st["filters"]["strict_religion"] is strict
+    assert found[False] == []
+    assert found[True] == ["Thank God you're safe, she said.", "The Lord is my shepherd."]

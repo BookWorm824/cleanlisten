@@ -412,10 +412,24 @@ def findings_lines(st, asr, only=None):
     return [r[1] for r in rows]
 
 
+STRICT_RELIGION_RULE = (
+    "Religious content (STRICT - the family chose to remove all of it): cut every sincere "
+    "mention of God or faith, of any religion: preaching, teaching or debating beliefs; "
+    "scripture quoted, read or paraphrased; prayers, even a short one ('please, Jesus', "
+    "'Dear Lord...'); thanking or praising God ('thank God', 'thank you, God', 'praise the "
+    "Lord'); blessings ('God bless'); 'God willing', 'heaven knows', 'Amen', 'Hallelujah'; "
+    "someone in heaven; statements of belief or doubt; anger at God; Providence spoken of as "
+    "God. Only very generic mentions stay (keep): that someone prayed, went to church or a "
+    "service, said grace, without the words of the prayer or any talk about God. Swear-like "
+    "exclamations ('oh my God') are handled by the word filters, not this one. When unsure, "
+    "choose remove.")
+
+
 def rules_text(st):
     f = st.get("filters") or {}
     kinds, cats = f.get("kinds", []), f.get("cats", [])
-    on = [KIND_RULES[k] for k in kinds if k in KIND_RULES] + [CAT_RULES[c] for c in cats if c in CAT_RULES]
+    on = [STRICT_RELIGION_RULE if k == "religion" and f.get("strict_religion") else KIND_RULES[k]
+          for k in kinds if k in KIND_RULES] + [CAT_RULES[c] for c in cats if c in CAT_RULES]
     off = [KIND_NAMES[k] for k in KIND_RULES if k not in kinds] + \
           [CAT_RULES[c].split(":")[0] for c in CAT_RULES if c not in cats]
     t = "The family's filters that are ON (follow them exactly):\n" + "\n".join(f"- {x}" for x in on)

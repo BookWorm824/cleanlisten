@@ -393,18 +393,24 @@ class App(tk.Tk):
             ("sex", "Explicit sex scenes", True),
             ("gore", "Gory descriptions", True),
             ("religion", "Religious content  (preaching, anger at God)", True),
+            ("religion_strict", "Strict: even “thank God”, prayers, verses", False, "religion"),
             ("relationships", "Same-sex & non-traditional relationships", True),
             ("crude", "Crude humor  (toilet jokes)", True),
             ("bully", "Bullying  (taunts, name-calling)", False),
             ("flirt", "Flirting", False)]))
         for col, (heading, items) in enumerate(columns):
             tk.Label(grid, text=heading, bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
-                row=0, column=col, sticky="w", pady=(0, 2))
-            for n, (key, label, on) in enumerate(items, 1):
+                row=0, column=col, sticky="w")
+            for n, (key, label, on, *parent) in enumerate(items, 1):
                 v = tk.BooleanVar(value=self.saved_opts.get(key, on))
                 self.opts[key] = v
-                ttk.Checkbutton(grid, text=label, variable=v).grid(
-                    row=n, column=col, sticky="w", padx=(0, 26), pady=1)
+                cb = ttk.Checkbutton(grid, text=label, variable=v)
+                cb.grid(row=n, column=col, sticky="w", padx=(24 if parent else 0, 26), pady=0)
+                if parent:   # only used when the option above it is ticked
+                    pv = self.opts[parent[0]]
+                    show = lambda *_, cb=cb, pv=pv: cb.state(["!disabled"] if pv.get() else ["disabled"])
+                    pv.trace_add("write", show)
+                    show()
 
         b4 = self._card(body, "3", "Extra checks", "optional")
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
@@ -1101,6 +1107,7 @@ class App(tk.Tk):
         find_sex = self.opts["sex"].get()
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
         self.find_religion = self.opts["religion"].get()
+        self.strict_religion = self.find_religion and self.opts["religion_strict"].get()
         self.find_relationships = self.opts["relationships"].get()
         if self.find_relationships:
             groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
@@ -1181,6 +1188,7 @@ class App(tk.Tk):
                 find_relationships=self.find_relationships, find_crude=self.find_crude,
                 use_ai=self.use_ai, find_bully=self.find_bully, find_flirt=self.find_flirt,
                 use_claude=getattr(self, "use_claude", False),
+                strict_religion=getattr(self, "strict_religion", False),
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)

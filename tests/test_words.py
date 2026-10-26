@@ -126,7 +126,7 @@ def test_names_other_apps_import():
                  "est_time", "align", "GROUPS", "CATS", "ALL_CATS", "DEFAULT_MODEL", "SR",
                  "tokens_to_words", "snap_edges", "load_recognizer", "sex_score", "is_explicit",
                  "SEX_C", "SEX_WINDOW_SCORE", "GORE_C", "GORE_WINDOW_SCORE", "RELIGION_C",
-                 "RELIGION_WINDOW_SCORE", "NO_GOD_PHRASES", "blames_god", "invokes_providence", "relationship_hit",
+                 "RELIGION_WINDOW_SCORE", "NO_GOD_PHRASES", "blames_god", "invokes_providence", "strict_religion_hit", "relationship_hit",
                  "crude_hit", "bully_hit", "flirt_hit", "read_ebook", "EbookError", "AI_TYPES", "_c"):
         assert hasattr(E, name), name
 

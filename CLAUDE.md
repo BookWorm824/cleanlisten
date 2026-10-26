@@ -64,7 +64,7 @@ child environment on purpose).
    plus phrases (`PHRASES`: "oh my god", "screw you", "slept with someone"…). Mute edges snap to
    silence (`snap_edges`).
 4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
-   religion (`religion_score`, `blames_god`, `invokes_providence`) — window scoring, then edges trimmed to heavy
+   religion (`religion_score`, `blames_god`, `invokes_providence`, `strict_religion_hit`) — window scoring, then edges trimmed to heavy
    sentences. Sentence filters: sexual references, relationships (`relationship_hit`,
    `same_sex_flirt`), crude (`crude_hit`), bullying (`bully_hit`), flirting (`flirt_hit`).
 5. **AI helper on the PC** (`ai_assist`, Ollama gemma3:4b via `cleanview_ai.py`): reads in
@@ -131,6 +131,11 @@ plain words, learned from Lauren directly and from her exported reviews:
   **cut**. Any faith counts (Catholic, Buddhist, Hindu, Muslim, Jewish, pagan…; their words are in
   `RELIGION_TERMS`), and so does Providence spoken of as God ("Providence only knows"), but not
   the city.
+  **Strict religion** (setup tick under Religious content, off by default, `strict_religion` in
+  `analyze()` and `st["filters"]`): also cuts any sentence with a sincere religious mention
+  (`strict_religion_hit`): "thank God", "God bless", prayers, verses, "Amen", someone in heaven.
+  Generic words (prayed, church, grace, faith, soul) and swear-like "oh my God" are left to the
+  other filters. Claude gets `STRICT_RELIGION_RULE`; the AI on the PC doesn't second-guess these.
 - **Same-sex and non-traditional relationships** (incl. same-sex flirting, throuples, open
   marriage…) are cut, and orientation words (gay, lesbian…) muted; man-and-woman is fine.
 - **Off by default:** soft substitutes (gosh, heck…), bullying, flirting.

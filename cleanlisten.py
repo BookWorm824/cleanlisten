@@ -599,6 +599,57 @@ def invokes_providence(words):
     return False
 
 
+# Strict religion (an option): any sincere mention of God and anything from scripture,
+# prayer or worship goes, even "thank God", "God bless" or "Amen". Everyday words (prayed,
+# church, grace, soul, angel, faith) stay, and so do swear-like exclamations ("oh my God"),
+# which the God's-name word group mutes on its own.
+STRICT_WORDS_C = _c([
+    r"god", r"god's", r"godly", r"ungodly", r"godless", r"jesus", r"jesus'", r"christ", r"christ's",
+    r"allah", r"buddhas?", r"buddha's", r"krishna", r"vishnu", r"messiah", r"saviou?r",
+    r"bible", r"bibles", r"biblical", r"scriptures?", r"gospels?", r"psalms?", r"sermons?",
+    r"salvation", r"sinners?", r"sinned", r"repent.*", r"resurrect.*", r"crucif.*", r"rosar(y|ies)",
+    r"purgatory", r"sacraments?", r"eucharist", r"catechism", r"baptism", r"baptiz.*",
+    r"commandments?", r"apostles?", r"disciples?", r"blasphem.*", r"hymns?", r"hymnals?",
+    r"quran", r"koran", r"torah", r"talmud", r"sutras?", r"nirvana", r"dharma", r"amen",
+    r"hallelujah", r"alleluia", r"heavenly", r"afterlife", r"hallowed", r"verily", r"shalt"])
+STRICT_PHRASES = [("the", "lord"), ("our", "lord"), ("dear", "lord"), ("lord", "jesus"),
+                  ("lord", "god"), ("lord", "willing"), ("the", "almighty"), ("lord's", "prayer"), ("o", "lord"),
+                  ("thank", "you", "lord"), ("praise", "the", "lord"), ("holy", "spirit"),
+                  ("holy", "ghost"), ("holy", "communion"), ("holy", "water"), ("in", "heaven"),
+                  ("to", "heaven"), ("from", "heaven"), ("heaven", "knows"), ("heaven", "only", "knows"),
+                  ("thank", "heaven"), ("thank", "heavens"), ("heaven", "help"), ("heaven's", "gate"),
+                  ("son", "of", "god"), ("born", "again"), ("came", "to", "pass")]
+# not divine: "the Lord of the Rings", "the Lord Mayor", "a match made in heaven"
+STRICT_NOT_AFTER_LORD = {"of", "mayor", "chancellor", "protector", "chamberlain", "high", "and"}
+# exclamations the God's-name word group handles (muted, not cut)
+STRICT_SWEARS = [("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"), ("good", "lord"),
+                 ("oh", "lord"), ("for", "god's", "sake"), ("for", "gods", "sake"), ("god", "damn"),
+                 ("god", "dammit"), ("goddamn",), ("jesus", "christ"), ("sweet", "jesus"),
+                 ("for", "christ's", "sake"), ("for", "christs", "sake"), ("god", "almighty"),
+                 ("lord", "almighty"), ("oh", "jesus")]
+
+
+def strict_religion_hit(words):
+    """One sentence, for the strict religion option: any sincere religious mention."""
+    n = len(words)
+    swear = set()
+    for i in range(n):
+        for ph in STRICT_SWEARS:
+            if tuple(words[i:i + len(ph)]) == ph:
+                swear.update(range(i, i + len(ph)))
+    for i in range(n):
+        for ph in STRICT_PHRASES:
+            if tuple(words[i:i + len(ph)]) == ph and not swear.issuperset(range(i, i + len(ph))):
+                if ph[-1] == "lord" and (words[i + len(ph)] if i + len(ph) < n else "") in STRICT_NOT_AFTER_LORD:
+                    continue
+                if ph == ("in", "heaven") and i and words[i - 1] == "made":
+                    continue
+                return True
+    if any(i not in swear and any(p.match(w) for p in STRICT_WORDS_C) for i, w in enumerate(words)):
+        return True
+    return invokes_providence(words)
+
+
 def mask(word):
     core = re.sub(r"[^A-Za-z]", "", word)
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
@@ -1125,7 +1176,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
             found.setdefault(kind, {})[i] = conf
 
     # ---- 3. second opinion on what the word lists flagged
-    checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai")]
+    checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai") and not sc.get("strict")]
     yes_no = {"type": "object", "properties": {"fits": {"type": "boolean"}}, "required": ["fits"]}
     for n, sc in enumerate(checks):
         if cancel and cancel():
@@ -1253,7 +1304,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_sex=True, progress=None, log=print, model_dir=DEFAULT_MODEL,
             find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
             find_crude=False, use_ai=False,
-            threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False):
+            threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False,
+            strict_religion=False):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json)."""
     work = Path(workdir)
@@ -1500,10 +1552,14 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         say(0.99, "Looking for religious content\u2026")
         rel = find_passages(religion_score, RELIGION_C, RELIGION_WINDOW_SCORE, "religion")
         # single sentences that blame or hate God, deny God, or speak of Providence as God
+        # (strict: any sincere religious mention, "thank God", a verse, a prayer)
         k = 0
         while k < len(asr):
             a_, b_ = to_sentences(k, k)
-            if blames_god(asr_n[a_:b_ + 1]) or invokes_providence(asr_n[a_:b_ + 1]):
+            ws = asr_n[a_:b_ + 1]
+            strict = strict_religion and strict_religion_hit(ws) and not (blames_god(ws) or
+                                                                           invokes_providence(ws))
+            if strict or blames_god(ws) or invokes_providence(ws):
                 s_, e_ = span_times(asr, a_, b_)
                 part = asr[a_]["part"]
                 inside = any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in rel)
@@ -1514,6 +1570,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                     else:
                         rel.append({"kind": "religion", "blame": True, "part": part, "s": s_, "e": e_,
                                     "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+                        if strict:
+                            rel[-1]["strict"] = True   # the AI on this PC doesn't second-guess these
             k = b_ + 1
         scenes += rel
     if find_relationships:
@@ -1602,7 +1660,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
 
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
-          "ai_note": ai_note, "sentences": sents, "filters": {"cats": cats, "kinds": kinds}}
+          "ai_note": ai_note, "sentences": sents,
+          "filters": {"cats": cats, "kinds": kinds, "strict_religion": bool(find_religion and strict_religion)}}
     try:   # what CleanListen has learned from your past choices (and Claude's, and the shared file)
         import cleanlisten_learn as learn
         import cleanlisten_claude as cc

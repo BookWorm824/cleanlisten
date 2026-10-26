@@ -283,3 +283,37 @@ def test_span_times_ends_just_before_next_word():
 def test_span_times_pads_end_when_there_is_a_pause():
     asr = [{"t": "a", "s": 1.0, "e": 1.2, "part": 0}, {"t": "b", "s": 5.0, "e": 5.2, "part": 0}]
     assert E.span_times(asr, 0, 0) == (pytest.approx(0.85), pytest.approx(1.45))
+
+
+# --- strict religion (an option): even "thank God", prayers and verses -----------------
+@pytest.mark.parametrize("text", [
+    "Thank you God for this food.",
+    "Thank God you're home.",
+    "God bless you, my dear.",
+    "The Lord is my shepherd, I shall not want.",
+    "For God so loved the world that he gave his only Son.",
+    "Grandma is in heaven now.",
+    "God willing, we'll be there by noon.",
+    "Amen.",
+    "She read the Bible every night.",
+])
+def test_strict_religion_catches(text):
+    assert E.strict_religion_hit(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "She prayed for her mother.",           # generic: prayed, church, grace stay
+    "We went to church on Sunday.",
+    "They said grace before dinner.",
+    "Oh my God, look at that!",             # a swear: the God's-name words mute it
+    "Jesus Christ, that hurt!",
+    "He read the Lord of the Rings.",
+    "My lord, the carriage is ready.",
+    "They were a match made in heaven.",
+    "Good heavens!",
+    "Holy cow!",
+    "She had a lot of faith in her team.",
+    "My heart gives an almighty thud.",     # from Lauren's kept sentences
+])
+def test_strict_religion_leaves_generic(text):
+    assert not E.strict_religion_hit(words(text))

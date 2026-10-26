@@ -311,3 +311,10 @@ def test_review_adds_missed_items(book, monkeypatch):
     assert m["on"] is False and m["note"] == "Claude suggests"     # medium confidence: unticked
     assert st["claude_checked"] is True
     assert "found 1 more" in st["claude_note"] and "suggested 1" in st["claude_note"]
+
+
+def test_strict_religion_rule_goes_to_claude(book):
+    st, _ = book
+    assert "thank God" not in cc.rules_text(st)
+    st["filters"]["strict_religion"] = True
+    assert cc.STRICT_RELIGION_RULE in cc.rules_text(st)
