@@ -1,0 +1,198 @@
+"""Passage and sentence detectors (CLAUDE.md §3.4, rules in §5)."""
+import pytest
+
+import cleanlisten as E
+from conftest import words
+
+
+# --- explicit sex: romance, kissing, beds and sheets are fine --------------------------
+ROMANCE = ("He kissed her softly and pulled her close. Later they lay in bed under the sheets, "
+           "her head on his chest, his lips touching her hair. She shivered and kissed him again.")
+EXPLICIT = ("He unbuttoned her blouse and she moaned as he kissed her breasts. Naked, she "
+            "straddled him and they began thrusting, her arousal building until her orgasm.")
+
+
+def test_romance_scores_zero():
+    assert E.sex_score(words(ROMANCE)) == 0
+
+
+def test_explicit_scene_scores_over_threshold():
+    assert E.sex_score(words(EXPLICIT)) >= E.SEX_WINDOW_SCORE
+
+
+def test_one_explicit_word_is_not_enough():
+    # sex_score needs two explicit words before anything counts
+    assert E.sex_score(words("She was naked in the bath, then kissed him on the lips in bed.")) == 0
+
+
+# --- gore: mystery-level violence stays; prolonged graphic description goes -----------
+@pytest.mark.parametrize("text", [
+    "They found the body by the river. He had been stabbed and there was blood on the grass.",
+    "The blow had split his skull and blood pooled beneath him.",   # one grim line is fine
+    "She bled from a wound on her arm.",
+])
+def test_mystery_violence_not_gore(text):
+    assert E.gore_score(words(text)) == 0
+
+
+def test_graphic_gore_scores_over_threshold():
+    text = ("His entrails spilled out, the severed arm still twitching. Blood gushed and spurted "
+            "from the mangled flesh while maggots crawled over the rotting corpse.")
+    assert E.gore_score(words(text)) >= E.GORE_WINDOW_SCORE
+
+
+# --- religion: strict, but brief prayers / grace / church stay -------------------------
+@pytest.mark.parametrize("text", [
+    "Thank God you're home.",
+    "They said grace before dinner.",
+    "She prayed for her mother.",
+    "We went to church on Sunday.",
+])
+def test_brief_religion_is_fine(text):
+    ws = words(text)
+    assert E.religion_score(ws) == 0
+    assert not E.blames_god(ws)
+
+
+def test_preaching_scores_over_threshold():
+    text = ("The pastor preached that salvation comes through faith alone. Read the scripture, "
+            "repent of your sins, and the Savior will redeem your soul for eternity in heaven.")
+    assert E.religion_score(words(text)) >= E.RELIGION_WINDOW_SCORE
+
+
+@pytest.mark.parametrize("text", [
+    "There is no God.",
+    "I hate God for taking her.",
+    "Where was God when my son died?",
+    "I lost my faith after the accident.",
+    "God doesn't care about any of us.",
+])
+def test_blaming_or_denying_god(text):
+    assert E.blames_god(words(text))
+
+
+# --- same-sex and non-traditional relationships ---------------------------------------
+@pytest.mark.parametrize("text", [
+    "He introduced me to his husband.",
+    "She lives with her wife in Denver.",
+    "He kissed him gently.",
+    "She kissed her.",
+    "They have an open marriage.",
+    "He came out as gay last year.",
+    "My husband, he said, was the cook.",
+    "He was flirting with him all night.",
+])
+def test_relationship_hit(text):
+    assert E.relationship_hit(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "She introduced me to her husband.",
+    "He kissed his wife goodbye.",
+    "She kissed her daughter goodnight.",
+    "My husband, she said, was the cook.",
+    "She was flirting with him.",
+])
+def test_man_and_woman_is_fine(text):
+    assert not E.relationship_hit(words(text))
+
+
+# --- flirting (off by default, but must not misfire when on) --------------------------
+@pytest.mark.parametrize("text", [
+    "She was flirting with him at the bar.",
+    "He winked at her across the room.",
+    "He kept hitting on her.",
+    "She batted her eyelashes at him.",
+    "What a cheesy pickup line.",
+])
+def test_flirt_hit(text):
+    assert E.flirt_hit(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "He was flirting with disaster.",
+    "She flirted with the idea of moving.",
+    "The ball hit him on the head.",
+    "He hit on the answer at last.",
+    "She checked the car out before buying.",
+])
+def test_not_flirting(text):
+    assert not E.flirt_hit(words(text))
+
+
+def test_same_sex_flirt():
+    assert E.same_sex_flirt(words("He was flirting with him."))
+    assert E.same_sex_flirt(words("She winked at her and smiled."))
+    assert not E.same_sex_flirt(words("She winked at her sister."))
+    assert not E.same_sex_flirt(words("He was flirting with her."))
+
+
+# --- bullying -------------------------------------------------------------------------
+@pytest.mark.parametrize("text", [
+    "You idiot!",
+    "You're such a loser.",
+    "You fat pig.",
+    "Nobody likes you.",
+    "They made fun of him every day.",
+    "The older boys picked on him.",
+    "She mocked her in front of everyone.",
+    "He was a bully.",
+])
+def test_bully_hit(text):
+    assert E.bully_hit(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "The idiot left the door open.",          # not aimed at someone
+    "He gave a mocking smile.",
+    "She felt humiliated by her mistake.",
+    "He was tormented by guilt.",
+    "You did a great job.",
+])
+def test_not_bullying(text):
+    assert not E.bully_hit(words(text))
+
+
+# --- crude humor ----------------------------------------------------------------------
+@pytest.mark.parametrize("text", ["He farted in class.", "Pull my finger!", "She picked a booger."])
+def test_crude_hit(text):
+    assert E.crude_hit(words(text))
+
+
+@pytest.mark.parametrize("text", ["He went to the bathroom.", "She felt sick after lunch."])
+def test_not_crude(text):
+    assert not E.crude_hit(words(text))
+
+
+# --- sentences Lauren KEPT in real books (shared_learned.json) that a detector still flags.
+# These are known false alarms, not yet fixed. When one is fixed its test starts passing and
+# pytest reports XPASS(strict) as a failure: then delete the xfail mark so it stays fixed.
+@pytest.mark.xfail(strict=True, reason="'came out to' matches even when it's 'came out to my office'")
+def test_came_out_to_a_place_is_not_a_relationship():
+    assert not E.relationship_hit(words(
+        "it's coming up to twelve and i haven't done any work since i came out to my office at nine"))
+
+
+@pytest.mark.xfail(strict=True, reason="'swinging' is on the relationship list (swingers)")
+def test_swinging_from_a_vine_is_not_a_relationship():
+    assert not E.relationship_hit(words("swinging from a vine and dropping into a ravine"))
+
+
+@pytest.mark.xfail(strict=True, reason="'turned' counts as blame anywhere in a sentence with God")
+def test_oh_my_god_turned_up_is_not_blaming_god():
+    assert not E.blames_god(words(
+        "oh my god she says pointing towards the house as if layla has turned up"))
+
+
+# --- timing helper used for every cut -------------------------------------------------
+def test_span_times_ends_just_before_next_word():
+    asr = [{"t": "a", "s": 1.0, "e": 1.2, "part": 0}, {"t": "b", "s": 1.3, "e": 1.5, "part": 0},
+           {"t": "c", "s": 1.7, "e": 1.9, "part": 0}]
+    s, e = E.span_times(asr, 1, 1)
+    assert s == pytest.approx(1.2)   # not earlier than the end of the word before
+    assert e == pytest.approx(1.67)  # just before "c" starts
+
+
+def test_span_times_pads_end_when_there_is_a_pause():
+    asr = [{"t": "a", "s": 1.0, "e": 1.2, "part": 0}, {"t": "b", "s": 5.0, "e": 5.2, "part": 0}]
+    assert E.span_times(asr, 0, 0) == (pytest.approx(0.85), pytest.approx(1.45))

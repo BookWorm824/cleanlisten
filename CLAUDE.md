@@ -162,9 +162,22 @@ Claude's reasons, chat, plus the PC's `learned.json`). Lauren sends these in. To
    "fine in this phrase" entries (`cleanlisten_learn._may_be_fine`).
 3. Adjust `KIND_RULES` / `CAT_RULES` / word lists if a pattern shows up, and release.
 
-## 8. Testing (there is no automated suite yet)
+## 8. Testing
 
-Development used Linux + Xvfb (`xvfb-run -s "-screen 0 1600x1000x24 -dpi 144"`) to drive the
+`tests/` is a pytest suite (not shipped; not in `version.json`). Run it before every release:
+`python -m pip install numpy pytest` once, then `python -m pytest` in the repo folder (~1 s).
+- `test_words.py`: word lists, `find_language`, `may_untick_word`, and the engine names
+  CleanRead/CleanView import (renaming one fails here).
+- `test_detectors.py`: sex/gore/religion scores, relationship/flirt/bully/crude hits, against
+  the §5 rules. Known false alarms from Lauren's kept sentences are `xfail(strict=True)`: when
+  one gets fixed, pytest reports XPASS as a failure, so remove its mark.
+- `test_apply_review.py`: every `apply_review` verdict path, plus `review()` with `run` stubbed.
+- `test_smoke.py`: `analyze()` on a generated tone with a ready-made `transcript.json` (no
+  speech model), then `render()`; checks the mute is silent and the cut shortens the file.
+  Needs ffmpeg on PATH or in the installed app's `bin`, else skipped.
+`conftest.py` points `LOCALAPPDATA` at a temp folder, so tests never touch the real app data.
+
+Before the suite, development used Linux + Xvfb (`xvfb-run -s "-screen 0 1600x1000x24 -dpi 144"`) to drive the
 tkinter app from scripts and screenshot it. `dev/` has:
 - `fakeclaude/claude`, `fakeclaude/codex` — stand-ins for Claude Code / Codex that read the
   prompt and return schema-shaped JSON (put the folder first on `PATH`).
@@ -177,9 +190,8 @@ console windows) could not be tested in development — Lauren tests on her PC.
 
 ## 9. Known weak spots and ideas (roughly by value)
 
-1. **No tests.** Add pytest unit tests for the detectors and `apply_review`, using sentences from
-   the two refined exports as labelled fixtures (cut/kept by Lauren), plus a smoke test of
-   `analyze()`/`render()` on a short generated clip.
+1. **Tests (started, see §8).** Still to do: use the refined exports themselves as labelled
+   fixtures (cut/kept by Lauren, per kind), and tests for `cleanlisten_learn` and chapter split.
 2. **Measure accuracy.** Build an evaluation script over refined exports: precision/recall of the
    word lists, detectors and the Claude prompt against Lauren's final decisions. Use it before
    changing rules.
