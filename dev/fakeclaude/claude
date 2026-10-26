@@ -1,0 +1,51 @@
+#!/usr/bin/env python3.12
+import sys, json, os, re
+args = sys.argv[1:]
+log = os.environ.get("FAKE_CLAUDE_LOG")
+if args[:2] == ["auth", "status"]:
+    print(json.dumps({"loggedIn": True, "authMethod": "claude.ai"})); sys.exit(0)
+prompt = sys.stdin.read()
+if log:
+    with open(log, "a") as f: f.write(json.dumps({"args": args, "cwd": os.getcwd(), "prompt_len": len(prompt), "prompt_head": prompt[:300]}) + "\n")
+schema = json.loads(args[args.index("--json-schema") + 1])
+props = schema["properties"]
+if "decisions" in props:
+    ids = re.findall(r"^([PW]\d+) ·", prompt, re.M)
+    sents = dict(re.findall(r"^S(\d+): (.*)$", prompt, re.M))
+    dec = []
+    for i in ids:
+        line = next(l for l in prompt.splitlines() if l.startswith(i + " ·"))
+        span = re.search(r"S(\d+)\u2013S(\d+)", line)
+        if span and int(span.group(2)) - int(span.group(1)) >= 2:
+            k = int(span.group(1)) + 1
+            dec.append({"id": i, "verdict": "trim", "from": f"S{k}", "to": f"S{k}", "confidence": "high", "reason": "Only one line is suggestive."})
+            continue
+        if "flirting" in line and "S" in line and "trucker" in " ".join(sents.values()) and dec == []:
+            dec.append({"id": i, "verdict": "keep", "confidence": "high", "reason": "A waitress joking with a customer, not real flirting."})
+        elif i.startswith("P") and "loser" in " ".join(sents.get(n, "") for n in re.findall(r"S(\d+)", line.split("·")[3] if len(line.split("·"))>3 else "")):
+            dec.append({"id": i, "verdict": "just_the_word", "words": "loser", "word_type": "mild", "confidence": "high", "reason": "Only the word is a problem."})
+        else:
+            dec.append({"id": i, "verdict": "remove", "confidence": "high", "reason": "Fits the family's rule."})
+    mp, mw = [], []
+    for n, t in sents.items():
+        if "cornered a smaller kid" in t:
+            mp.append({"from": f"S{n}", "to": f"S{n}", "type": "bully", "confidence": "medium", "reason": "Older boys ganging up on a kid."})
+        if "idiot" in t:
+            mw.append({"sentence": f"S{n}", "words": "idiot", "type": "mild", "confidence": "high", "reason": "Test word."})
+    out = {"decisions": dec, "missed_passages": mp, "missed_words": mw}
+else:
+    book = open("book.txt").read(); finds = open("findings.txt").read()
+    hl = re.search(r'I highlighted: "(.+?)"', prompt)
+    pid = re.search(r"\((P\d+)\)", prompt)
+    if hl and pid:
+        target = hl.group(1)[:25]
+        sn = next((m.group(1) for m in re.finditer(r"^S(\d+): (.*)$", book, re.M) if target in m.group(2)), None)
+        out = {"answer": "Done - only that line is cut now; the rest of the paragraph stays.",
+               "changes": [{"action": "trim", "id": pid.group(1), "from": f"S{sn}", "to": f"S{sn}", "reason": "asked"}]}
+        print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "", "session_id": "sess-123", "structured_output": out})); sys.exit(0)
+    first_p = re.search(r"^(P\d+)", finds, re.M)
+    coffee = re.search(r"^S(\d+): .*ordered coffee", book, re.M)
+    out = {"answer": f"I read all {book.count(chr(10))+1} sentences and {finds.count(' · ')//4} findings. Two changes suggested.",
+           "changes": ([{"action": "untick", "id": first_p.group(1), "reason": "fine"}] if first_p else []) +
+                      ([{"action": "add_passage", "from": f"S{coffee.group(1)}", "to": f"S{coffee.group(1)}", "type": "crude", "reason": "test"}] if coffee else [])}
+print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "", "session_id": "sess-123", "structured_output": out}))

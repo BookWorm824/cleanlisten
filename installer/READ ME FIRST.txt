@@ -1,0 +1,45 @@
+CleanListen
+===========
+
+Mutes bad language and cuts explicit scenes out of audiobooks you own.
+
+
+INSTALL (one time)
+1. Right-click the zip file, choose Properties, tick "Unblock" at the bottom, click OK.
+   (Windows blocks downloaded programs until you do this.)
+2. Right-click the zip file and choose "Extract All", then open the extracted folder.
+3. Double-click "Install CleanListen".
+   - If Windows says "Windows protected your PC", click "More info", then "Run anyway".
+     (It says that about any program that isn't from a big company.)
+4. Wait 5-15 minutes while it downloads what it needs. It opens CleanListen when it's done.
+
+After that, open CleanListen from the icon on your Desktop.
+
+
+USING IT
+1. Choose the audiobook files. Select every part if the book comes in pieces.
+2. Optional: choose the ebook (EPUB, PDF or TXT) for the same book. It helps catch words
+   the narrator mumbles.
+3. Tick what to remove, then click Start cleaning.
+4. If it finds explicit scenes, you'll see the text of each one. Untick any you want to keep.
+5. The clean audiobook is saved in a "Clean" folder next to the original, along with a
+   short report of everything that was removed.
+
+
+FOR YOTO
+Tick "Also split into chapter files" before you start. You get a "Chapters" folder with one
+file per chapter, numbered in order. Upload those files to a Make Your Own card and you can
+skip back and forth between chapters.
+- No file is longer than an hour (Yoto's limit). Long chapters are split into "1 of 2", "2 of 2".
+- Books over 5 hours are split into "Card 1", "Card 2" folders, one per card.
+- If the narrator never says "Chapter One" etc., you get 30-minute "Sections" instead.
+
+
+GOOD TO KNOW
+- The audiobook has to be a plain file, like the MP3s you get from Libro.fm.
+  Audible books are copy-protected and can't be used.
+- Kindle ebooks are copy-protected too. The app still works without an ebook.
+- Your original files are never changed.
+- Closing the window mid-book is fine. Start it again with the same files and it
+  picks up where it left off.
+- Everything runs on your computer. Nothing is uploaded anywhere.

@@ -1,0 +1,21 @@
+#!/usr/bin/env python3.12
+import sys, json, os, re
+a = sys.argv[1:]
+if a[:2] == ["login", "status"]:
+    print("Logged in using ChatGPT"); sys.exit(0)
+prompt = sys.stdin.read()
+schema = json.load(open(a[a.index("--output-schema") + 1]))
+out = a[a.index("-o") + 1]
+log = os.environ.get("FAKE_CLAUDE_LOG")
+if log:
+    open(log, "a").write(json.dumps({"codex": a, "cwd": os.getcwd(), "len": len(prompt)}) + "\n")
+props = schema["properties"]
+if "decisions" in props:
+    ids = re.findall(r"^([PW]\d+) ·", prompt, re.M)
+    ans = {"decisions": [{"id": i, "verdict": "remove", "confidence": "high", "misheard": False, "words": "", "word_type": "", "reason": "ChatGPT agrees."} for i in ids],
+           "missed_passages": [], "missed_words": []}
+else:
+    book = open("book.txt").read()
+    ans = {"answer": f"ChatGPT read {book.count(chr(10))+1} sentences.", "changes": []}
+json.dump(ans, open(out, "w"))
+print(json.dumps({"type": "thread.started", "thread_id": "thr-1"}))

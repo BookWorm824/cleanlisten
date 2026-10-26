@@ -1,0 +1,210 @@
+# CleanListen — handoff for Claude Code
+
+CleanListen is a Windows desktop app that makes a "clean" copy of an audiobook the family owns.
+It transcribes the audio on the PC, finds language and content the family doesn't want, shows
+everything on a review screen, and saves new audio files with words muted and passages cut.
+It was built in Claude chat sessions (Oct 2026) for **Lauren** (non-technical, Windows 11,
+display scaling on) and her family, including a grandmother who listens on a **Yoto** player.
+This file explains how it works, the family's rules, how releases ship, and what to improve.
+
+Same repo, separate apps: **CleanRead** (ebooks, `cleanread.py` / `CleanRead.pyw`, built in
+another chat) imports this engine. **CleanView** (movies/TV) has moved to its own repo
+`BookWorm824/cleanview` with its own engine copy (`cvcore.py`); the old CleanView files here
+still ship to CleanListen installs but aren't developed here.
+
+---
+
+## 1. Repo layout and what ships
+
+| File | What it is |
+|---|---|
+| `cleanlisten.py` | The engine (~1900 lines): word lists, detectors, transcription, ebook alignment, local-AI helper, `analyze()`, `render()`, chapter split. Also has a CLI (`_cli`). |
+| `CleanListen.pyw` | The tkinter app (~1700 lines, one `App` class): setup → working → review → done screens, Claude/ChatGPT setup, chat window, per-item "Ask Claude", All-text search, update/resume. |
+| `cleanlisten_claude.py` | Final check + chat through **Claude Code** (`claude -p`) or **ChatGPT** (Codex) on the user's own plan. Holds the family's rules (`KIND_RULES`, `CAT_RULES`). |
+| `cleanlisten_gpt.py` | ChatGPT through OpenAI's Codex CLI (adapted from CleanView). |
+| `cleanlisten_learn.py` | Learning from the family's choices; exports ("Send what CleanListen learned", "Export what we refined"); findings spreadsheet. |
+| `shared_learned.json` | Built-in knowledge every copy starts with (merged from exports — see §7). |
+| `launcher.pyw` | Desktop shortcut target: checks GitHub for a newer `version.json`, downloads the listed files, swaps them in, starts the app (`view` → CleanView, `read` → CleanRead). |
+| `shortcuts.py` | Creates the CleanView / CleanRead desktop icons. |
+| `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
+| `version.json` | Version + **the list of files the launcher downloads**. Anything not listed never reaches users. |
+| `installer/` | First-time install (PowerShell): Python venv, sherpa-onnx, ffmpeg, speech model, shortcut. |
+| `tools/merge_learned.py` | Merges users' exported JSON into `shared_learned.json`. |
+| `dev/` | Test helpers used during development (stand-in `claude`/`codex`/Ollama, test-audio generator, GUI test examples). Not shipped. |
+
+Python 3.12 on the user's PC (private venv). Dependencies: `sherpa-onnx`, `numpy`,
+`beautifulsoup4`, `pypdf`; tkinter; ffmpeg/ffprobe (BtbN "master-latest" build = ffmpeg 8).
+
+## 2. On the user's PC
+
+`%LOCALAPPDATA%\CleanListen\`
+- `app\` — the program files above, plus `bin\ffmpeg.exe`, `models\sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8\`
+- `venv\` — private Python
+- `jobs\<sha1 of file paths+sizes>\` — one folder per book:
+  `transcript.json` (word timings per file — reused, so re-checking skips listening),
+  `analysis.json` (everything found + the family's ticks, see §4), `job.json` (audio list,
+  ebook, output folder, title), `claude_chat\` (book.txt + findings.txt for the chat),
+  `save_error.txt`, `last_error.txt`
+- `learned.json` (what this PC learned), `claude_findings\*.json` + `claude_findings.csv`
+- `settings.json` (`claude_model`, `reviewer` = claude|chatgpt), `resume.json` (reopen onto the
+  same review after an update or after closing the window)
+
+Claude Code / Codex are installed per-user by the app's "Set up / sign in" button and use the
+family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` are removed from the
+child environment on purpose).
+
+## 3. The pipeline (`analyze()` then `render()`)
+
+1. **Transcribe** each file with sherpa-onnx Parakeet TDT (30 s chunks, 2 s overlap) → words with
+   times. Saved per file, resumable.
+2. **Ebook (optional)**: EPUB/PDF/TXT aligned to the transcript (unique 4-gram anchors + LIS +
+   difflib) to catch misheard words and use paragraph edges.
+3. **Word lists** (`find_language`): categories `strong, moderate, mild, deity, minced, sexual`
+   (`CATS`, also masked by CleanView/CleanRead) + `orientation` (`EXTRA_CATS`, CleanListen only),
+   plus phrases (`PHRASES`: "oh my god", "screw you", "slept with someone"…). Mute edges snap to
+   silence (`snap_edges`).
+4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
+   religion (`religion_score`, `blames_god`) — window scoring, then edges trimmed to heavy
+   sentences. Sentence filters: sexual references, relationships (`relationship_hit`,
+   `same_sex_flirt`), crude (`crude_hit`), bullying (`bully_hit`), flirting (`flirt_hit`).
+5. **AI helper on the PC** (`ai_assist`, Ollama gemma3:4b via `cleanview_ai.py`): reads in
+   chunks, quotes what it flags, verifies each find. **Weak** — in real books it flagged hundreds
+   of false positives. Since 1.6.7 it is **skipped when the Claude/ChatGPT check is on**; on its
+   own it skips relationships and its finds start unticked unless the word lists back them up
+   (`_ai_backed`). It may only untick listed words that can be innocent (`INNOCENT_WORDS`).
+6. **Learned choices** (`cleanlisten_learn.apply`): sentences the family kept/cut before, words
+   muted in context, shared knowledge.
+7. **Final check** (`cleanlisten_claude.review`, optional): the whole book in ~30k-word sections
+   as numbered sentences + every finding (P = passage, W = word) + the family's rules + past
+   examples → JSON per finding: `remove | keep | just_the_word | trim` (+ confidence, reason), plus
+   missed passages/words. `apply_review` applies it (rules in §5). Things the family changed by
+   hand (`by_you`) are never overridden.
+8. **Review screen**: everything grouped by type with checkboxes; items marked fine are hidden by
+   default ("Also show the N marked fine"); per-item "Ask Claude about this…" (highlight text,
+   type a request, list updates in place with Undo); "Ask Claude…" chat window (changes apply
+   live); "Search all text…" to cut/mute by hand; exports.
+9. **Render**: per file, ffmpeg `volume=0:enable='between(t,a,b)+…'` for mutes and
+   `aselect='not(…)',asetpts` for cuts, from a filter file (`-/filter:a`, fallbacks
+   `-filter_script:a`, inline `-filter:a`), written to `~saving~ name` then swapped in. Output in a
+   `Clean` folder next to the book (multi-disc books: one `Clean` beside the disc folders, files
+   prefixed with the disc name). Optional chapter split for Yoto: MP3 tracks ≤60 min on one
+   continuous timeline across files, in a `Chapters` folder.
+
+## 4. Data model (analysis.json)
+
+`parts` (absolute audio paths, in play order), `sentences` ([first_word, last_word] indexes into
+the flattened transcript — `load_asr()` rebuilds it), `filters` ({cats, kinds}), `scenes`
+(passages), `mutes` (words), notes (`claude_note`, `learn_note`, `ai_note`, `ebook_note`),
+`chat_history`, `reviewer`, `title`.
+
+- **scene**: `id, kind (sex|ref|gore|religion|relationship|crude|bully|flirt|added), part, s, e,
+  text, cut` + optional `ai, claude, learned, by_you, trimmed, ai_note, claude_reason,
+  claude_verdict, chat_answer`
+- **mute**: `id, part, s, e, cat, src (audio|ebook|ai|claude), i, j, word/ctx/ctx_after` (starred)
+  + `word_raw/ctx_raw/ctx_after_raw` (real), `on` + optional `note, by_you, claude_reason,
+  claude_verdict`
+
+## 5. The family's rules (the spec)
+
+Source of truth for Claude/ChatGPT: `KIND_RULES` / `CAT_RULES` in `cleanlisten_claude.py`. In
+plain words, learned from Lauren directly and from her exported reviews:
+
+- **The f-word is a hard line.** Every listed swear/sexual word is muted every time — in a
+  denial ("it's not sexual"), a question or a quote — unless it has an innocent meaning right
+  there (`INNOCENT_WORDS`: hell the place, bloody = covered in blood, ass = donkey, gay =
+  cheerful, screw something in, craps the game…) or the narrator didn't actually say it.
+- **"Thank God" is fine.** "Oh my God", "Jesus Christ", "God knows (what)" as exclamations are muted.
+- **Romance and kissing are fine**, as are beds and sheets. Only explicit sex is cut.
+- **Mentions vs. content:** a sentence that only *mentions* that someone slept with someone /
+  made love / watched porn **stays** with just that phrase muted; sentences that describe or dwell
+  on sex, desire or innuendo are cut.
+- **Cut as little as possible:** never a whole paragraph for one line (use `trim` or
+  `just_the_word`).
+- **Gore:** she's fine with mystery-level violence (even one sentence with a split skull). Only
+  prolonged, very graphic description is cut. Doubtful gore → left in.
+- **Religion is strict:** cut preaching/teaching, scripture read as part of it, statements of
+  belief/testimony ("There is a God, and He listens"), doubting whether God exists or cares, and
+  anger/blame/mocking of God. Keep brief prayers, grace, thanking God, church. Doubtful religion →
+  **cut**.
+- **Same-sex and non-traditional relationships** (incl. same-sex flirting, throuples, open
+  marriage…) are cut, and orientation words (gay, lesbian…) muted; man-and-woman is fine.
+- **Off by default:** soft substitutes (gosh, heck…), bullying, flirting.
+- She does **not** want things split per Yoto card — all chapter files in one folder.
+
+## 6. Releasing (users update automatically)
+
+The launcher compares `version.json` on `main` with the installed one at every start (and the
+in-app "Check for updates" link does the same and reopens the same review).
+
+1. `git pull` first — other chats (CleanRead) push to this repo too. Never upload stale copies.
+2. Bump `version.json` (`_ver` compares dotted integers, e.g. 1.6.10 > 1.6.9) and **keep every
+   app's files in `files`** (dropping one silently stops it updating for users).
+3. Don't rename/remove engine functions CleanRead uses (see its imports: word lists,
+   `find_language`, scorers, `relationship_hit`, `crude_hit`, `bully_hit`, `flirt_hit`,
+   `read_ebook`, `AI_TYPES`…). Don't add categories to `CATS` that the other apps shouldn't mask.
+4. **Be careful with `launcher.pyw`** — it's in the update list, and a broken launcher can't
+   update itself again (it only `compile()`-checks .py/.pyw files before swapping).
+5. Push to `main`, then verify each listed file at the commit-pinned raw URL
+   (`raw.githubusercontent.com/BookWorm824/cleanlisten/<sha>/<file>`); the unpinned URL lags a few
+   minutes.
+6. Commit messages so far: `Version X.Y.Z: <plain summary>`.
+
+## 7. Learning from the family (the feedback loop)
+
+After saving a book, "Export what we refined…" writes
+`CleanListen refined - <book> <date>.json` (every item with final decision, origin, notes,
+Claude's reasons, chat, plus the PC's `learned.json`). Lauren sends these in. To use one:
+
+1. Study it: where did she overrule the filters/Claude? (`origin == "you"`, `removed`, `note`).
+   Two have been processed so far ("Bring Me Back", "If I Run"); they produced the 1.6.7/1.6.8
+   rule changes in §5.
+2. Merge: `python tools/merge_learned.py shared_learned.json "<file>"`, then drop bad
+   "fine in this phrase" entries (`cleanlisten_learn._may_be_fine`).
+3. Adjust `KIND_RULES` / `CAT_RULES` / word lists if a pattern shows up, and release.
+
+## 8. Testing (there is no automated suite yet)
+
+Development used Linux + Xvfb (`xvfb-run -s "-screen 0 1600x1000x24 -dpi 144"`) to drive the
+tkinter app from scripts and screenshot it. `dev/` has:
+- `fakeclaude/claude`, `fakeclaude/codex` — stand-ins for Claude Code / Codex that read the
+  prompt and return schema-shaped JSON (put the folder first on `PATH`).
+- `fakeai/cleanview_ai.py` — stand-in for the Ollama helper (put first on `sys.path`).
+- `make_test_audio.py` — builds a test chapter with sherpa-onnx TTS (Piper voice from the
+  sherpa-onnx `tts-models` release).
+- `gui_test_*.py` — examples of scripted GUI runs (set `LOCALAPPDATA` to a temp folder).
+The real Claude/ChatGPT and the Windows-only behaviour (installer, Explorer, scroll timing,
+console windows) could not be tested in development — Lauren tests on her PC.
+
+## 9. Known weak spots and ideas (roughly by value)
+
+1. **No tests.** Add pytest unit tests for the detectors and `apply_review`, using sentences from
+   the two refined exports as labelled fixtures (cut/kept by Lauren), plus a smoke test of
+   `analyze()`/`render()` on a short generated clip.
+2. **Measure accuracy.** Build an evaluation script over refined exports: precision/recall of the
+   word lists, detectors and the Claude prompt against Lauren's final decisions. Use it before
+   changing rules.
+3. **`CleanListen.pyw` is one 1700-line class** with patch-on-patch growth (review screen,
+   chat, inline ask, update/resume). Split into modules (screens, chat, review list) and make
+   the review list incremental instead of rebuilding the whole page on every change (that's why
+   scroll-position restore was needed).
+4. **The PC AI helper (gemma3:4b) is mostly noise.** Decide whether to keep it (maybe only as a
+   no-Claude fallback with a better model) or remove it and its 4 GB download.
+5. **Claude check cost/latency on long books**: sections run one after another; consider
+   running sections in parallel, caching per-section answers by hash, and reusing them when only
+   a few ticks changed.
+6. **Sentence boundaries come from ASR punctuation**; very long run-on "sentences" make cuts too
+   big. Consider splitting on pauses too.
+7. **Mute precision**: edges snap to silence or pad ±0.12 s; occasionally clips a neighbouring
+   word. Forced alignment could tighten it.
+8. **Installer pulls ffmpeg "master-latest"** — options change under us (ffmpeg 8 removed
+   `-filter_script`). Pin a release.
+9. **Engine shared by copy-paste with CleanView** (`cvcore.py`) — filter fixes don't reach both.
+   A shared package (or CleanView importing this engine) would keep them in sync.
+10. **Ebook alignment** isn't exercised much yet; check it on a real EPUB + audiobook pair.
+
+## 10. Working with Lauren
+
+She's busy, direct and not a programmer. Explain in plain words, one step at a time; say what
+changed and what she needs to do ("click Check for updates"). She tests on her PC and sends
+screenshots or refined exports. Don't guess about her rules — they're in §5, and when an export
+shows a new pattern, say what you inferred so she can correct it.
