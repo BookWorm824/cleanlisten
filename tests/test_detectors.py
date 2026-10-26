@@ -71,6 +71,50 @@ def test_blaming_or_denying_god(text):
     assert E.blames_god(words(text))
 
 
+@pytest.mark.parametrize("text", [
+    "The Catholic priest taught that souls in purgatory are helped by the rosary, the "
+    "sacraments and the prayers of the saints at Mass.",
+    "The monks taught that the Buddha found nirvana, and that following the dharma frees "
+    "the soul from karma and reincarnation.",
+    "The imam explained the Quran at the mosque during Ramadan, and the rabbi read the "
+    "Torah in the synagogue.",
+])
+def test_other_faiths_score_over_threshold(text):
+    assert E.religion_score(words(text)) >= E.RELIGION_WINDOW_SCORE
+
+
+@pytest.mark.parametrize("text", [
+    "Her family was Catholic.",
+    "They visited a Buddhist temple on holiday.",
+    "The old monastery was now a hotel.",
+])
+def test_brief_mention_of_a_faith_is_fine(text):
+    assert E.religion_score(words(text)) == 0
+
+
+# --- Providence as God, not the city ----------------------------------------------------
+@pytest.mark.parametrize("text", [
+    "Providence only knows what will happen.",
+    "We must trust in Providence.",
+    "Thank Providence you're safe.",
+    "It was an act of Providence.",
+    "Divine Providence brought them together.",
+])
+def test_providence_as_god(text):
+    assert E.invokes_providence(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "We drove to Providence on Friday.",
+    "She grew up in Providence.",
+    "Providence, Rhode Island is cold in winter.",
+    "He studied at Providence College.",
+    "The city of Providence was quiet.",
+])
+def test_providence_the_city(text):
+    assert not E.invokes_providence(words(text))
+
+
 # --- same-sex and non-traditional relationships ---------------------------------------
 @pytest.mark.parametrize("text", [
     "He introduced me to his husband.",

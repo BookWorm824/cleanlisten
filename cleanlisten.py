@@ -267,10 +267,23 @@ RELIGION_TERMS = {
         r"satan", r"rapture", r"afterlife", r"blessed", r"blessings?", r"grace", r"spiritual",
         r"christians?", r"christianity", r"muslims?", r"islam", r"allah", r"buddhis.*", r"hindu.*",
         r"karma", r"reincarnat.*", r"psalms?", r"commandments?", r"apostles?", r"disciples?",
-        r"messiah", r"godless", r"heathens?", r"blasphem.*", r"hymns?", r"congregation"],
+        r"messiah", r"godless", r"heathens?", r"blasphem.*", r"hymns?", r"congregation",
+        # other faiths and Catholic teaching
+        r"catholics?", r"catholicism", r"protestants?", r"mormons?", r"popes?", r"papal", r"vatican",
+        r"nuns?", r"monks?", r"monaster(y|ies)", r"convents?", r"rosar(y|ies)", r"purgatory",
+        r"sacraments?", r"communion", r"eucharist", r"catechism", r"baptism", r"baptiz.*",
+        r"baptis(e|ed|es|ing)", r"transubstantiation", r"immaculate", r"novenas?",
+        r"buddhas?", r"buddha's", r"nirvana", r"dharma", r"sutras?", r"mosques?", r"quran", r"koran",
+        r"imams?", r"ramadan", r"hajj", r"rabbis?", r"synagogues?", r"torah", r"talmud", r"judaism",
+        r"sikh.*", r"jains?", r"jainism", r"shinto.*", r"taoism", r"taoist", r"confucian.*",
+        r"pagans?", r"paganism", r"wicca.*", r"scientolog.*", r"krishna", r"vishnu", r"shiva",
+        r"brahma", r"ganesh(a)?"],
     1: [r"god", r"gods", r"god's", r"lord", r"jesus", r"christ", r"believe", r"believed",
         r"believes", r"beliefs?", r"miracles?", r"forgive(n|ness)?", r"mercy", r"fate",
-        r"destiny", r"universe", r"hell", r"spirit", r"evil", r"punish(ed|ment)?"],
+        r"destiny", r"universe", r"hell", r"spirit", r"evil", r"punish(ed|ment)?",
+        r"saints?", r"sacred", r"temples?", r"trinity", r"prophets?", r"mecca", r"jews?", r"jewish",
+        r"meditat.*", r"enlightenment", r"zen", r"gurus?", r"lama", r"confess(ion|ions|ed)?",
+        r"limbo", r"chakras?"],
 }
 RELIGION_C = {w: _c(p) for w, p in RELIGION_TERMS.items()}
 RELIGION_WINDOW_SCORE = 9
@@ -558,6 +571,32 @@ def blames_god(words):
     if any(tuple(words[i:i + len(ph)]) == ph for ph in NO_GOD_PHRASES for i in range(len(words))):
         return True
     return bool(GOD_WORDS & set(words)) and any(p.match(w) for w in words for p in BLAME_C)
+
+
+# Providence in place of God ("Providence only knows", "trust in Providence", "thank
+# Providence"), but not the city ("we drove to Providence", "Providence, Rhode Island").
+PLACE_BEFORE = {"in", "to", "from", "near", "at", "outside", "around", "into", "toward", "towards",
+                "via", "downtown", "visit", "visited", "visiting"}
+PLACE_AFTER = {"rhode", "ri", "college", "hospital", "street", "st", "road", "avenue", "place",
+               "journal", "friars", "bruins", "airport", "station", "mall", "plantations"}
+TRUST_IN = {"trust", "trusted", "trusting", "trusts", "faith", "believe", "believed", "believes",
+            "believing", "belief", "hope", "rely", "relied"}
+
+
+def invokes_providence(words):
+    """One sentence: does it speak of Providence as God?"""
+    for i, w in enumerate(words):
+        if w not in ("providence", "providence's"):
+            continue
+        before = words[i - 1] if i else ""
+        if words[i + 1:i + 2] and words[i + 1] in PLACE_AFTER:
+            continue
+        if before in PLACE_BEFORE and not (before == "in" and i >= 2 and words[i - 2] in TRUST_IN):
+            continue
+        if before == "of" and i >= 2 and words[i - 2] in ("city", "town"):
+            continue
+        return True
+    return False
 
 
 def mask(word):
@@ -855,7 +894,9 @@ AI_TYPES = {
     "sex": "part of an explicit sex scene",
     "gore": "a graphic, gory description of injuries, wounds, dead bodies or violence (simply "
             "saying someone died, was shot or was found dead is NOT this)",
-    "religion": "someone explaining, preaching or debating religious beliefs, or someone being "
+    "religion": "someone explaining, preaching or debating religious beliefs of any faith "
+                "(Christian, Catholic, Buddhist, Hindu, Muslim, Jewish or other), Providence spoken of "
+                "as God, or someone being "
                 "angry with, blaming, hating or denying God, or losing their faith (brief mentions "
                 "like praying, saying grace, thanking God, believing in God or going to church are "
                 "NOT this)",
@@ -945,7 +986,7 @@ def _ai_backed(kind, words):
         if kind == "gore":
             return is_gory(words)
         if kind == "religion":
-            return religion_score(words) > 0 or blames_god(words)
+            return religion_score(words) > 0 or blames_god(words) or invokes_providence(words)
         if kind == "crude":
             return crude_hit(words)
         if kind == "bully":
@@ -1458,11 +1499,11 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     if find_religion:
         say(0.99, "Looking for religious content\u2026")
         rel = find_passages(religion_score, RELIGION_C, RELIGION_WINDOW_SCORE, "religion")
-        # single sentences that blame or hate God, or deny God
+        # single sentences that blame or hate God, deny God, or speak of Providence as God
         k = 0
         while k < len(asr):
             a_, b_ = to_sentences(k, k)
-            if blames_god(asr_n[a_:b_ + 1]):
+            if blames_god(asr_n[a_:b_ + 1]) or invokes_providence(asr_n[a_:b_ + 1]):
                 s_, e_ = span_times(asr, a_, b_)
                 part = asr[a_]["part"]
                 inside = any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in rel)

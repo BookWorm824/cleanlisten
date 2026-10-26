@@ -64,7 +64,7 @@ child environment on purpose).
    plus phrases (`PHRASES`: "oh my god", "screw you", "slept with someone"…). Mute edges snap to
    silence (`snap_edges`).
 4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
-   religion (`religion_score`, `blames_god`) — window scoring, then edges trimmed to heavy
+   religion (`religion_score`, `blames_god`, `invokes_providence`) — window scoring, then edges trimmed to heavy
    sentences. Sentence filters: sexual references, relationships (`relationship_hit`,
    `same_sex_flirt`), crude (`crude_hit`), bullying (`bully_hit`), flirting (`flirt_hit`).
 5. **AI helper on the PC** (`ai_assist`, Ollama gemma3:4b via `cleanview_ai.py`): reads in
@@ -128,7 +128,9 @@ plain words, learned from Lauren directly and from her exported reviews:
 - **Religion is strict:** cut preaching/teaching, scripture read as part of it, statements of
   belief/testimony ("There is a God, and He listens"), doubting whether God exists or cares, and
   anger/blame/mocking of God. Keep brief prayers, grace, thanking God, church. Doubtful religion →
-  **cut**.
+  **cut**. Any faith counts (Catholic, Buddhist, Hindu, Muslim, Jewish, pagan…; their words are in
+  `RELIGION_TERMS`), and so does Providence spoken of as God ("Providence only knows"), but not
+  the city.
 - **Same-sex and non-traditional relationships** (incl. same-sex flirting, throuples, open
   marriage…) are cut, and orientation words (gay, lesbian…) muted; man-and-woman is fine.
 - **Off by default:** soft substitutes (gosh, heck…), bullying, flirting.

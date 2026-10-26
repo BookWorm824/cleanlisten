@@ -76,12 +76,15 @@ KIND_RULES = {
             "even a split skull or blood seeping - stays, as does saying someone was shot, stabbed, "
             "beaten, killed or found dead. This family is fine with mystery-level violence.",
     "religion": "Religious content: cut people explaining, preaching, teaching or debating "
-                "religious beliefs (including scripture quoted or read as part of it, and an "
-                "author's own religious commentary); statements of belief or testimony ('There is a "
+                "religious beliefs of any faith - Christian, Catholic (saints, the rosary, "
+                "purgatory, the Mass), Buddhist, Hindu, Muslim, Jewish, pagan or any other "
+                "(including scripture quoted or read as part of it, and an author's own religious "
+                "commentary); statements of belief or testimony ('There is a "
                 "God, and He listens', 'My faith is in Jesus'); doubting or questioning whether God "
                 "exists or cares ('I have trouble believing in God', 'if you're there, if you care at "
                 "all', 'I don't know if I believe'); and anyone angry with, blaming, mocking, hating "
-                "or denying God or losing their faith. Fine (keep): a brief mention that someone "
+                "or denying God or losing their faith; and Providence spoken of as God ('Providence "
+                "only knows', 'trust in Providence'). Fine (keep): a brief mention that someone "
                 "prayed or a short simple prayer ('please, Jesus'), saying grace, thanking God, going "
                 "to church or a prayer service. This family cuts borderline religious talk - when "
                 "unsure, choose remove.",
