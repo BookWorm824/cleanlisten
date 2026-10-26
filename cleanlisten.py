@@ -326,7 +326,7 @@ RELATIONSHIP_PHRASES = [
     ("open", "marriage"), ("open", "relationship"), ("wife", "swapping"), ("wife", "swap"),
     ("sister", "wives"), ("sister", "wife"), ("our", "girlfriend"), ("our", "boyfriend"),
     ("both", "of", "us", "are", "dating"), ("dating", "both", "of"), ("married", "to", "both"),
-    ("came", "out", "as"), ("coming", "out", "as"), ("came", "out", "of", "the", "closet"),
+    ("came", "out", "of", "the", "closet"),
     ("in", "the", "closet"), ("swinging", "couple"), ("swinging", "couples"), ("swinging", "lifestyle"),
 ]
 KISS_AFTER = {"", "again", "back", "gently", "softly", "hard", "deeply", "passionately", "then",
@@ -339,12 +339,19 @@ OUT_TO_FAMILY = {"parents", "family", "folks", "mom", "mum", "mother", "dad", "f
                  "children", "son", "daughter", "grandparents", "grandmother", "grandfather", "grandma",
                  "grandpa", "boss", "coworkers", "colleagues", "teammates", "team", "class", "pastor",
                  "church", "congregation", "roommate", "best"}
+# "came out as gay" / "as a lesbian" is coming out; "came out as a winner" isn't (same list as CleanRead)
+OUT_AS = {"gay", "lesbian", "bi", "bisexual", "trans", "transgender", "queer", "nonbinary",
+          "pansexual", "asexual", "lgbt", "lgbtq", "homosexual"}
 
 
-def _came_out_to(words, i):
-    if words[i] not in ("came", "coming", "come", "comes") or words[i + 1:i + 3] != ["out", "to"]:
+def _came_out(words, i):
+    if words[i] not in ("came", "coming", "come", "comes") or words[i + 1:i + 2] != ["out"]:
         return False
-    nxt, after = (words[i + 3:i + 5] + ["", ""])[:2]
+    how, nxt, after = (words[i + 2:i + 5] + ["", "", ""])[:3]
+    if how == "as":
+        return nxt in OUT_AS or (nxt in ("a", "an") and after in OUT_AS)
+    if how != "to":
+        return False
     if nxt in OUT_TO_PEOPLE:
         return True
     # "came out to her" (and nothing more) vs "came out to her car"
@@ -359,7 +366,7 @@ def relationship_hit(words):
         for ph in RELATIONSHIP_PHRASES:
             if tuple(words[i:i + len(ph)]) == ph:
                 return True
-        if _came_out_to(words, i):
+        if _came_out(words, i):
             return True
         # "my husband, he said" / "my wife, she told him": partner word + same-gender speaker tag
         for partner, tags in (((("my", "husband"), ("my", "boyfriend")), ("he",)),

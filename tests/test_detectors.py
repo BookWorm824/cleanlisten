@@ -186,6 +186,26 @@ def test_came_out_to_somewhere_is_fine(text):
     assert not E.relationship_hit(words(text))
 
 
+@pytest.mark.parametrize("text", [
+    "He came out as gay in college.",
+    "She came out as a lesbian at twenty.",
+    "My cousin is coming out as trans.",
+    "He came out as bisexual to his parents.",
+])
+def test_coming_out_as_still_found(text):
+    assert E.relationship_hit(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "He came out as the winner.",
+    "She came out as a better person.",
+    "The truth came out as we talked.",
+    "The cake came out as flat as a pancake.",
+])
+def test_came_out_as_something_else_is_fine(text):
+    assert not E.relationship_hit(words(text))
+
+
 def test_swinging_from_a_vine_is_not_a_relationship():
     assert not E.relationship_hit(words("swinging from a vine and dropping into a ravine"))
 
