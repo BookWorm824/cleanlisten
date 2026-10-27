@@ -299,7 +299,7 @@ def export_book(st, title="", dest_dir=None):
         if x.get("by_you"):
             return "you"
         if x.get("claude") or x.get("src") == "claude":
-            return "Claude/ChatGPT"
+            return "Claude/ChatGPT/Gemini"
         if x.get("learned"):
             return "learned"
         if x.get("ai") or x.get("src") == "ai":

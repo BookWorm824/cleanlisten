@@ -1,11 +1,12 @@
 {
- "version": "1.7.2",
+ "version": "1.8.0",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
   "cleanlisten_claude.py",
   "shared_learned.json",
   "cleanlisten_gpt.py",
+  "cleanlisten_gemini.py",
   "cleanlisten_learn.py",
   "launcher.pyw",
   "icon.ico",

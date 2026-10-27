@@ -61,7 +61,8 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("crude", "Crude humor to cut", "Crude humor"), ("bully", "Bullying to cut", "Bullying"),
                 ("flirt", "Flirting to cut", "Flirting"), ("added", "Added by you (or cut before)", "Added"))
 CAT_LABELS = {"strong": "swearing", "moderate": "swearing", "mild": "mild word", "deity": "God's name",
-              "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation"}
+              "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation",
+              "rude": "rude word"}
 
 
 def natural_key(p):
@@ -387,7 +388,8 @@ class App(tk.Tk):
             ("mild", "Mild words  (damn, hell, crap)", True),
             ("deity", "God's name used as a swear", True),
             ("minced", "Soft swears  (gosh, heck, freaking)", False),
-            ("sexual", "Sexual words  (sex, sexy…)", True)]),
+            ("sexual", "Sexual words  (sex, sexy…)", True),
+            ("rude", "Rude words kids copy  (stupid, shut up…)", False)]),
                    ("Sentences and scenes to cut", [
             ("refs", "Sexual references", True),
             ("sex", "Explicit sex scenes", True),
@@ -420,7 +422,7 @@ class App(tk.Tk):
                  "Not used when the final check is on.", bg=CARD, fg=MUTED, font=(FONT, 9),
                  wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
         self.claude_var = tk.BooleanVar(value=self.saved_opts.get("claude", False))
-        ttk.Checkbutton(b4, text="Final check by Claude or ChatGPT  (reads the whole book)",
+        ttk.Checkbutton(b4, text="Final check by Claude, ChatGPT or Gemini  (reads the whole book)",
                         variable=self.claude_var).pack(anchor="w", pady=(8, 0))
         tk.Label(b4, text="Uses your own plan. Only the book's words are sent, never the audio.",
                  bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
@@ -430,8 +432,8 @@ class App(tk.Tk):
         prow = tk.Frame(self.claude_more, bg=CARD)
         prow.pack(anchor="w", padx=(22, 0), pady=(4, 0), fill="x")
         self.provider_var = tk.StringVar(value=cc.PROVIDER if cc else "claude")
-        for val, label in (("claude", "Claude  (your Claude plan)"),
-                           ("chatgpt", "ChatGPT  (your ChatGPT plan)")):
+        for val, label in (("claude", "Claude"), ("chatgpt", "ChatGPT"),
+                           ("gemini", "Gemini  (your Google account)")):
             tk.Radiobutton(prow, text=label, value=val, variable=self.provider_var, bg=CARD,
                            activebackground=CARD, font=(FONT, 9),
                            command=self._provider_changed).pack(side="left", padx=(0, 14))
@@ -636,7 +638,7 @@ class App(tk.Tk):
             f"Saved as \u201c{path.name}\u201d in {path.parent}.\n\n"
             "Attach that file in your chat with Claude and ask for it to be added to CleanListen. "
             "Once it's added, every copy of CleanListen gets what it learned with the next update.\n\n"
-            "It has the sentences and words you (and Claude or ChatGPT) cut, muted or kept, and "
+            "It has the sentences and words you (and Claude, ChatGPT or Gemini) cut, muted or kept, and "
             "their notes. No audio.")
 
     def _show_claude_status(self, st, prov=None):
@@ -647,10 +649,11 @@ class App(tk.Tk):
         if not getattr(self, "claude_lbl", None) or not self.claude_lbl.winfo_exists():
             return
         N = self._ai_name()
-        prog = "Codex (for ChatGPT)" if N == "ChatGPT" else "Claude Code"
+        prog = {"ChatGPT": "Codex (for ChatGPT)",
+                "Gemini": "Antigravity CLI (for Gemini)"}.get(N, "Claude Code")
         text = {"ok": f"\u2713 {N} is ready", "signed_out": f"{N} isn't signed in yet",
                 "missing": f"{prog} isn't set up yet (one time, about a minute)",
-                "broken": "Claude/ChatGPT files are missing \u2014 reopen CleanListen to update"}.get(st, st)
+                "broken": f"{N} files are missing \u2014 reopen CleanListen to update"}.get(st, st)
         self.claude_lbl.config(text=text, fg=ACCENT_DK if st == "ok" else "#8A5A00")
         if st in ("signed_out", "missing"):
             self.claude_btn.pack(side="left", padx=(10, 0))
@@ -1103,7 +1106,8 @@ class App(tk.Tk):
 
     # ---------- page 2: working ----------
     def start(self):
-        groups = [g for g in ("swearing", "mild", "deity", "minced", "sexual") if self.opts[g].get()]
+        groups = [g for g in ("swearing", "mild", "deity", "minced", "sexual", "rude")
+                  if self.opts[g].get()]
         find_sex = self.opts["sex"].get()
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
         self.find_religion = self.opts["religion"].get()
@@ -1602,7 +1606,7 @@ class App(tk.Tk):
             open_path(str(path))
         else:
             messagebox.showinfo("CleanListen", "Nothing saved yet. Findings are saved each time "
-                                "Claude or ChatGPT checks a book.")
+                                "Claude, ChatGPT or Gemini checks a book.")
 
     def open_all_text(self):
         """Every sentence of the book, with a search box: cut sentences or mute words by hand."""

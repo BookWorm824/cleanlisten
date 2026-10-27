@@ -62,6 +62,105 @@ def test_screw_as_hardware(text):
     assert hits(text) == []
 
 
+# --- slang for a man's private parts: only the slang word, only in slang phrases -------
+@pytest.mark.parametrize("text, word", [
+    ("Grow some stones, Carter.", "stones"),
+    ("He finally had the stones to ask her out.", "stones"),
+    ("She kicked him right in the nuts.", "nuts"),
+    ("Quit busting my balls.", "balls"),
+    ("It's cold enough to freeze my nuts off.", "nuts"),
+    ("They found the body, cut his balls off.", "balls"),   # one Lauren muted by hand
+    ("Man up and grow a pair.", "pair"),
+    ("That took brass balls.", "balls"),
+    ("Nobody has the cojones to say it.", "cojones"),
+])
+def test_body_slang_muted(text, word):
+    assert hits(text) == [(word, "moderate")]
+
+
+@pytest.mark.parametrize("text", [
+    "They skipped stones across the lake.",
+    "He took the stones to the garden.",
+    "They lifted the stones to build a wall.",
+    "She bought a bag of nuts.",
+    "The squirrel hid nuts in the tree.",
+    "The kids threw tennis balls.",
+    "She grew a pair of tomato plants.",
+    "He grew some stones in his kidney.",
+])
+def test_body_slang_words_in_everyday_use(text):
+    assert hits(text) == []
+
+
+def test_body_slang_is_swearing():
+    assert hits("Grow some stones.", ["mild", "deity", "sexual"]) == []
+
+
+# --- more swearing and crude slang (from CleanView's TV and film lists) -----------------
+@pytest.mark.parametrize("text, word, cat", [
+    ("What a sweet-ass deal.", "sweetass", "moderate"),
+    ("You sumbitch.", "sumbitch", "moderate"),
+    ("Don't be such an a-hole.", "ahole", "moderate"),
+    ("He's a total dickwad.", "dickwad", "moderate"),
+    ("What a dbag.", "dbag", "moderate"),
+    ("Eff you, buddy.", "eff you", "moderate"),
+    ("S O B, that hurt.", "s o b", "moderate"),
+    ("That's some bullcrap.", "bullcrap", "mild"),
+    ("Frak, we're late.", "frak", "minced"),
+    ("Christ almighty, look at that.", "christ almighty", "deity"),
+    ("She called him a pussy.", "pussy", "sexual"),
+    ("WTF is this?", "wtf", "strong"),
+])
+def test_more_slang_found(text, word, cat):
+    assert (word, cat) in hits(text)
+
+
+@pytest.mark.parametrize("text", [
+    "Moby Dick is a long book.",
+    "She graduated summa cum laude.",
+    "The pussy cat purred.",
+    "They polished the brass door knockers.",
+    "General Hooker led the army.",
+    "The family jewels were stolen.",
+    "Her damning evidence and his damnation.",   # left alone on purpose
+    "Thank God you're safe.",                     # CleanListen keeps "thank God"
+])
+def test_more_slang_innocent_uses(text):
+    assert hits(text) == []
+
+
+def test_slurs_are_strong():
+    assert [c for _, c in hits("He called them wetbacks.")] == ["strong"]
+
+
+# --- rude words kids copy: only when that box is ticked --------------------------------
+@pytest.mark.parametrize("text, found", [
+    ("You stupid jerk, shut up!", ["stupid", "jerk", "shut up"]),
+    ("That sucks.", ["that sucks"]),
+    ("What a dummy.", ["dummy"]),
+])
+def test_rude_words(text, found):
+    assert [w for w, c in hits(text, ["rude"])] == found
+    assert hits(text) == []                       # not part of the swearing groups
+
+
+@pytest.mark.parametrize("text", [
+    "Shut it down now.",
+    "She was shut up in the attic.",
+    "He jerks the door open.",
+    "Don't fool around.",
+    "Cigarette butts were everywhere.",
+    "He was deaf and dumb.",
+    "It was a crash test dummy.",
+])
+def test_rude_words_everyday_uses(text):
+    assert hits(text, ["rude"]) == []
+
+
+def test_rude_is_its_own_group():
+    assert E.GROUPS["rude"] == ["rude"] and "rude" not in E.ALL_CATS
+
+
 # --- God's name: exclamations muted, "thank God" fine ---------------------------------
 @pytest.mark.parametrize("text, phrase", [
     ("Oh my God, look", "oh my god"),
@@ -126,7 +225,8 @@ def test_names_other_apps_import():
                  "est_time", "align", "GROUPS", "CATS", "ALL_CATS", "DEFAULT_MODEL", "SR",
                  "tokens_to_words", "snap_edges", "load_recognizer", "sex_score", "is_explicit",
                  "SEX_C", "SEX_WINDOW_SCORE", "GORE_C", "GORE_WINDOW_SCORE", "RELIGION_C",
-                 "RELIGION_WINDOW_SCORE", "NO_GOD_PHRASES", "blames_god", "invokes_providence", "strict_religion_hit", "relationship_hit",
+                 "RELIGION_WINDOW_SCORE", "NO_GOD_PHRASES", "blames_god", "invokes_providence",
+                 "strict_religion_hit", "body_slang", "relationship_hit",
                  "crude_hit", "bully_hit", "flirt_hit", "read_ebook", "EbookError", "AI_TYPES", "_c"):
         assert hasattr(E, name), name
 
@@ -156,6 +256,7 @@ def test_clean_context_stars_neighbouring_swears():
     ("hell", "mild", True),          # the place
     ("bloody", "mild", True),        # covered in blood
     ("ass", "moderate", True),       # a donkey
+    ("stones", "moderate", True),    # skipping stones
     ("gay", "orientation", True),    # cheerful
     ("God", "deity", True),          # a sincere prayer
     ("fuck", "strong", False),       # never

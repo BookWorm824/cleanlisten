@@ -1,8 +1,9 @@
-"""Claude (or ChatGPT) for CleanListen: a whole-book double-check and a chat.
+"""Claude (or ChatGPT, or Gemini) for CleanListen: a whole-book double-check and a chat.
 
 Claude runs through Claude Code (Anthropic's own program) signed in with the
 user's Claude plan; ChatGPT runs through Codex (OpenAI's own program) with the
-user's ChatGPT plan - the same way CleanView does, no API keys. Only the words of the
+user's ChatGPT plan - the same way CleanView does, no API keys; Gemini runs through
+Antigravity CLI (Google's own program) with the user's Google account. Only the words of the
 book (the transcript) and the list of findings are sent, never the audio.
 Claude gets no tools for the double-check; for the chat it can only read and
 search the two text files written for it (the book and the findings).
@@ -58,7 +59,7 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "crude": "crude humor", "bully": "bullying", "flirt": "flirting",
               "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
-             "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word",
+             "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
 
 # What the family wants, filter by filter (from Lauren's own rules for CleanListen)
@@ -102,7 +103,10 @@ KIND_RULES = {
 CAT_RULES = {
     "strong": "Strong swearing: the f-word or c-word in any form - always mute.",
     "moderate": "Swearing: s***, b****, a**, a**hole, b******, p***ed, d***, and any word "
-                "containing them (e.g. 'shitload', 'bullshit') - always mute.",
+                "containing them (e.g. 'shitload', 'bullshit') - always mute. Also slang for a "
+                "man's private parts - stones, balls, nuts, a pair ('grow some stones', 'has the "
+                "balls to', 'kicked him in the nuts', 'grow a pair'): mute just that word. The "
+                "same words in their everyday meaning (tennis balls, a pair of shoes) are fine.",
     "mild": "Mild words: damn, hell used as a curse, crap, bloody used as a curse, 'screw you' / "
             "'screw it'. 'Hell' as the place in religious talk, 'bloody' meaning covered in blood, "
             "or screwing something in, are fine.",
@@ -110,6 +114,10 @@ CAT_RULES = {
              "'God, I hope not' as exclamations. "
              "'Thank God' is FINE (the family keeps it), as are prayers and sincere talk about God.",
     "minced": "Soft substitutes: gosh, heck, darn, dang, jeez, freaking, fricking.",
+    "rude": "Rude words kids copy: stupid, dumb, idiot, moron, loser, jerk, fool, butt, and 'shut "
+            "up' / 'you suck' / 'this sucks' - mute the word or phrase. The same words in an "
+            "everyday sense are fine ('he jerked the door open', 'shut up in the attic', "
+            "'cigarette butts', 'deaf and dumb').",
     "sexual": "Sexual words: sex, sexual, sexually, sexy, horny, aroused, orgasm and crude words for "
               "body parts - mute the word every time.",
     "orientation": "Orientation words: gay, lesbian, homosexual, bisexual, queer and slurs - mute "
@@ -122,9 +130,12 @@ class ClaudeError(RuntimeError):
 
 
 # ---------------------------------------------------------------------------
-# Which online AI: Claude or ChatGPT (chosen in the app; remembered)
+# Which online AI: Claude, ChatGPT or Gemini (chosen in the app; remembered)
 # ---------------------------------------------------------------------------
-NAMES = {"claude": "Claude", "chatgpt": "ChatGPT"}
+NAMES = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
+# the others go through their own small module with the same functions (find, install,
+# status, open_sign_in, ask) and error class
+HELPERS = {"chatgpt": ("cleanlisten_gpt", "GptError"), "gemini": ("cleanlisten_gemini", "GeminiError")}
 PROVIDER = "claude"
 
 
@@ -146,7 +157,7 @@ def _save_setting(k, v):
 
 
 def use(provider):
-    """Pick Claude or ChatGPT for everything below (and remember it)."""
+    """Pick Claude, ChatGPT or Gemini for everything below (and remember it)."""
     global PROVIDER
     PROVIDER = provider if provider in NAMES else "claude"
     _save_setting("reviewer", PROVIDER)
@@ -161,12 +172,15 @@ def name(provider=None):
     return NAMES.get(provider or PROVIDER, "Claude")
 
 
-def _gpt():
+def _helper(provider):
+    """The module for ChatGPT or Gemini, and its error class."""
+    mod, err = HELPERS[provider]
     try:
-        import cleanlisten_gpt as gpt
-        return gpt
+        m = __import__(mod)
+        return m, getattr(m, err)
     except Exception as ex:
-        raise ClaudeError("The ChatGPT files are missing. Reopen CleanListen so it can update.") from ex
+        raise ClaudeError(f"The {NAMES[provider]} files are missing. Reopen CleanListen so it "
+                          f"can update.") from ex
 
 
 def _env():
@@ -191,13 +205,16 @@ def find_claude():
 
 
 def install(progress=None, provider=None):
-    """One-time install of Claude Code (or Codex for ChatGPT) with the maker's own installer."""
-    if (provider or PROVIDER) == "chatgpt":
-        gpt = _gpt()
+    """One-time install of Claude Code (or Codex for ChatGPT, Antigravity CLI for Gemini) with
+    the maker's own installer."""
+    prov = provider or PROVIDER
+    if prov in HELPERS:
+        h, err = _helper(prov)
         try:
-            gpt.install(progress)
-            return gpt.find()
-        except gpt.GptError as ex:
+            if not h.find():
+                h.install(progress)
+            return h.find()
+        except err as ex:
             raise ClaudeError(str(ex))
     say = progress or (lambda f, m: None)
     if find_claude():
@@ -216,9 +233,9 @@ def install(progress=None, provider=None):
 
 def status(provider=None):
     """'ok', 'signed_out' or 'missing'."""
-    if (provider or PROVIDER) == "chatgpt":
+    if (provider or PROVIDER) in HELPERS:
         try:
-            st = _gpt().status()
+            st = _helper(provider or PROVIDER)[0].status()
         except ClaudeError:
             return "missing"
         return "ok" if st == "ready" else st
@@ -241,14 +258,15 @@ def status(provider=None):
 
 
 def open_sign_in(provider=None):
-    """Opens a small window that runs Claude's (or ChatGPT's) own sign-in in the browser."""
-    if (provider or PROVIDER) == "chatgpt":
-        gpt = _gpt()
-        if not gpt.find():
-            install(provider="chatgpt")
+    """Opens a small window that runs Claude's (or ChatGPT's, Gemini's) own sign-in in the browser."""
+    prov = provider or PROVIDER
+    if prov in HELPERS:
+        h, err = _helper(prov)
+        if not h.find():
+            install(provider=prov)
         try:
-            return gpt.open_sign_in()
-        except gpt.GptError as ex:
+            return h.open_sign_in()
+        except err as ex:
             raise ClaudeError(str(ex))
     exe = find_claude() or install(provider="claude")
     WORK.mkdir(parents=True, exist_ok=True)
@@ -277,17 +295,18 @@ def _friendly(text):
 
 def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=None,
         timeout=1200, model=None):
-    """One request. Claude: a `claude -p` call; ChatGPT: a `codex exec` call. Returns a dict
-    with "data" (the structured answer when a schema is given) and "session_id"."""
-    if PROVIDER == "chatgpt":
-        gpt = _gpt()
+    """One request. Claude: a `claude -p` call; ChatGPT: a `codex exec` call; Gemini: an
+    `agy -p` call. Returns a dict with "data" (the structured answer when a schema is given)
+    and "session_id"."""
+    if PROVIDER in HELPERS:
+        h, err = _helper(PROVIDER)
         try:
-            answer, sid = gpt.ask(prompt, schema, system=system, session=resume, keep=persist,
-                                  timeout=timeout, folder=cwd if tools else None)
-        except gpt.GptError as ex:
+            answer, sid = h.ask(prompt, schema, system=system, session=resume, keep=persist,
+                                timeout=timeout, folder=cwd if tools else None)
+        except err as ex:
             raise ClaudeError(str(ex))
         if not isinstance(answer, dict):
-            raise ClaudeError("ChatGPT didn't return its answer in the expected form.")
+            raise ClaudeError(f"{name()} didn't return its answer in the expected form.")
         return {"data": answer, "session_id": sid}
     exe = find_claude()
     if not exe:

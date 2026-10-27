@@ -64,28 +64,55 @@ def probe_duration(path):
 # ---------------------------------------------------------------------------
 # Word lists
 # ---------------------------------------------------------------------------
-STRONG = [r".*fuck.*", r"cunts?", r"motherf.*", r"fk", r"effing"]
+# (most additions after 1.7.3 come from CleanView's lists, which were checked against TV and
+# film dialogue; guards for everyday uses are in INNOCENT_NEXT / INNOCENT_PREV below)
+STRONG = [r".*fuck.*", r"cunts?", r"motherf.*", r"fk", r"effing", r"effin", r"f'?ing",
+          r"mofos?", r"wtf", r"stfu", r"omfg",
+          # racial slurs (the unmistakable ones; "cracker", "coon", "chink" etc. have
+          # everyday meanings too, so they're left to the AI and Claude)
+          r"nigg(a|as|ah|az|er|ers)", r"kikes?", r"wetbacks?", r"gooks?", r"towelheads?",
+          r"ragheads?", r"beaners?"]
 MODERATE = [
-    r".*shit.*", r"bitch.*", r"ass", r"asses", r"ass(hole|holes|wipe)", r"arse",
+    r".*shit.*", r"bitch.*", r"son(of|ofa|uva|na)?bitch.*", r"sumbitch.*", r"ass", r"asses",
+    r"ass(holes?|wipes?|hats?|clowns?|face|faces|heads?|kick(s|ed|er|ers|ing)?|"
+    r"kiss(er|ers|ing)?)", r"arse",
     r"arsehole.*", r"jackass.*", r"dumbass.*", r"badass.*", r"smartass.*",
+    # "sweet-ass deal", "kick-ass": the hyphen is dropped, so list the joined forms
+    r"(sweet|kick|big|fat|lazy|hard|half|wise|candy|cheap|kiss|tight|crazy|stupid|sorry|"
+    r"lame|weird|broke|punk|wuss|bad|dumb|smart|jack|whole|cold|hot|mean|tough|fine|"
+    r"nice|cool|pretty|ugly|old|cute|great|bitch)ass(es|ed)?",
     r"bastard.*", r"piss.*", r"dicks?", r"dickhead.*", r"pricks?", r"bollocks",
     r"bugger.*", r"wanker.*", r"twats?", r"sluts?", r"slutty", r"whores?",
-    r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*",
+    r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*", r"cojones", r"nads",
+    r"(ball|nut)sacks?", r"ballsy", r"balls?bust(er|ers|ing)", r"dbags?",
+    # more crude slang heard in TV and films
+    r"a-?holes?", r"lardass(es)?", r"bia?y?o?tch(es)?", r"beyotch", r"shat",
+    r"dick(wad|weed|face|ish|wit|bag|less)s?", r"numbnuts", r"knobheads?", r"tossers?",
+    r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed)?", r"skeez(e|y|ier)", r"skeevy",
 ]
+# swearing said as letters or two words ("S.O.B.", "D-bag" heard as "d bag", "eff you")
+MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag"),
+                    ("ball", "buster"), ("ball", "busters"), ("ball", "busting"),
+                    ("balls", "buster")] + [("eff", o) for o in ("you", "off", "me", "him", "her",
+                                                                  "them", "it", "that", "this")]
 # ("damning" = incriminating and "damnation" are left alone)
-MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"hell", r"hellhole",
-        r"crap", r"crappy", r"craps", r"sod", r"sodding", r"bloody"]
-MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"jeez", r"geez",
-          r"gosh", r"darn.*", r"heck", r"dang"]
+MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"godd?amm?it",
+        r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
+        r"sod", r"sodding", r"bloody", r"turds?", r"hella", r"hussy", r"hussies"]
+MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
+          r"gosh", r"gosh(darn|dang).*", r"darn.*", r"heck", r"dang", r"dang(it|ed)",
+          r"dagnabb?it", r"frak(s|ked|king|kin)?"]
 DEITY_PHRASES = [
     ("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"),
     ("dear", "god"), ("god", "almighty"), ("for", "god's", "sake"),
     ("for", "gods", "sake"), ("god", "knows"), ("god", "damn"),
     ("god", "dammit"), ("oh", "lord"), ("good", "lord"), ("dear", "lord"),
     ("lord", "almighty"), ("sweet", "jesus"), ("jesus", "christ"),
-    ("for", "christ's", "sake"), ("for", "christs", "sake"),
+    ("for", "christ's", "sake"), ("for", "christs", "sake"), ("jesus", "h", "christ"),
+    ("christ", "almighty"), ("mother", "of", "god"), ("holy", "mother", "of", "god"),
+    ("good", "god", "almighty"),
 ]
-DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"goddamn.*"]
+DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"oh?m[iy]god", r"goddamn.*"]
 # Sexual words muted one at a time, wherever they come up (separate from
 # cutting whole explicit scenes). Words with innocent everyday meanings
 # (bed, naked, breast, screw) are deliberately left out.
@@ -95,6 +122,10 @@ SEXUAL_WORDS = [
     r"condoms?", r"boobs?", r"boobies", r"penis(es)?", r"vaginas?", r"genital.*",
     r"nipples?", r"porn.*", r"foreplay", r"intercourse", r"masturbat.*", r"climaxed",
     r"hookers?", r"blowjobs?", r"threesomes?", r"lingerie", r"panties",
+    # crude words for body parts and sex (from CleanView's TV and film list)
+    r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
+    r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
+    r"cockblock(s|ed|er|ing)?",
 ]
 SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
@@ -111,7 +142,97 @@ SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this
 SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
                    "together", "up", "through", "firmly", "securely", "loose", "around", "the",
                    "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"}
-PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES}  # deity filled in below
+# Slang for a man's private parts. These are everyday words too ("skipping stones", "tennis
+# balls", "a pair of shoes"), so only the slang word in these phrases is muted (as swearing):
+# grow some stones / grow a pair, has the balls to, kicked him in the nuts, busting my balls,
+# freeze my nuts off, cut his balls off, brass balls.
+BODY_SLANG = {"stones", "balls", "nuts", "pair", "set", "jewels"}
+GROW = {"grow", "grows", "grew", "grown", "growing"}
+SELF = {"yourself", "himself", "herself", "themselves", "you", "me"}
+HAVE = {"has", "have", "had", "got", "gotten", "having", "lack", "lacks", "lacked", "lacking"}
+STRIKE = {"kick", "kicks", "kicked", "kicking", "knee", "kneed", "kneeing", "punch", "punched",
+          "punching", "hit", "hits", "hitting", "smack", "smacked", "whack", "whacked", "kick'em"}
+POSS = {"my", "his", "your", "their", "our", "her"}
+BUST = {"bust", "busts", "busting", "busted", "break", "breaks", "breaking", "broke"}
+OFF_VERBS = {"freeze", "freezes", "freezing", "froze", "frozen", "work", "works", "working", "worked",
+             "cut", "cuts", "cutting", "chop", "chops", "chopped", "rip", "rips", "ripped", "tear",
+             "tore", "torn", "bite", "bit", "bitten", "shoot", "shot", "blow", "blew", "blown"}
+
+
+def body_slang(words, i):
+    """Is words[i] (stones, balls, nuts, pair, set, "family jewels") slang for a man's private
+    parts here?"""
+    w = words[i]
+    if w not in BODY_SLANG:
+        return False
+    if w == "jewels":       # "kicked him in the family jewels": read it as one word
+        if i < 1 or words[i - 1] != "family":
+            return False
+        words, i, w = words[:i - 1] + ["balls"] + words[i + 1:], i - 1, "balls"
+    at = lambda k: words[k] if 0 <= k < len(words) else ""
+    p1, p2, n1 = at(i - 1), at(i - 2), at(i + 1)
+    if p2 in SELF and at(i - 3) in GROW:      # "grow yourself some stones"
+        p2 = "grow"
+    if p1 in ("real", "big") and p2 == "some" and at(i - 3) in GROW | HAVE:
+        return True                            # "you've got some real stones"
+    if p1 == "of" and p2 in ("pair", "set") and at(i - 3) == "a" and at(i - 4) in GROW:
+        return True                            # "grow a pair of balls"
+    if any(at(k) in ("kidney", "kidneys", "gall", "gallbladder", "bladder") for k in range(i - 2, i + 5)):
+        return False   # kidney stones
+    if w in ("pair", "set"):   # "grow a pair", "grow a set" (not "a pair of ...")
+        return p1 == "a" and p2 in GROW and n1 != "of"
+    if p1 == "some" and p2 in GROW:
+        return True
+    if p1 == "the" and p2 in HAVE and n1 == "to":
+        return True
+    if p1 == "the" and p2 == "in" and any(at(k) in STRIKE for k in range(i - 6, i - 2)):
+        return True
+    if p1 in POSS and (p2 in BUST or (p2 in OFF_VERBS and n1 == "off")):
+        return True
+    return w == "balls" and (p1 in ("brass", "blue") or (n1, at(i + 2)) == ("of", "steel"))
+
+
+PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # deity filled in below
+           "moderate": MODERATE_PHRASES}
+# Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
+# "General Hooker", "door knockers". (The word after, or before.)
+INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
+                 "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
+                          "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
+                 "cum": {"laude"}, "peckers": {"up"}, "pecker": {"up"},
+                 "retard": {"the", "its", "their", "growth"},
+                 # rude words box: "jerks her up", "fool around", "butt in", "dumb luck"
+                 **{w: {"her", "him", "me", "them", "it", "us", "up", "away", "back", "open", "out",
+                        "forward", "free", "awake", "his", "my", "your", "their", "our", "the"}
+                    for w in ("jerk", "jerks")},
+                 "fool": {"around", "with", "proof"}, "fools": {"gold", "around", "rush"},
+                 "butt": {"in", "heads"}, "butts": {"in", "heads"},
+                 "dumb": {"waiter", "waiters", "luck", "founded", "show"}}
+INNOCENT_PREV = {"dick": {"moby", "uncle", "big"}, "cum": {"summa", "magna"},
+                 "hooker": {"general", "john", "joe"}, "hookers": {"general"},
+                 "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
+                 "butt": {"cigarette", "cigar", "rifle", "gun"},
+                 "butts": {"cigarette", "cigar", "rifle", "gun"},
+                 "dumb": {"deaf", "struck"}, "dummy": {"test", "ventriloquist", "ventriloquist's"},
+                 "dummies": {"test", "crash"}}
+# Rude words kids copy (CleanListen's "Rude words" box, off unless ticked; the same list as
+# CleanView's). "Shut it" is rude, "shut it down" isn't.
+RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?", r"idiotic",
+        r"morons?", r"moronic", r"dumm(y|ies)", r"dorks?", r"dorky", r"dweebs?", r"jerks?",
+        r"losers?", r"fools?", r"butts?", r"butthead(s)?", r"buttface", r"nincompoops?",
+        r"nitwits?", r"dimwits?", r"halfwits?", r"numbskulls?", r"knucklehead(s)?",
+        r"dummkopf", r"bonehead(s)?", r"airhead(s)?", r"doofus", r"dingbat(s)?", r"pea-?brain(s)?",
+        r"poopyhead", r"weirdo(s)?"]
+RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "trap"),
+                ("shut", "your", "face"), ("shut", "it"), ("you", "suck"), ("it", "sucks"),
+                ("this", "sucks"), ("that", "sucks")]
+NOT_RUDE_NEXT = {"down", "off", "in", "into", "on", "onto", "up", "out", "together", "tight",
+                 "tightly", "shut", "back", "open", "closed", "loose", "tighter", "away"}
+# "shut up shop", "shut up in the attic", "shut up the house": shut away, not rude
+SHUT_UP_SAFE_NEXT = {"in", "inside", "shop", "house", "the", "his", "her", "my", "their", "our",
+                     "with", "within", "together", "tight", "tightly", "alone", "for", "here",
+                     "there", "like"}
+PHRASES["rude"] = RUDE_PHRASES
 BLOODY_SWEAR_NEXT = {
     "hell", "well", "idiot", "fool", "fools", "stupid", "ridiculous", "nuisance",
     "nonsense", "cheek", "marvellous", "marvelous", "brilliant", "awful", "good",
@@ -167,6 +288,10 @@ ORIENTATION_WORDS = [
 ]
 EXTRA_CATS = {"orientation": _c(ORIENTATION_WORDS)}
 GROUPS["orientation"] = ["orientation"]
+# rude words: CleanListen's own box too, but not starred out like swears (so not in ALL_CATS,
+# which CleanRead uses for that)
+KID_CATS = {"rude": _c(RUDE)}
+GROUPS["rude"] = ["rude"]
 SEX_C = {w: _c(p) for w, p in SEX_TERMS.items()}
 
 
@@ -178,8 +303,12 @@ def find_language(words, cats):
         for cat in cats:
             for ph in sorted(PHRASES.get(cat) or [], key=len, reverse=True):
                 if tuple(words[i:i + len(ph)]) == ph:
+                    nxt = words[i + len(ph)] if i + len(ph) < n else ""
                     if ph[0] == "screw" and (words[i + 2] if i + 2 < n else "") in SCREW_SAFE_NEXT:
                         continue  # "screw it in tight", "screw that lid on"
+                    if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
+                                          ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT):
+                        continue  # "shut it down", "shut up in the attic"
                     found = (ph, cat)
                     break
             if found:
@@ -190,11 +319,19 @@ def find_language(words, cats):
             continue
         w = words[i]
         for cat in cats:
-            if any(p.match(w) for p in (CATS.get(cat) or EXTRA_CATS.get(cat) or [])):
+            pats = CATS.get(cat) or EXTRA_CATS.get(cat) or KID_CATS.get(cat) or []
+            if any(p.match(w) for p in pats):
                 if w == "bloody" and (words[i + 1] if i + 1 < n else "") not in BLOODY_SWEAR_NEXT:
                     break
+                if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) or
+                        (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
+                        w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"]):
+                    break     # "pussy cat", "Moby Dick", "summa cum laude", "deaf and dumb"
                 hits.append((i, i + 1, cat))
                 break
+        else:
+            if "moderate" in cats and body_slang(words, i):
+                hits.append((i, i + 1, "moderate"))
         i += 1
     return hits
 
@@ -626,7 +763,8 @@ STRICT_SWEARS = [("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "go
                  ("oh", "lord"), ("for", "god's", "sake"), ("for", "gods", "sake"), ("god", "damn"),
                  ("god", "dammit"), ("goddamn",), ("jesus", "christ"), ("sweet", "jesus"),
                  ("for", "christ's", "sake"), ("for", "christs", "sake"), ("god", "almighty"),
-                 ("lord", "almighty"), ("oh", "jesus")]
+                 ("lord", "almighty"), ("oh", "jesus"), ("jesus", "h", "christ"),
+                 ("christ", "almighty"), ("good", "god", "almighty")]
 
 
 def strict_religion_hit(words):
@@ -994,7 +1132,8 @@ def _ai_module():
 
 LANGUAGE_DEFS = {
     "strong": "the f-word or c-word in any form",
-    "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***",
+    "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***, "
+                "or slang for a man's private parts ('grow some stones', 'has the balls to')",
     "mild": "a mild swear word such as damn, hell used as a curse, crap, bloody used as a curse, "
             "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
     "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
@@ -1003,6 +1142,8 @@ LANGUAGE_DEFS = {
     "sexual": "a sexual word such as sex, sexy or horny, or a crude word for body parts",
     "orientation": "a word about sexual orientation such as gay, lesbian, homosexual or bisexual "
                    "('gay' meaning cheerful or bright is NOT this)",
+    "rude": "a rude word kids copy such as stupid, dumb, idiot, moron, loser, jerk or butt, or "
+            "'shut up' / 'you suck' said to someone",
 }
 
 
@@ -1017,12 +1158,14 @@ def _masked_text(words):
 # narrator didn't actually say it (misheard).
 INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
-                  "peed", "peeing", "screw", "craps"}
+                  "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
+                  "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
+                  "hookers", "retard", "retarded", "tosser", "tossers", "shat", "boner", "boners"}
 
 
 def may_untick_word(m, words=None):
     """Can a checker leave this listed word in? (see INNOCENT_WORDS)"""
-    if m.get("cat") in ("deity", "ai", "claude"):
+    if m.get("cat") in ("deity", "ai", "claude", "rude"):
         return True
     ws = words if words is not None else [norm(w) for w in str(m.get("word_raw") or m.get("word", "")).split()]
     return any(w in INNOCENT_WORDS for w in ws)

@@ -20,8 +20,9 @@ still ship to CleanListen installs but aren't developed here.
 |---|---|
 | `cleanlisten.py` | The engine (~1900 lines): word lists, detectors, transcription, ebook alignment, local-AI helper, `analyze()`, `render()`, chapter split. Also has a CLI (`_cli`). |
 | `CleanListen.pyw` | The tkinter app (~1700 lines, one `App` class): setup → working → review → done screens, Claude/ChatGPT setup, chat window, per-item "Ask Claude", All-text search, update/resume. |
-| `cleanlisten_claude.py` | Final check + chat through **Claude Code** (`claude -p`) or **ChatGPT** (Codex) on the user's own plan. Holds the family's rules (`KIND_RULES`, `CAT_RULES`). |
+| `cleanlisten_claude.py` | Final check + chat through **Claude Code** (`claude -p`), **ChatGPT** (Codex) or **Gemini** (Antigravity CLI) on the user's own plan; the other two go through `HELPERS`. Holds the family's rules (`KIND_RULES`, `CAT_RULES`). |
 | `cleanlisten_gpt.py` | ChatGPT through OpenAI's Codex CLI (adapted from CleanView). |
+| `cleanlisten_gemini.py` | Gemini through Google's **Antigravity CLI** (`agy -p --output-format json --json-schema --sandbox`). Google replaced Gemini CLI with it for personal and Google One accounts on 2026-06-18. Built from Google's docs and tested with a faked `agy` only (`tests/test_gemini.py`); not yet tried on a real account. Requests over ~24k characters go in a file agy reads. Sign-in check is `agy models`. |
 | `cleanlisten_learn.py` | Learning from the family's choices; exports ("Send what CleanListen learned", "Export what we refined"); findings spreadsheet. |
 | `shared_learned.json` | Built-in knowledge every copy starts with (merged from exports — see §7). |
 | `launcher.pyw` | Desktop shortcut target: checks GitHub for a newer `version.json`, downloads the listed files, swaps them in, starts the app (`view` → CleanView, `read` → CleanRead). |
@@ -49,9 +50,9 @@ Python 3.12 on the user's PC (private venv). Dependencies: `sherpa-onnx`, `numpy
 - `settings.json` (`claude_model`, `reviewer` = claude|chatgpt), `resume.json` (reopen onto the
   same review after an update or after closing the window)
 
-Claude Code / Codex are installed per-user by the app's "Set up / sign in" button and use the
-family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` are removed from the
-child environment on purpose).
+Claude Code / Codex / Antigravity CLI are installed per-user by the app's "Set up / sign in"
+button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
+`GEMINI_API_KEY` / `GOOGLE_API_KEY` are removed from the child environment on purpose).
 
 ## 3. The pipeline (`analyze()` then `render()`)
 
@@ -60,8 +61,14 @@ child environment on purpose).
 2. **Ebook (optional)**: EPUB/PDF/TXT aligned to the transcript (unique 4-gram anchors + LIS +
    difflib) to catch misheard words and use paragraph edges.
 3. **Word lists** (`find_language`): categories `strong, moderate, mild, deity, minced, sexual`
-   (`CATS`, also masked by CleanView/CleanRead) + `orientation` (`EXTRA_CATS`, CleanListen only),
-   plus phrases (`PHRASES`: "oh my god", "screw you", "slept with someone"…). Mute edges snap to
+   (`CATS`, also masked by CleanView/CleanRead) + `orientation` (`EXTRA_CATS`, CleanListen only)
+   + `rude` ("Rude words kids copy" box, off by default; `KID_CATS`, kept out of `ALL_CATS` so
+   CleanRead doesn't star them), plus phrases (`PHRASES`: "oh my god", "screw you", "slept with
+   someone", "eff you", "shut up"…). Since 1.8.0 the lists carry CleanView's TV/film additions
+   (slurs, "sweet-ass", "sumbitch", "pussy"…) with guards for everyday uses (`INNOCENT_NEXT` /
+   `INNOCENT_PREV`: "Moby Dick", "summa cum laude", "he jerks the door open"), plus slang for a
+   man's private parts muted as swearing only in slang phrases (`body_slang`: "grow some stones",
+   "has the balls to", "kicked in the nuts", "grow a pair"; just that word). Mute edges snap to
    silence (`snap_edges`).
 4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
    religion (`religion_score`, `blames_god`, `invokes_providence`, `strict_religion_hit`) — window scoring, then edges trimmed to heavy
