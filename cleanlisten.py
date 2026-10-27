@@ -82,7 +82,7 @@ MODERATE = [
     r"lame|weird|broke|punk|wuss|bad|dumb|smart|jack|whole|cold|hot|mean|tough|fine|"
     r"nice|cool|pretty|ugly|old|cute|great|bitch)ass(es|ed)?",
     r"bastard.*", r"piss.*", r"dicks?", r"dickhead.*", r"pricks?", r"bollocks",
-    r"bugger.*", r"wanker.*", r"twats?", r"sluts?", r"slutty", r"whores?",
+    r"bugger.*", r"wanker.*", r"wank(s|ed|ing|in)?", r"(jerk|jack)offs?", r"twats?", r"sluts?", r"slutty", r"whores?",
     r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*", r"cojones", r"nads",
     r"(ball|nut)sacks?", r"ballsy", r"balls?bust(er|ers|ing)", r"dbags?",
     # more crude slang heard in TV and films
@@ -95,13 +95,18 @@ MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag")
                     ("ball", "buster"), ("ball", "busters"), ("ball", "busting"),
                     ("balls", "buster")] + [("eff", o) for o in ("you", "off", "me", "him", "her",
                                                                   "them", "it", "that", "this")]
+# "yanking your chain" (teasing, with a crude double meaning): the whole phrase goes
+MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "yankin")
+                     for o in ("my", "your", "his", "her", "their", "our", "ya", "yer", "someone's",
+                               "somebody's", "everyone's", "everybody's", "people's")
+                     for c in ("chain", "chains")]
 # ("damning" = incriminating and "damnation" are left alone)
 MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"godd?amm?it",
         r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
         r"sod", r"sodding", r"bloody", r"turds?", r"hella", r"hussy", r"hussies"]
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
           r"gosh", r"gosh(darn|dang).*", r"darn.*", r"heck", r"dang", r"dang(it|ed)",
-          r"dagnabb?it", r"frak(s|ked|king|kin)?"]
+          r"dagnabb?it", r"frak(s|ked|king|kin)?", r"sheesh"]
 DEITY_PHRASES = [
     ("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"),
     ("dear", "god"), ("god", "almighty"), ("for", "god's", "sake"),
@@ -132,13 +137,22 @@ SEXUAL_PHRASES = [
     ("get", "laid"), ("got", "laid"), ("getting", "laid"),
     ("one", "night", "stand"), ("one", "night", "stands"), ("hook", "up", "with"),
     ("hooked", "up", "with"), ("hooking", "up", "with"),
-] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
+    # slang for touching yourself ("beat off", "whack off", "yank it" are left out: everyday too)
+    ("rub", "one", "out"), ("rubbing", "one", "out"), ("rubbed", "one", "out"),
+    ("spank", "the", "monkey"), ("spanking", "the", "monkey"),
+    ("choke", "the", "chicken"), ("choking", "the", "chicken"),
+] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
+                          "jacking", "jackin")] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
      for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
                "anybody", "each", "everyone", "everybody")]
 # "screw you" / "screw it" as an insult (muted with the mild words). "Screw" on its
 # own is left alone, and so is "screw it in / on / tight..." (hardware).
 SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this", "that", "off",
                                         "yourself", "em", "'em", "everyone", "everybody", "y'all")]
+# "jerked off the road", "jacked off his feet": a place or thing follows, so it's literal
+OFF_SAFE_NEXT = {"the", "a", "an", "his", "her", "its", "their", "my", "your", "our", "of", "to",
+                 "into", "onto", "from", "at", "toward", "towards", "course", "balance", "guard",
+                 "track", "road", "path", "ground", "floor", "table", "shelf", "wall", "hook"}
 SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
                    "together", "up", "through", "firmly", "securely", "loose", "around", "the",
                    "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"}
@@ -309,6 +323,8 @@ def find_language(words, cats):
                     if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
                                           ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT):
                         continue  # "shut it down", "shut up in the attic"
+                    if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
+                        continue  # "the car jerked off the road"
                     found = (ph, cat)
                     break
             if found:

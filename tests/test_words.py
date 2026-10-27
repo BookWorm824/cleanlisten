@@ -265,3 +265,29 @@ def test_clean_context_stars_neighbouring_swears():
 ])
 def test_may_untick_word(word, cat, ok):
     assert E.may_untick_word({"cat": cat, "word_raw": word}) is ok
+
+
+# --- "yanking your chain", "sheesh", and slang for touching yourself ------------------
+@pytest.mark.parametrize("text, phrase, cat", [
+    ("Quit yanking my chain!", "yanking my chain", "moderate"),
+    ("He was just yanking your chain.", "yanking your chain", "moderate"),
+    ("You yanked my chain, sheesh.", "sheesh", "minced"),
+    ("He was jerking off.", "jerking off", "sexual"),
+    ("Go rub one out.", "rub one out", "sexual"),
+    ("What a jerk-off.", "jerkoff", "moderate"),
+    ("Stop wanking.", "wanking", "moderate"),
+])
+def test_chain_and_slang_found(text, phrase, cat):
+    ws = words(text)
+    assert (phrase, cat) in [(" ".join(ws[i:j]), c) for i, j, c in E.find_language(ws, EVERY)]
+
+
+@pytest.mark.parametrize("text", [
+    "She yanked the chain of the toilet.",
+    "He yanked the chain off the gate.",
+    "The car jerked off the road.",
+    "He jerked off his jacket.",
+    "She yanked it out of the wall.",
+])
+def test_chain_and_slang_everyday_uses(text):
+    assert hits(text) == []

@@ -68,8 +68,10 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    (slurs, "sweet-ass", "sumbitch", "pussy"…) with guards for everyday uses (`INNOCENT_NEXT` /
    `INNOCENT_PREV`: "Moby Dick", "summa cum laude", "he jerks the door open"), plus slang for a
    man's private parts muted as swearing only in slang phrases (`body_slang`: "grow some stones",
-   "has the balls to", "kicked in the nuts", "grow a pair"; just that word). Mute edges snap to
-   silence (`snap_edges`).
+   "has the balls to", "kicked in the nuts", "grow a pair"; just that word). Lauren also wants
+   "yanking your chain" (whole phrase, moderate), "sheesh" (minced) and slang for touching
+   yourself ("jerking off", "rub one out"; `OFF_SAFE_NEXT` keeps "jerked off the road").
+   Mute edges snap to silence (`snap_edges`).
 4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
    religion (`religion_score`, `blames_god`, `invokes_providence`, `strict_religion_hit`) — window scoring, then edges trimmed to heavy
    sentences. Sentence filters: sexual references, relationships (`relationship_hit`,
