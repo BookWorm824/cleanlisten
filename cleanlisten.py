@@ -100,7 +100,9 @@ MODERATE_PHRASES += [("what", "the", "f"), ("what", "the", "eff")]
 # "retarded" heard as two words by speech recognition
 MODERATE_PHRASES += [("re", t) for t in ("tard", "tards", "tarded")]
 # "yanking your chain" (teasing, with a crude double meaning): the whole phrase goes
-MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "yankin")
+MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "yankin", "pull",
+                                          "pulls", "pulled", "pulling", "pullin", "jerk", "jerks",
+                                          "jerked", "jerking", "jerkin")
                      for o in ("my", "your", "his", "her", "their", "our", "ya", "yer", "someone's",
                                "somebody's", "everyone's", "everybody's", "people's")
                      for c in ("chain", "chains")]
@@ -173,6 +175,10 @@ HAVE = {"has", "have", "had", "got", "gotten", "having", "lack", "lacks", "lacke
 STRIKE = {"kick", "kicks", "kicked", "kicking", "knee", "kneed", "kneeing", "punch", "punched",
           "punching", "hit", "hits", "hitting", "smack", "smacked", "whack", "whacked", "kick'em"}
 POSS = {"my", "his", "your", "their", "our", "her"}
+GOT_WHO = {"you've", "you", "he's", "he", "she's", "she", "they've", "they", "i've"}
+# "I've got some nuts in my bag", "you got some stones for the garden": the real thing
+NOT_SLANG_NEXT = {"in", "on", "for", "from", "at", "to", "left", "that", "the", "a", "here",
+                  "there", "and", "of", "with", "out", "into", "inside"}
 BUST = {"bust", "busts", "busting", "busted", "break", "breaks", "breaking", "broke"}
 OFF_VERBS = {"freeze", "freezes", "freezing", "froze", "frozen", "work", "works", "working", "worked",
              "cut", "cuts", "cutting", "chop", "chops", "chopped", "rip", "rips", "ripped", "tear",
@@ -195,6 +201,9 @@ def body_slang(words, i):
         p2 = "grow"
     if p1 in ("real", "big") and p2 == "some" and at(i - 3) in GROW | HAVE:
         return True                            # "you've got some real stones"
+    if (p1 in ("some", "real", "big") and p2 == "got" and at(i - 3) in GOT_WHO and
+            w in ("stones", "balls", "nuts") and n1 not in NOT_SLANG_NEXT):
+        return True                            # "you've got some balls", "she's got real stones"
     if p1 == "of" and p2 in ("pair", "set") and at(i - 3) == "a" and at(i - 4) in GROW:
         return True                            # "grow a pair of balls"
     if any(at(k) in ("kidney", "kidneys", "gall", "gallbladder", "bladder") for k in range(i - 2, i + 5)):
@@ -221,6 +230,7 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
                  "cum": {"laude"}, "peckers": {"up"}, "pecker": {"up"},
                  "retard": {"the", "its", "their", "growth"},
+                 "horny": {"toad", "toads"}, "boob": {"tube", "tubes"},
                  # rude words box: "jerks her up", "fool around", "butt in", "dumb luck"
                  **{w: {"her", "him", "me", "them", "it", "us", "up", "away", "back", "open", "out",
                         "forward", "free", "awake", "his", "my", "your", "their", "our", "the"}
@@ -285,8 +295,56 @@ GROUPS = {
 }
 
 
+# Ebooks (and some transcripts) bleep swears ("f***ing", "s**t", "a**hole", "#@$%"). Each is
+# matched against these, most common first, so the word is still found; same length wins.
+# (Ported from CleanView's cvcore.)
+BLEEPED = ["fuck", "fucking", "fuckin", "fucked", "fucker", "fuckers", "fucks", "motherfucker",
+           "motherfuckers", "motherfucking", "shit", "shits", "shitty", "shitting", "bullshit",
+           "horseshit", "bitch", "bitches", "bitching", "ass", "asses", "asshole", "assholes",
+           "jackass", "dumbass", "damn", "damned", "dammit", "goddamn", "goddammit", "hell", "crap",
+           "dick", "dicks", "dickhead", "bastard", "bastards", "piss", "pissed", "cunt", "whore",
+           "slut", "cock", "prick", "god", "jesus", "christ"]
+_BLEEP = re.compile(r"[*#]|[@$%&!]{2,}|(?<=[a-z])-{2,}(?=[a-z])")
+
+
+def unbleep(w):
+    """'f***ing' -> 'fucking', 's**t' -> 'shit', '#@$%' -> 'fuck'; anything else as it was.
+    A scene break ("***", "* * *") or "$$$" isn't a word, so it's left alone."""
+    t = w.lower().strip(".,!?;:\"'()[]")
+    if not _BLEEP.search(t):
+        return w
+    if not re.search(r"[a-z]", t) and len(set(t) & set("#@$%&")) < 2:
+        return w
+    parts = re.split(r"([*#@$%&!-]+)", t)
+    for exact in (True, False):
+        pat = "".join(re.escape(p) if not re.fullmatch(r"[*#@$%&!-]+", p) else
+                      (f"[a-z]{{{len(p)}}}" if exact else "[a-z]+") for p in parts if p)
+        found = [b for b in BLEEPED if re.fullmatch(pat, b)]
+        if found:
+            same = [b for b in found if len(b) == len(t)]
+            return (same or found)[0]
+    return w
+
+
+# Short forms of swears on the lists. "sob" is also a real word (to cry, a sob story), so
+# it only counts written as an abbreviation: capitals ("SOB") or dots ("S.O.B.").
+ABBREVIATIONS = [(re.compile(r"[Ss]\.[Oo]\.[Bb]\.?('?s)?|SOB('?S|'?s)?|S-O-B"), "sonofabitch"),
+                 (re.compile(r"[Dd][-.]?[Bb][Aa][Gg][Ss]?"), "douchebag")]
+
+
+def unabbreviate(w):
+    """'S.O.B.' / 'SOB' -> 'sonofabitch', 'D-bag' -> 'douchebag'; else as it was."""
+    core = w.strip(".,!?;:\"()[]").replace("’", "'")
+    if core.endswith(".") and core.count(".") == 1:
+        core = core[:-1]
+    for pat, full in ABBREVIATIONS:
+        if pat.fullmatch(core) or pat.fullmatch(core.rstrip(".")):
+            return full
+    return w
+
+
 def norm(w):
-    w = w.lower().replace("’", "'").replace("‘", "'")
+    w = unbleep(unabbreviate(w)).lower().replace("’", "'").replace("‘", "'")
     w = re.sub(r"[^a-z0-9']", "", w)
     return w.strip("'")
 

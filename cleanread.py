@@ -51,7 +51,10 @@ BLOCK = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "div", "td
          "address", "html", "tbody", "thead"}
 SKIP = {"head", "script", "style", "title", "svg", "math"}
 HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
-WORD_RE = re.compile(r"[0-9A-Za-zÀ-ɏ]+(?:['’‘\-][0-9A-Za-zÀ-ɏ]+)*")
+# A word, kept whole when it's bleeped ("f***ing", "s**t", "f--k") so the swear is still found,
+# or a grawlix ("#@$%"). A "***" scene break isn't a word.
+WORD_RE = re.compile(r"[0-9A-Za-zÀ-ɏ]+(?:['’‘\-][0-9A-Za-zÀ-ɏ]+|[*#]+[0-9A-Za-zÀ-ɏ]*|-{2,}[0-9A-Za-zÀ-ɏ]+)*"
+                     r"|(?<![^\s\"'(])(?=[*#@$%&!]*#)(?=[*#@$%&!]*@)[*#@$%&!]{3,}")
 
 
 def _deaccent(s):

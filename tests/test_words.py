@@ -102,7 +102,7 @@ def test_body_slang_is_swearing():
     ("You sumbitch.", "sumbitch", "moderate"),
     ("Don't be such an a-hole.", "ahole", "moderate"),
     ("He's a total dickwad.", "dickwad", "moderate"),
-    ("What a dbag.", "dbag", "moderate"),
+    ("What a dbag.", "douchebag", "moderate"),
     ("Eff you, buddy.", "eff you", "moderate"),
     ("S O B, that hurt.", "s o b", "moderate"),
     ("That's some bullcrap.", "bullcrap", "mild"),
@@ -354,3 +354,52 @@ def test_retarded_forms_muted(text, phrase):
 ])
 def test_retarded_lookalikes_kept(text):
     assert hits(text) == []
+
+
+# --- from CleanView 1.16.2 (the three apps share word changes) -------------------------
+@pytest.mark.parametrize("text, phrase", [
+    ("Quit pulling my chain.", "pulling my chain"),
+    ("He was jerking your chain.", "jerking your chain"),
+    ("You've got some balls!", "balls"),
+    ("She's got real stones.", "stones"),
+])
+def test_cleanview_phrases_found(text, phrase):
+    assert phrase in [p for p, _ in hits(text)]
+
+
+@pytest.mark.parametrize("text", [
+    "Pull the chain to flush.", "I've got some nuts in my bag.",
+    "You got some stones for the garden?", "A horny toad sat there.", "Turn off the boob tube.",
+])
+def test_cleanview_lookalikes_kept(text):
+    assert hits(text) == []
+
+
+# --- bleeped and abbreviated swears (ebooks; ported from CleanView's cvcore) ----------------
+@pytest.mark.parametrize("bleeped, word", [
+    ("f***", "fuck"), ("F***ing", "fucking"), ("f**king", "fucking"), ("s**t", "shit"),
+    ("s***", "shit"), ("bulls**t", "bullshit"), ("a**hole", "asshole"), ("b****", "bitch"),
+    ("d*mn", "damn"), ("h***", "hell"), ("G*d", "god"), ("motherf***er", "motherfucker"),
+    ("f--k", "fuck"), ("#@$%", "fuck"), ("f***!", "fuck"),
+    ("SOB", "sonofabitch"), ("S.O.B.", "sonofabitch"), ("D-bag", "douchebag"),
+])
+def test_bleeps_and_short_forms_read_as_the_word(bleeped, word):
+    assert E.norm(bleeped) == word
+
+
+@pytest.mark.parametrize("text, same", [
+    ("#1", "1"), ("x-ray", "xray"), ("well--", "well"), ("$5", "5"), ("*", ""), ("hello", "hello"),
+    ("***", ""), ("$$$", ""), ("sob", "sob"), ("Hey!", "hey"),
+])
+def test_ordinary_text_and_scene_breaks_untouched(text, same):
+    assert E.norm(text) == same
+
+
+def test_cleanread_keeps_bleeped_words_whole():
+    import cleanread as R
+    toks = lambda t: [m.group() for m in R.WORD_RE.finditer(t)]
+    assert toks("What the f***ing hell? That's s**t.") == ["What", "the", "f***ing", "hell",
+                                                            "That's", "s**t"]
+    assert toks("He said #@$% loudly.") == ["He", "said", "#@$%", "loudly"]
+    assert toks("* * *") == [] and toks("***") == [] and toks("It cost $$$.") == ["It", "cost"]
+    assert toks("well-- maybe f--k") == ["well", "maybe", "f--k"]
