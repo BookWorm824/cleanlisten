@@ -101,9 +101,10 @@ KIND_RULES = {
              "advances toward someone. A married couple being affectionate is fine.",
 }
 CAT_RULES = {
-    "strong": "Strong swearing: the f-word or c-word in any form - always mute.",
+    "strong": "Strong swearing: the f-word or c-word in any form, and racial slurs - always mute.",
     "moderate": "Swearing: s***, b****, a**, a**hole, b******, p***ed, d***, and any word "
-                "containing them (e.g. 'shitload', 'bullshit') - always mute. Also slang for a "
+                "containing them (e.g. 'shitload', 'bullshit') - always mute, and slurs such as "
+                "'retarded' (even said as a description). Also slang for a "
                 "man's private parts - stones, balls, nuts, a pair ('grow some stones', 'has the "
                 "balls to', 'kicked him in the nuts', 'grow a pair'): mute just that word. The "
                 "same words in their everyday meaning (tennis balls, a pair of shoes) are fine.",

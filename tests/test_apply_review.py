@@ -318,3 +318,13 @@ def test_strict_religion_rule_goes_to_claude(book):
     assert "thank God" not in cc.rules_text(st)
     st["filters"]["strict_religion"] = True
     assert cc.STRICT_RELIGION_RULE in cc.rules_text(st)
+
+
+def test_retarded_stays_muted_when_claude_says_keep(book):
+    """Claude once unticked "a severely retarded..." as "not an issue": it's a slur."""
+    st, asr = book
+    st["mutes"].append(mute(asr, 1, "sex", "moderate", word_raw="retarded"))
+    decide(st, asr, d("W1", "keep"))
+    assert st["mutes"][0]["on"] is True
+    assert st["mutes"][0]["note"] == "Muted (Claude questioned it)"
+    assert not E.may_untick_word({"cat": "moderate", "word_raw": "retard"})

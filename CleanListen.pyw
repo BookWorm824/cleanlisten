@@ -641,15 +641,7 @@ class App(tk.Tk):
         except Exception as ex:
             messagebox.showerror("CleanListen", f"Couldn't save the file: {ex}")
             return
-        if os.name == "nt":
-            subprocess.Popen(f'explorer /select,"{path}"')
-        messagebox.showinfo(
-            "CleanListen",
-            f"Saved as \u201c{path.name}\u201d in {path.parent}.\n\n"
-            "Attach that file in your chat with Claude and ask for it to be added to CleanListen. "
-            "Once it's added, every copy of CleanListen gets what it learned with the next update.\n\n"
-            "It has the sentences and words you (and Claude, ChatGPT or Gemini) cut, muted or kept, and "
-            "their notes. No audio.")
+        self._send_or_save(path, "learned")
 
     def _show_claude_status(self, st, prov=None):
         cc = self._cc()
@@ -1241,6 +1233,8 @@ class App(tk.Tk):
                     self._update_msg(kind, msg[1])
                 elif kind == "claude_status":
                     self._show_claude_status(*msg[1:])
+                elif kind == "sent":
+                    self._sent(msg[1], msg[2])
                 elif kind == "claude_done":
                     self._save_analysis()
                     self.show_review()
@@ -1945,11 +1939,39 @@ class App(tk.Tk):
         except Exception as ex:
             messagebox.showerror("CleanListen", f"Couldn't save the file: {ex}")
             return
+        self._send_or_save(path, "refined")
+
+    def _send_or_save(self, path, kind):
+        """Offer to send an exported file in. If there's no inbox yet, she says no, or
+        sending fails, show where it was saved and how to send it by hand."""
+        import cleanlisten_learn as learn
+        if learn.send_url() and messagebox.askyesno(
+                "CleanListen", "Send it in now?\n\nIt has the sentences and words you and the "
+                "AI cut, muted or kept, and their notes. No audio."):
+            def go():
+                try:
+                    learn.send(path, kind)
+                    self.q.put(("sent", path, None))
+                except Exception as ex:
+                    self.q.put(("sent", path, ex))
+            threading.Thread(target=go, daemon=True).start()
+            return
+        self._saved_by_hand(path)
+
+    def _saved_by_hand(self, path, why=""):
         if os.name == "nt":
             subprocess.Popen(f'explorer /select,"{path}"')
-        messagebox.showinfo("CleanListen", f"Saved as \u201c{path.name}\u201d in {path.parent}.\n\n"
-                            "Attach that file in your chat with Claude and ask for it to be added "
-                            "to CleanListen. Every copy gets it with the next update.")
+        messagebox.showinfo(
+            "CleanListen", why + f"Saved as \u201c{path.name}\u201d in {path.parent}.\n\n"
+            "Attach that file in your chat with Claude and ask for it to be added to CleanListen. "
+            "Every copy gets it with the next update.\n\nIt has the sentences and words you and "
+            "the AI cut, muted or kept, and their notes. No audio.")
+
+    def _sent(self, path, ex):
+        if ex is None:
+            messagebox.showinfo("CleanListen", "Sent. Thank you!")
+        else:
+            self._saved_by_hand(path, "Couldn't send it just now.\n\n")
 
     def reset(self):
         self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None

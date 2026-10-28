@@ -331,3 +331,26 @@ def test_lead_in_off_by_default():
 def test_shown_keeps_lead_in_readable():
     raw = "What the hell?".split()
     assert E.shown(raw, words("What the hell?")) == "What the h***"
+
+
+# --- "retarded" and its forms (swearing group, like CleanView 1.15.1) ------------------
+@pytest.mark.parametrize("text, phrase", [
+    ("That is so retarded.", "retarded"),
+    ("Shut up, retardo.", "retardo"),
+    ("What a tard.", "tard"),
+    ("Those libtards again.", "libtards"),
+    ("Retarts everywhere.", "retarts"),            # a subtitle misspelling
+    ("He is re tarded.", "re tarded"),             # speech recognition split it in two
+    ("You re tards.", "re tards"),
+])
+def test_retarded_forms_muted(text, phrase):
+    assert (phrase, "moderate") in hits(text)
+
+
+@pytest.mark.parametrize("text", [
+    "He was tardy for class.", "She wore a leotard.", "Pass the mustard.", "Custard pie.",
+    "Fire retardant foam.", "This will retard the spread.",
+    "Mental retardation was the old term.", "Re the tax form, call me.",
+])
+def test_retarded_lookalikes_kept(text):
+    assert hits(text) == []

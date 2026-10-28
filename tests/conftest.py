@@ -14,6 +14,9 @@ from pathlib import Path
 REAL_APPDATA = os.environ.get("LOCALAPPDATA", "")   # only used to find the installed ffmpeg
 _APPDATA = tempfile.mkdtemp(prefix="cleanlisten-tests-")
 os.environ["LOCALAPPDATA"] = _APPDATA
+# The real inbox address is built in: point sending at a closed port so no test can ever
+# send to it (tests that need an inbox set their own).
+os.environ["CLEANLISTEN_INBOX"] = "http://127.0.0.1:9/exec"
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))

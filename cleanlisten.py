@@ -88,7 +88,8 @@ MODERATE = [
     # more crude slang heard in TV and films
     r"a-?holes?", r"lardass(es)?", r"bia?y?o?tch(es)?", r"beyotch", r"shat",
     r"dick(wad|weed|face|ish|wit|bag|less)s?", r"numbnuts", r"knobheads?", r"tossers?",
-    r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed)?", r"skeez(e|y|ier)", r"skeevy",
+    r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed|os?)?", r"retart(s|ed)?", r"(lib)?tards?",
+    r"skeez(e|y|ier)", r"skeevy",
 ]
 # swearing said as letters or two words ("S.O.B.", "D-bag" heard as "d bag", "eff you")
 MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag"),
@@ -96,6 +97,8 @@ MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag")
                     ("balls", "buster")] + [("eff", o) for o in ("you", "off", "me", "him", "her",
                                                                   "them", "it", "that", "this")]
 MODERATE_PHRASES += [("what", "the", "f"), ("what", "the", "eff")]
+# "retarded" heard as two words by speech recognition
+MODERATE_PHRASES += [("re", t) for t in ("tard", "tards", "tarded")]
 # "yanking your chain" (teasing, with a crude double meaning): the whole phrase goes
 MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "yankin")
                      for o in ("my", "your", "his", "her", "their", "our", "ya", "yer", "someone's",
@@ -679,7 +682,8 @@ def same_sex_flirt(words):
 # Bullying: name-calling aimed at someone ("you loser", "you're so stupid"),
 # taunts ("nobody likes you"), and narration of bullying ("picked on", "made fun of").
 BULLY_INSULTS = _c([
-    r"losers?", r"freaks?", r"idiots?", r"morons?", r"stupid", r"dummy", r"dumb", r"retard(ed|s)?",
+    r"losers?", r"freaks?", r"idiots?", r"morons?", r"stupid", r"dummy", r"dumb",
+    r"retard(ed|s|os?)?", r"(lib)?tards?",
     r"fatso", r"fatty", r"lardo", r"lard-?ass", r"pig", r"ugly", r"weirdo", r"nerd", r"geek", r"dork",
     r"fat", r"wimp", r"sissy", r"crybaby", r"scaredy-?cat", r"worthless", r"pathetic", r"useless", r"creep",
     r"jerk", r"dweeb", r"doofus", r"imbecile", r"cretin", r"runt", r"shrimp", r"four-?eyes", r"brat",
@@ -1212,7 +1216,9 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
                   "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
-                  "hookers", "retard", "retarded", "tosser", "tossers", "shat", "boner", "boners"}
+                  "hookers", "tosser", "tossers", "shat", "boner", "boners"}
+# Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
+# verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
 
 
 def may_untick_word(m, words=None):

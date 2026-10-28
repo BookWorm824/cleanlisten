@@ -15,11 +15,15 @@ CleanView's learning), kept in %LOCALAPPDATA%\\CleanListen\\learned.json.
 - export() puts everything learned into one file to send in, so it can be merged
   into shared_learned.json, which ships with CleanListen updates and gives every
   copy the same head start. Your own choices always beat the shared ones.
+- send() posts that file to the owner's inbox (a Google Apps Script shared with
+  CleanView, tools/cleanview_inbox.gs in the CleanView repo), which saves it in the
+  owner's Google Drive. Senders need no Google account.
 """
 import csv
 import json
 import os
 import re
+import urllib.request
 from datetime import date
 from pathlib import Path
 
@@ -28,6 +32,33 @@ PATH = APP_DATA / "learned.json"
 FINDINGS = APP_DATA / "claude_findings"
 CSV_PATH = APP_DATA / "claude_findings.csv"
 HERE = Path(__file__).resolve().parent
+# The inbox's web address (the same one CleanView uses). If it's emptied, the app just saves
+# the file and says to attach it in a chat with Claude, as before.
+SEND_URL = ("https://script.google.com/macros/s/AKfycbxfh9Cv3ctELA3352GTuVA1lshmGZKbwwPDsd39DEIm"
+            "Z-bRjFYml78iYKYZ5a2RGt8/exec")
+MAX_SEND = 2_000_000        # the inbox refuses more
+
+
+def send_url():
+    return os.environ.get("CLEANLISTEN_INBOX") or SEND_URL
+
+
+def send(path, kind):
+    """Send an exported file (kind "learned" or "refined") to the inbox.
+    Raises if it couldn't: no inbox yet, no internet, or the inbox said no."""
+    url = send_url()
+    if not url:
+        raise RuntimeError("CleanListen's inbox isn't set up yet")
+    path = Path(path)
+    body = json.dumps({"app": "CleanListen", "kind": kind, "name": path.name,
+                       "data": json.loads(path.read_text(encoding="utf8"))}).encode("utf8")
+    if len(body) > MAX_SEND:
+        raise RuntimeError("the file is too big to send")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:     # follows Google's redirect
+        answer = json.loads(r.read().decode("utf8") or "{}")
+    if not answer.get("ok"):
+        raise RuntimeError(f"the inbox didn't take it ({answer.get('why') or 'no reason given'})")
 SHARED_PATH = HERE / "shared_learned.json"
 MAX = 600
 _shared = None
