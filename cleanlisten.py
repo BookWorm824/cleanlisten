@@ -221,6 +221,57 @@ def body_slang(words, i):
     return w == "balls" and (p1 in ("brass", "blue") or (n1, at(i + 2)) == ("of", "steel"))
 
 
+# Fruit and vegetables for body parts ("check out those melons", "pop her cherry", "kneed him in
+# the grapes"). Only these phrases count, never "a melon" or "cherry pie"; as with "stones", only
+# the slang word is muted (as swearing). Same phrases as CleanView's cvcore.BODY_SLANG, which
+# mutes the whole phrase.
+_CHEST = r"(melons|cantaloupes|watermelons|grapefruits|coconuts|honeydews)"
+_BIG = r"((big|huge|giant|great|massive|enormous|perky|nice|lovely) )?"
+_LOW = r"(grapes|plums|berries|beans|walnuts|franks and beans|frank and beans|meat and two veg)"
+_NOT_FRUIT = (r"(?! (pie|pies|tree|trees|tomato|tomatoes|blossom|blossoms|cola|coke|juice|jam|"
+              r"stem|stems|pit|pits|lipstick|chapstick|red|wood|bomb|bombs|on top)\b)")
+FRUIT_SLANG = [re.compile(r"(?<!\S)" + p) for p in (
+    r"(nice|big|huge|giant|great|massive|enormous|perky|lovely) (pair|set) of (?P<part>" + _CHEST + r")\b",
+    r"(check|checks|checking|checked|checkin) out (those|them|her|your) " + _BIG +
+    r"(?P<part>" + _CHEST + r")\b",                        # not "these melons": a market seller
+    r"(stare|stares|staring|stared|ogle|ogles|ogling|ogled|gawk|gawking|gawked|look|looks|"
+    r"looking|looked|lookin) at (her|them) " + _BIG + r"(?P<part>" + _CHEST + r")\b",
+    r"(her|your) (big|huge|giant|massive|enormous|perky|nice|lovely) (?P<part>" + _CHEST + r")\b",
+    r"(pop|pops|popped|popping|poppin|bust|busts|busted|busting|lose|loses|lost|losing|take|"
+    r"took|taking|taken|break|broke|broken) (her|his|my|your|their|our) (?P<part>cherry)\b" + _NOT_FRUIT,
+    r"(?P<part>cherry) (popper|poppers|popping)\b",
+    r"(kick|kicks|kicked|kicking|knee|kneed|kneeing|hit|hits|hitting|punch|punched|punches|"
+    r"punching|smack|smacked|whack|whacked)( \S+){0,3} in the (?P<part>" + _LOW + r")\b",
+    r"(zip|zips|zipped|zipping|caught|catch|catching|snag|snagged) (his|my|your) "
+    r"(?P<part>(franks?|frank) and beans)\b",
+    r"(is that|that's|that is|was that) an? (?P<part>banana|cucumber|zucchini|eggplant|carrot|pickle) "
+    r"in (your|his|my) (pants|pocket|trousers|shorts|jeans|underwear)\b",
+    r"(?P<part>banana|cucumber|zucchini|eggplant|pickle) in (your|his|my) "
+    r"(pants|trousers|shorts|jeans|underwear)\b",
+    r"(her|his|your) (tight|juicy|round|perfect) (?P<part>peach|buns)\b",
+    r"(" + "|".join(sorted(OFF_VERBS)) + r") (my|his|your|her|our|their) (?P<part>grapes|plums) off\b",
+)]
+FRUIT_WORDS = {"melons", "cantaloupes", "watermelons", "grapefruits", "coconuts", "honeydews",
+               "cherry", "grapes", "plums", "berries", "beans", "walnuts", "franks", "frank",
+               "veg", "banana", "cucumber", "zucchini", "eggplant", "carrot", "pickle", "peach",
+               "buns"}
+
+
+def fruit_slang(words):
+    """Positions of fruit and vegetable words used for body parts ("those melons")."""
+    text, starts, pos = " ".join(words), [], 0
+    for w in words:
+        starts.append(pos)
+        pos += len(w) + 1
+    out = set()
+    for p in FRUIT_SLANG:
+        for m in p.finditer(text):
+            a, b = m.span("part")
+            out |= {k for k, s in enumerate(starts)
+                    if a <= s < b and words[k] in FRUIT_WORDS}   # "franks and beans": not "and"
+    return out
+
+
 PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # deity filled in below
            "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
@@ -404,6 +455,7 @@ def find_language(words, cats, lead_in_too=False):
 
 def _find_language(words, cats):
     hits, n, i = [], len(words), 0
+    fruit = fruit_slang(words) if "moderate" in cats else set()
     while i < n:
         found = None
         for cat in cats:
@@ -438,7 +490,7 @@ def _find_language(words, cats):
                 hits.append((i, i + 1, cat))
                 break
         else:
-            if "moderate" in cats and body_slang(words, i):
+            if "moderate" in cats and (body_slang(words, i) or i in fruit):
                 hits.append((i, i + 1, "moderate"))
         i += 1
     return hits
@@ -1247,7 +1299,9 @@ def _ai_module():
 LANGUAGE_DEFS = {
     "strong": "the f-word or c-word in any form",
     "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***, "
-                "or slang for a man's private parts ('grow some stones', 'has the balls to')",
+                "or slang for a man's private parts ('grow some stones', 'has the balls to'), "
+                "or fruit and vegetables used for body parts ('check out those melons', "
+                "'pop her cherry', 'kneed him in the grapes')",
     "mild": "a mild swear word such as damn, hell used as a curse, crap, bloody used as a curse, "
             "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
     "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
@@ -1274,7 +1328,7 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
                   "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
-                  "hookers", "tosser", "tossers", "shat", "boner", "boners"}
+                  "hookers", "tosser", "tossers", "shat", "boner", "boners", *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
 # verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
 

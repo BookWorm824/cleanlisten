@@ -96,6 +96,47 @@ def test_body_slang_is_swearing():
     assert hits("Grow some stones.", ["mild", "deity", "sexual"]) == []
 
 
+# --- fruit and vegetables for body parts: only in these phrases, only the slang word ----
+@pytest.mark.parametrize("text, muted", [
+    ("Check out those melons!", ["melons"]),
+    ("Nice pair of cantaloupes", ["cantaloupes"]),
+    ("He was staring at her coconuts", ["coconuts"]),
+    ("Look at them big melons", ["melons"]),
+    ("Her huge melons", ["melons"]),
+    ("You popped her cherry?", ["cherry"]),
+    ("I lost my cherry at prom", ["cherry"]),
+    ("She kneed him in the grapes", ["grapes"]),
+    ("Kicked me right in the plums", ["plums"]),
+    ("hit him in the franks and beans", ["franks", "beans"]),
+    ("He zipped his franks and beans", ["franks", "beans"]),
+    ("freezing my grapes off out here", ["grapes"]),
+    ("Is that a banana in your pocket?", ["banana"]),
+    ("a cucumber in his pants", ["cucumber"]),
+    ("Look at her tight buns", ["buns"]),
+    ("his juicy peach", ["peach"]),
+    ("kicked him in the meat and two veg", ["veg"]),
+])
+def test_fruit_slang_muted(text, muted):
+    assert hits(text) == [(w, "moderate") for w in muted]
+
+
+@pytest.mark.parametrize("text", [
+    "These melons are ripe", "Check out these melons, only a dollar", "a slice of watermelon",
+    "grapefruit for breakfast", "cherry pie", "She lost her cherry pie recipe",
+    "the cherry on top", "a bunch of grapes", "We grew plums and beans",
+    "pass the franks and beans", "meat and two veg for dinner",
+    "I kept a carrot in my pocket for the horse", "a banana in my lunchbox", "a juicy peach",
+    "hot cross buns", "She wore her hair in buns", "climbing for coconuts",
+    "popped a cherry tomato in her mouth", "a big pair of shoes",
+])
+def test_fruit_words_in_everyday_use(text):
+    assert hits(text) == []
+
+
+def test_fruit_slang_is_swearing():
+    assert hits("Check out those melons!", ["mild", "deity", "sexual"]) == []
+
+
 # --- more swearing and crude slang (from CleanView's TV and film lists) -----------------
 @pytest.mark.parametrize("text, word, cat", [
     ("What a sweet-ass deal.", "sweetass", "moderate"),

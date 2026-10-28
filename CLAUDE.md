@@ -68,7 +68,10 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    (slurs, "sweet-ass", "sumbitch", "pussy"…) with guards for everyday uses (`INNOCENT_NEXT` /
    `INNOCENT_PREV`: "Moby Dick", "summa cum laude", "he jerks the door open"), plus slang for a
    man's private parts muted as swearing only in slang phrases (`body_slang`: "grow some stones",
-   "has the balls to", "kicked in the nuts", "grow a pair"; just that word). Lauren also wants
+   "has the balls to", "kicked in the nuts", "grow a pair"; just that word), and fruit and
+   vegetables for body parts in the same way (`fruit_slang`, `FRUIT_SLANG`: "check out those
+   melons", "pop her cherry", "kneed him in the grapes"; never "cherry pie" or "these melons are
+   ripe"; same phrases as CleanView's `cvcore.BODY_SLANG`). Lauren also wants
    "yanking your chain" (whole phrase, moderate), "sheesh" (minced) and slang for touching
    yourself ("jerking off", "rub one out"; `OFF_SAFE_NEXT` keeps "jerked off the road").
    In audio mutes (`analyze`) a swear's lead-in goes too: "what the hell", "where in the heck"
@@ -120,6 +123,16 @@ the flattened transcript — `load_asr()` rebuilds it), `filters` ({cats, kinds}
   claude_verdict`
 
 ## 5. The family's rules (the spec)
+
+**Owner's standing rule: every change to words, phrases, guards or filters goes into all three
+apps** (CleanListen, CleanView and CleanRead). CleanRead uses this engine, so a change here
+reaches it; CleanView has its own copy in `cvcore.py` (`BookWorm824/cleanview`), so make the
+same change there or tell the CleanView session. Differences on purpose: CleanView mutes whole
+body-slang phrases ("grow some stones") where CleanListen mutes just the word; CleanView
+removes sexual talk as whole lines instead of single sexual words; CleanView mutes "thank god"
+as God's name, where CleanListen leaves it to the strict religion filter. CleanView's
+`tests/test_cleanlisten_words.py` reads this repo's `cleanlisten.py` and fails on any other
+difference.
 
 Source of truth for Claude/ChatGPT: `KIND_RULES` / `CAT_RULES` in `cleanlisten_claude.py`. In
 plain words, learned from Lauren directly and from her exported reviews:

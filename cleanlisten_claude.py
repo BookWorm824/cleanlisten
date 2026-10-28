@@ -106,8 +106,11 @@ CAT_RULES = {
                 "containing them (e.g. 'shitload', 'bullshit') - always mute, and slurs such as "
                 "'retarded' (even said as a description). Also slang for a "
                 "man's private parts - stones, balls, nuts, a pair ('grow some stones', 'has the "
-                "balls to', 'kicked him in the nuts', 'grow a pair'): mute just that word. The "
-                "same words in their everyday meaning (tennis balls, a pair of shoes) are fine.",
+                "balls to', 'kicked him in the nuts', 'grow a pair'), and fruit or vegetables "
+                "used for body parts ('check out those melons', 'pop her cherry', 'kneed him in "
+                "the grapes', 'is that a banana in your pocket'): mute just that word. The "
+                "same words in their everyday meaning (tennis balls, a pair of shoes, cherry "
+                "pie, ripe melons) are fine.",
     "mild": "Mild words: damn, hell used as a curse, crap, bloody used as a curse, 'screw you' / "
             "'screw it'. 'Hell' as the place in religious talk, 'bloody' meaning covered in blood, "
             "or screwing something in, are fine.",
