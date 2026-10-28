@@ -19,7 +19,7 @@ still ship to CleanListen installs but aren't developed here.
 | File | What it is |
 |---|---|
 | `cleanlisten.py` | The engine (~1900 lines): word lists, detectors, transcription, ebook alignment, local-AI helper, `analyze()`, `render()`, chapter split. Also has a CLI (`_cli`). |
-| `CleanListen.pyw` | The tkinter app (~1700 lines, one `App` class): setup → working → review → done screens, Claude/ChatGPT setup, chat window, per-item "Ask Claude", All-text search, update/resume. |
+| `CleanListen.pyw` | The tkinter app (~1700 lines, one `App` class): setup → working → review → done screens, Claude/ChatGPT setup, chat window, per-item "Ask Claude", All-text search, update/resume. Buttons: each page's one main step is the big bright green `Main.TButton` (Start cleaning, Save clean audiobook, Clean another book — a tester with poor sight missed a small one); a first step is `Go.TButton`; grey `Plain.TButton`s have an edge. CleanRead.pyw follows the same. The setup page must fit without scrolling (check with a screenshot). |
 | `cleanlisten_claude.py` | Final check + chat through **Claude Code** (`claude -p`), **ChatGPT** (Codex) or **Gemini** (Antigravity CLI) on the user's own plan; the other two go through `HELPERS`. Holds the family's rules (`KIND_RULES`, `CAT_RULES`). |
 | `cleanlisten_gpt.py` | ChatGPT through OpenAI's Codex CLI (adapted from CleanView). |
 | `cleanlisten_gemini.py` | Gemini through Google's **Antigravity CLI** (`agy -p --output-format json --json-schema --sandbox`). Google replaced Gemini CLI with it for personal and Google One accounts on 2026-06-18. Built from Google's docs and tested with a faked `agy` only (`tests/test_gemini.py`); not yet tried on a real account. Requests over ~24k characters go in a file agy reads. Sign-in check is `agy models`. |
@@ -71,6 +71,9 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    "has the balls to", "kicked in the nuts", "grow a pair"; just that word). Lauren also wants
    "yanking your chain" (whole phrase, moderate), "sheesh" (minced) and slang for touching
    yourself ("jerking off", "rub one out"; `OFF_SAFE_NEXT` keeps "jerked off the road").
+   In audio mutes (`analyze`) a swear's lead-in goes too: "what the hell", "where in the heck"
+   (`find_language(..., lead_in_too=True)`, swearing groups only; off for CleanRead and
+   context starring), plus "what the f / eff / fudge" as phrases.
    Mute edges snap to silence (`snap_edges`).
 4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
    religion (`religion_score`, `blames_god`, `invokes_providence`, `strict_religion_hit`) — window scoring, then edges trimmed to heavy

@@ -26,7 +26,10 @@ def app_version():
     except Exception:
         return "?"
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
-    "#F6F3EE", "#FFFFFF", "#23211F", "#6D6862", "#2F6F62", "#24574D", "#E3DED6")
+    "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
+# The one main step on each page (Start cleaning, Save clean audiobook, Clean another book)
+# is a big bright green button, so it's easy to spot; grey buttons have an edge.
+GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 
 
@@ -187,6 +190,12 @@ class App(tk.Tk):
         s.configure("Accent.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 12, "bold"), padding=(22, 10), borderwidth=0)
         s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        s.configure("Main.TButton", background=GO, foreground="white",
+                    font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
+        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", "#A8C9B0")])
+        s.configure("Go.TButton", background=ACCENT, foreground="white",
+                    font=(FONT, 11, "bold"), padding=(14, 4), borderwidth=0)
+        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
         s.configure("Bg.TCheckbutton", background=BG, font=(FONT, 10))
         s.map("Bg.TCheckbutton", background=[("active", BG)])
         # rounded tick boxes with a real tick (the built-in ones show an old-fashioned X)
@@ -208,11 +217,12 @@ class App(tk.Tk):
                         ("Checkbutton.label", {"sticky": "nswe"})]})]})])
         except tk.TclError:
             pass      # keep the built-in tick boxes
+        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": "#ECE7E0", "darkcolor": "#ECE7E0"}
         s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
-                    borderwidth=0, font=(FONT, 10))
+                    borderwidth=1, font=(FONT, 10), **edge)
         s.map("Plain.TButton", background=[("active", "#E0D9CF")])
         s.configure("Plain.TMenubutton", background="#ECE7E0", foreground=INK, padding=(14, 6),
-                    borderwidth=0, font=(FONT, 10), arrowcolor=INK)
+                    borderwidth=1, font=(FONT, 10), arrowcolor=INK, **edge)
         s.map("Plain.TMenubutton", background=[("active", "#E0D9CF")])
         s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
@@ -261,11 +271,11 @@ class App(tk.Tk):
         if self.page:
             self.page.destroy()
         self.page = tk.Frame(self, bg=BG)
-        self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
+        self.page.pack(fill="both", expand=True, padx=28, pady=(20, 10))
         # Buttons live in a footer packed first, so they always stay visible
         # even when the window is short.
         self.footer = tk.Frame(self.page, bg=BG)
-        self.footer.pack(side="bottom", fill="x", pady=(12, 0))
+        self.footer.pack(side="bottom", fill="x", pady=(8, 0))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold")).pack(anchor="w")
         self.page_name = "other"
         # "Check for updates" on every screen: updates and comes straight back to where you were
@@ -340,7 +350,7 @@ class App(tk.Tk):
             self.title(f"CleanListen {ver}")
         except Exception:
             pass
-        self.start_btn = ttk.Button(self.footer, text="Start cleaning", style="Accent.TButton",
+        self.start_btn = ttk.Button(self.footer, text="Start cleaning", style="Main.TButton",
                                     command=self.start, state="disabled")
         self.start_btn.pack(side="right")
         try:
@@ -363,9 +373,9 @@ class App(tk.Tk):
         self.b1_outer = b1.master.master
         row = tk.Frame(b1, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Choose folder…", style="Plain.TButton",
+        ttk.Button(row, text="Choose folder…", style="Go.TButton",
                    command=self.pick_folder).pack(side="left", anchor="n")
-        ttk.Button(row, text="Choose files…", style="Plain.TButton",
+        ttk.Button(row, text="Choose files…", style="Go.TButton",
                    command=self.pick_audio).pack(side="left", anchor="n", padx=(8, 0))
         self.audio_lbl = tk.Label(row, text="No audiobook chosen yet", bg=CARD, fg=MUTED,
                                   font=(FONT, 10), wraplength=380, justify="left")
@@ -1422,7 +1432,7 @@ class App(tk.Tk):
         self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
         row = tk.Frame(self.footer, bg=BG)
         row.pack(fill="x")
-        ttk.Button(row, text="Save clean audiobook", style="Accent.TButton",
+        ttk.Button(row, text="Save clean audiobook", style="Main.TButton",
                    command=self._save_from_review).pack(side="right")
         ttk.Button(row, text="Change filters & re-check", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
@@ -1908,11 +1918,13 @@ class App(tk.Tk):
             tk.Frame(p, bg=BG, height=10).pack()
         row = tk.Frame(p, bg=BG)
         row.pack(anchor="w")
-        ttk.Button(row, text="Open folder", style="Accent.TButton",
-                   command=lambda: open_path(res["out"])).pack(side="left")
+        ttk.Button(row, text="Clean another book", style="Main.TButton",
+                   command=self.reset).pack(side="left")
+        ttk.Button(row, text="Open folder", style="Go.TButton",
+                   command=lambda: open_path(res["out"])).pack(side="left", padx=(14, 0))
         ttk.Button(row, text="See what was removed", style="Plain.TButton",
                    command=lambda: open_path(str(Path(res["out"]) / "CleanListen report.txt"))
-                   ).pack(side="left", padx=12)
+                   ).pack(side="left", padx=(10, 0))
         exp = tk.Frame(p, bg=CARD, padx=16, pady=12, highlightbackground=LINE, highlightthickness=1)
         exp.pack(fill="x", pady=(18, 0))
         tk.Label(exp, text="Help teach CleanListen", bg=CARD, fg=INK,
@@ -1921,12 +1933,10 @@ class App(tk.Tk):
                  "cut, kept and changed, Claude's reasons and your chat \u2014 so it can be added to "
                  "the knowledge every copy of CleanListen starts with. No audio.", bg=CARD, fg=MUTED,
                  font=(FONT, 9), wraplength=680, justify="left").pack(anchor="w", pady=(2, 8))
-        ttk.Button(exp, text="Export what we refined\u2026", style="Accent.TButton",
+        ttk.Button(exp, text="Export what we refined\u2026", style="Plain.TButton",
                    command=self.export_refined).pack(anchor="w")
-        ttk.Button(self.footer, text="Clean another book", style="Plain.TButton",
-                   command=self.reset).pack(side="right")
         ttk.Button(self.footer, text="Re-check this book", style="Plain.TButton",
-                   command=self.recheck_same).pack(side="right", padx=(0, 10))
+                   command=self.recheck_same).pack(side="right")
 
     def export_refined(self):
         try:

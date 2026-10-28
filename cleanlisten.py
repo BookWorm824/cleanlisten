@@ -95,11 +95,14 @@ MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag")
                     ("ball", "buster"), ("ball", "busters"), ("ball", "busting"),
                     ("balls", "buster")] + [("eff", o) for o in ("you", "off", "me", "him", "her",
                                                                   "them", "it", "that", "this")]
+MODERATE_PHRASES += [("what", "the", "f"), ("what", "the", "eff")]
 # "yanking your chain" (teasing, with a crude double meaning): the whole phrase goes
 MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "yankin")
                      for o in ("my", "your", "his", "her", "their", "our", "ya", "yer", "someone's",
                                "somebody's", "everyone's", "everybody's", "people's")
                      for c in ("chain", "chains")]
+# "what the fudge", "what the flip": stand-ins for the f-word (muted with the soft swears)
+MINCED_PHRASES = [("what", "the", w) for w in ("fudge", "flip", "fork", "frack", "fuh")]
 # ("damning" = incriminating and "damnation" are left alone)
 MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"godd?amm?it",
         r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
@@ -207,7 +210,7 @@ def body_slang(words, i):
 
 
 PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # deity filled in below
-           "moderate": MODERATE_PHRASES}
+           "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
 # "General Hooker", "door knockers". (The word after, or before.)
 INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
@@ -309,8 +312,36 @@ GROUPS["rude"] = ["rude"]
 SEX_C = {w: _c(p) for w, p in SEX_TERMS.items()}
 
 
-def find_language(words, cats):
-    """Return (i, j, category) spans of words[i:j] to mute."""
+# "what the hell", "who the heck", "where in the hell": with lead_in=True the words leading up
+# to a swear are muted too. Only for swearing (not "what the sex ed teacher said").
+LEAD_WH = {"what", "who", "where", "how", "why", "whatd", "what'd", "whered", "where'd", "howd",
+           "how'd", "whyd", "why'd"}
+LEAD_CATS = {"strong", "moderate", "mild", "minced"}
+LEAD_WORDS = LEAD_WH | {"in", "the"}
+
+
+def lead_in(words, i):
+    """How many words before words[i] are a lead-in like "what the" or "where in the" (0 if none)."""
+    if i >= 2 and words[i - 1] == "the" and words[i - 2] in LEAD_WH:
+        return 2
+    if i >= 3 and words[i - 2:i] == ["in", "the"] and words[i - 3] in LEAD_WH:
+        return 3
+    return 0
+
+
+def find_language(words, cats, lead_in_too=False):
+    """Return (i, j, category) spans of words[i:j] to mute. With lead_in_too, a swear's
+    lead-in ("what the" hell) is part of its span."""
+    hits = _find_language(words, cats)
+    if lead_in_too:
+        for k, (i, j, cat) in enumerate(hits):
+            back = lead_in(words, i) if cat in LEAD_CATS else 0
+            if back and (k == 0 or hits[k - 1][1] <= i - back):
+                hits[k] = (i - back, j, cat)
+    return hits
+
+
+def _find_language(words, cats):
     hits, n, i = [], len(words), 0
     while i < n:
         found = None
@@ -807,6 +838,11 @@ def strict_religion_hit(words):
 def mask(word):
     core = re.sub(r"[^A-Za-z]", "", word)
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
+
+
+def shown(raw, normed):
+    """A muted span as the review screen shows it: swears starred, "what the" left readable."""
+    return " ".join(w if n_ in LEAD_WORDS else mask(w) for w, n_ in zip(raw, normed))
 
 
 ALL_CATS = ["strong", "moderate", "mild", "deity", "minced", "sexual", "orientation"]
@@ -1503,10 +1539,10 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     say(0.93, "Finding language…")
     asr_t = [w["t"] for w in asr]
     mutes = []
-    for i, j, cat in find_language(asr_n, cats):
+    for i, j, cat in find_language(asr_n, cats, lead_in_too=True):
         b, a = clean_context(asr_t, asr_n, i, j)
         mutes.append({"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
-                      "src": "audio", "word": " ".join(mask(asr_t[k]) for k in range(i, j)),
+                      "src": "audio", "word": shown(asr_t[i:j], asr_n[i:j]),
                       "ctx": b, "ctx_after": a, "i": i, "j": j, **raw_fields(asr_t, i, j)})
 
     paras = mapping = None
@@ -1537,7 +1573,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             paras = mapping = None
         else:
             added = 0
-            for i, j, cat in find_language(eb_n, cats):
+            for i, j, cat in find_language(eb_n, cats, lead_in_too=True):
                 t = est_time(i, mapping, asr)
                 if not t:
                     continue
@@ -1551,7 +1587,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 b, a = clean_context(eb_words, eb_n, i, j)
                 mutes.append({"part": part, "s": round(s, 3), "e": round(e, 3), "cat": cat,
                               "src": "ebook" if exact else "ebook-estimated",
-                              "word": " ".join(mask(w) for w in eb_words[i:j]),
+                              "word": shown(eb_words[i:j], eb_n[i:j]),
                               "ctx": b, "ctx_after": a, **raw_fields(eb_words, i, j)})
                 added += 1
             ebook_note = f"Ebook matched {pct:.0f}% of the audio and caught {added} extra word(s)."

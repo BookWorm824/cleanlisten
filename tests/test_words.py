@@ -291,3 +291,43 @@ def test_chain_and_slang_found(text, phrase, cat):
 ])
 def test_chain_and_slang_everyday_uses(text):
     assert hits(text) == []
+
+
+# --- "what the hell": the lead-in is muted with the swear (audio mutes) ----------------
+def lead(text):
+    ws = words(text)
+    return [(" ".join(ws[i:j]), c) for i, j, c in E.find_language(ws, EVERY, lead_in_too=True)]
+
+
+@pytest.mark.parametrize("text, phrase", [
+    ("What the hell?", "what the hell"),
+    ("What the fuck is that?", "what the fuck"),
+    ("Who the hell are you?", "who the hell"),
+    ("Where in the hell did you go?", "where in the hell"),
+    ("How the heck did you do that?", "how the heck"),
+    ("Why the hell not?", "why the hell"),
+    ("What the f?", "what the f"),
+    ("What the eff, man.", "what the eff"),
+    ("What the fudge!", "what the fudge"),
+])
+def test_what_the_lead_in_muted(text, phrase):
+    assert phrase in [p for p, _ in lead(text)]
+
+
+@pytest.mark.parametrize("text, found", [
+    ("What the sex ed teacher said.", ["sex"]),      # only swearing takes the lead-in
+    ("What the teacher said was fine.", []),
+    ("Get the hell out.", ["hell"]),
+    ("He asked what the Lord wanted.", []),
+])
+def test_what_the_lead_in_only_for_swears(text, found):
+    assert [p for p, _ in lead(text)] == found
+
+
+def test_lead_in_off_by_default():
+    assert hits("What the hell?") == [("hell", "mild")]   # CleanRead and context starring
+
+
+def test_shown_keeps_lead_in_readable():
+    raw = "What the hell?".split()
+    assert E.shown(raw, words("What the hell?")) == "What the h***"

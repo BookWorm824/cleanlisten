@@ -18,7 +18,10 @@ APP = "CleanRead"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 SETTINGS = APP_DATA / "cleanread_settings.json"
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
-    "#F6F3EE", "#FFFFFF", "#23211F", "#6D6862", "#2F6F62", "#24574D", "#E3DED6")
+    "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
+# The one main step on each page (start, Save clean copy, Clean another book) is a big
+# bright green button, so it's easy to spot; grey buttons have an edge.
+GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 CHIP = {"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
         "some": ("#FFF1D6", "#8A5A00"), "a lot": ("#FBE1DC", "#9A2F1F")}
@@ -119,8 +122,15 @@ class App(tk.Tk):
         s.configure("Accent.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 12, "bold"), padding=(22, 10), borderwidth=0)
         s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        s.configure("Main.TButton", background=GO, foreground="white",
+                    font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
+        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", "#A8C9B0")])
+        s.configure("Go.TButton", background=ACCENT, foreground="white",
+                    font=(FONT, 11, "bold"), padding=(14, 5), borderwidth=0)
+        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": "#ECE7E0", "darkcolor": "#ECE7E0"}
         s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
-                    borderwidth=0, font=(FONT, 10))
+                    borderwidth=1, font=(FONT, 10), **edge)
         s.map("Plain.TButton", background=[("active", "#E0D9CF")])
         s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
@@ -211,7 +221,7 @@ class App(tk.Tk):
             self.title(f"{APP} {ver}")
         except Exception:
             pass
-        self.start_btn = ttk.Button(self.footer, text="", style="Accent.TButton",
+        self.start_btn = ttk.Button(self.footer, text="", style="Main.TButton",
                                     command=self.start, state="disabled")
         self.start_btn.pack(side="right")
         body = self._scroll_area(p)
@@ -219,7 +229,7 @@ class App(tk.Tk):
         b1 = self._card(body, "1", "Ebook", "EPUB, PDF or TXT — not copy-protected")
         row = tk.Frame(b1, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Choose ebook…", style="Plain.TButton",
+        ttk.Button(row, text="Choose ebook…", style="Go.TButton",
                    command=self.pick_book).pack(side="left")
         self.book_lbl = tk.Label(row, text="No book chosen yet", bg=CARD, fg=MUTED, font=(FONT, 10),
                                  wraplength=520, justify="left")
@@ -610,7 +620,7 @@ class App(tk.Tk):
         if a.get("ai_note"):
             tk.Label(p, text=a["ai_note"], bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
                      justify="left").pack(anchor="w", pady=(0, 4))
-        ttk.Button(self.footer, text="Save clean copy", style="Accent.TButton",
+        ttk.Button(self.footer, text="Save clean copy", style="Main.TButton",
                    command=self._save_from_review).pack(side="right")
         ttk.Button(self.footer, text="Back", style="Plain.TButton",
                    command=self.show_setup).pack(side="right", padx=(0, 10))
@@ -742,13 +752,13 @@ class App(tk.Tk):
                  bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740, justify="left").pack(anchor="w", pady=(0, 16))
         row = tk.Frame(p, bg=BG)
         row.pack(anchor="w")
-        ttk.Button(row, text="Show in folder", style="Accent.TButton",
-                   command=lambda: show_in_folder(res["out"])).pack(side="left")
+        ttk.Button(row, text="Clean another book", style="Main.TButton",
+                   command=self.reset).pack(side="left")
+        ttk.Button(row, text="Show in folder", style="Plain.TButton",
+                   command=lambda: show_in_folder(res["out"])).pack(side="left", padx=(14, 0))
         if res.get("report"):
             ttk.Button(row, text="See what was removed", style="Plain.TButton",
-                       command=lambda: open_path(res["report"])).pack(side="left", padx=12)
-        ttk.Button(self.footer, text="Clean another book", style="Plain.TButton",
-                   command=self.reset).pack(side="right")
+                       command=lambda: open_path(res["report"])).pack(side="left", padx=(10, 0))
 
     def reset(self):
         self.book_path, self.book, self.outdir, self.report, self.analysis = None, None, None, None, None
