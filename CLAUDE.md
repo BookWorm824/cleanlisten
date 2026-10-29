@@ -182,6 +182,8 @@ plain words, learned from Lauren directly and from her exported reviews:
   soft swears; "so help me God" and "holy Lord" are God's name.
 - A polite "it's a pleasure" and "sex" meaning men or women ("the fair sex") don't count
   toward a sex scene (`NOT_SEX_BEFORE`; Pride and Prejudice was flagged).
+- "Suck" meaning "is bad" ("life sucks", "that sucked", "sucky") is a rude word (Lauren);
+  sucking something isn't ("suck it up", "the vacuum sucks up dirt"): `suck_swear`.
 - She does **not** want things split per Yoto card — all chapter files in one folder.
 
 ## 6. Releasing (users update automatically)

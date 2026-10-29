@@ -412,7 +412,8 @@ RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?"
         r"meatheads?", r"lamebrains?", r"birdbrains?", r"dunces?", r"wimps?",   # not Wimpy
         r"wuss(es)?", r"wussy", r"sissy", r"sissies", r"crybab(y|ies)", r"scaredy(cats?)?",
         r"fatsos?", r"putz(es)?", r"schmucks?", r"ignoramus(es)?", r"brats?", r"dumbdumbs?",
-        r"dumdums?", r"fatheads?"]   # "dum-dum" is joined to "dumdum"
+        r"dumdums?", r"fatheads?",   # "dum-dum" is joined to "dumdum"
+        r"sucky", r"suckage", r"sucktastic"]
 RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "trap"),
                 ("shut", "your", "face"), ("shut", "it"), ("you", "suck"), ("it", "sucks"),
                 ("this", "sucks"), ("that", "sucks"), ("shut", "your", "pie", "hole"),
@@ -420,7 +421,8 @@ RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "tra
                 ("shut", "your", "cakehole"), ("shut", "your", "yap"),
                 ("shut", "your", "big", "mouth"), ("shut", "your", "big", "fat", "mouth"),
                 ("buzz", "off"), ("i", "hate", "you"), ("talk", "to", "the", "hand"),
-                ("eat", "my", "shorts"), ("suck", "it"), ("sucks", "to", "be", "you")]
+                ("eat", "my", "shorts"), ("suck", "it"), ("sucks", "to", "be", "you"),
+                ("you", "sucker"), ("you", "suckers")]
 # (not "bug off": "get that bug off me")
 NOT_RUDE_NEXT = {"down", "off", "in", "into", "on", "onto", "up", "out", "together", "tight",
                  "tightly", "shut", "back", "open", "closed", "loose", "tighter", "away"}
@@ -429,6 +431,29 @@ SHUT_UP_SAFE_NEXT = {"in", "inside", "shop", "house", "the", "his", "her", "my",
                      "with", "within", "together", "tight", "tightly", "alone", "for", "here",
                      "there", "like"}
 PHRASES["rude"] = RUDE_PHRASES
+# "Suck" meaning "is bad" ("life sucks", "he sucks at math", "that sucked"), with the rude words
+# (Lauren, 2026-10-29). Not sucking something ("suck it up", "sucking his thumb", "the vacuum
+# sucks up dirt"). ("Sucking" is left out: "the baby keeps sucking".) Same as CleanView's
+# cvcore.suck_swear.
+SUCK_WORDS = {"suck", "sucks", "sucked"}
+SUCK_NOT_NEXT = {"up", "in", "on", "out", "into", "through", "from", "down", "off", "away", "back",
+                 "the", "a", "an", "my", "his", "her", "your", "their", "its", "our", "all", "it",
+                 "them", "him", "me", "us", "blood", "air", "juice", "water", "poison", "venom",
+                 "thumb", "thumbs", "milk", "dry", "every", "some", "those", "these", "straws",
+                 "straw", "candy", "lollipops", "lollipop", "face", "faces", "teeth", "breath",
+                 "cock", "cocks", "dick"}
+SUCK_NOT_BEFORE = {"vacuum", "vacuums", "straw", "straws", "pump", "pumps", "hose", "fan", "drain",
+                   "leech", "leeches", "mosquito", "mosquitoes", "vampire", "vampires", "octopus",
+                   "baby", "babies", "calf", "calves", "piglet", "piglets", "whirlpool",
+                   "quicksand", "mud", "plant", "roots", "sponge", "lamprey", "lampreys"}
+
+
+def suck_swear(words, i):
+    """Is words[i] "suck(s/ed)" meaning "is bad" ("that sucks"), not sucking something?"""
+    return (words[i] in SUCK_WORDS and not (i and words[i - 1] in SUCK_NOT_BEFORE) and
+            (words[i + 1] if i + 1 < len(words) else "") not in SUCK_NOT_NEXT)
+
+
 BLOODY_SWEAR_NEXT = {
     "hell", "well", "idiot", "fool", "fools", "stupid", "ridiculous", "nuisance",
     "nonsense", "cheek", "marvellous", "marvelous", "brilliant", "awful", "good",
@@ -587,8 +612,9 @@ def _find_language(words, cats):
                     if ph[0] == "screw" and (words[i + 2] if i + 2 < n else "") in SCREW_SAFE_NEXT:
                         continue  # "screw it in tight", "screw that lid on"
                     if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
-                                          ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT):
-                        continue  # "shut it down", "shut up in the attic"
+                                          ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT or
+                                          ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT):
+                        continue  # "shut it down", "shut up in the attic", "it sucks the juice out"
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
                     if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
@@ -607,6 +633,10 @@ def _find_language(words, cats):
             continue
         if "minced" in cats and squat_swear(words, i):                   # "you don't know squat"
             hits.append((i, i + 1, "minced"))
+            i += 1
+            continue
+        if "rude" in cats and suck_swear(words, i):                       # "life sucks"
+            hits.append((i, i + 1, "rude"))
             i += 1
             continue
         w = words[i]
@@ -1544,7 +1574,7 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
                   "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
                   "hookers", "tosser", "tossers", "shat", "boner", "boners", "bull", "squat", "gee",
-                  "crud", "cruddy", *FRUIT_WORDS}
+                  "crud", "cruddy", *SUCK_WORDS, *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
 # verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
 

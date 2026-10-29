@@ -591,3 +591,22 @@ def test_cleanview_1_17_5_words(text, phrase, cat):
 
 def test_dumdum_bullets_left_alone():
     assert hits("loaded with dum-dum bullets", EVERY + ["rude"]) == []
+
+
+@pytest.mark.parametrize("text, phrase", [
+    ("That really sucks", "sucks"), ("Life sucks", "sucks"), ("He sucks at math", "sucks"),
+    ("That sucked", "sucked"), ("What a sucky day", "sucky"), ("You sucker!", "you sucker"),
+    ("This sucks big time", "this sucks"), ("Man, that sucks.", "that sucks"),
+])
+def test_suck_meaning_bad_is_rude(text, phrase):
+    assert hits(text, ["rude"]) == [(phrase, "rude")]
+
+
+@pytest.mark.parametrize("text", [
+    "Suck it up", "Suck on a lollipop", "The vacuum sucks up dirt", "Sucking his thumb",
+    "The baby sucked", "Sucked into the whirlpool", "A lollipop sucker", "Sucker punch",
+    "He is a sucker for romance", "It sucks the juice out", "The straw sucks",
+    "The baby keeps sucking",
+])
+def test_sucking_something_left_alone(text):
+    assert hits(text, EVERY + ["rude"]) == []
