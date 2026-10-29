@@ -43,6 +43,10 @@ CUT_OPTS = [("sex", "Sex scenes  (whole passages)", True),
             ("crude", "Crude humor  (toilet & gross-out jokes)", True),
             ("bully", "Bullying  (taunts, name-calling)", False),
             ("substances", "Drinking, smoking & drugs", False)]
+# "For young kids" (all off unless ticked), two to a row: Christmas, Halloween, Valentine's,
+# Easter and St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic
+KID_OPTS = [("holiday", "Holidays"), ("birthday", "Birthday candles"), ("magic", "Magic"),
+            ("darkmagic", "Dark magic")]
 KISS = [("keep", "Keep all kissing"), ("passionate", "Cut passionate kissing"),
         ("all", "Cut all romantic kissing")]
 STYLE = [("dash", "Replace with a dash  ( — )"), ("stars", "First letter and stars  (d***)"),
@@ -291,6 +295,15 @@ class App(tk.Tk):
             v = tk.BooleanVar(value=st.get(key, on))
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=1, sticky="w", pady=2)
+        kids = tk.Frame(grid, bg=CARD)
+        kids.grid(row=len(CUT_OPTS) + 1, column=1, rowspan=3, sticky="nw", pady=(8, 0))
+        tk.Label(kids, text="For young kids", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w")
+        for n, (key, label) in enumerate(KID_OPTS):
+            v = tk.BooleanVar(value=st.get(key, False))
+            self.opts[key] = v
+            ttk.Checkbutton(kids, text=label, variable=v).grid(row=1 + n // 2, column=n % 2,
+                                                               sticky="w", padx=(0, 26), pady=2)
         r = len(WORD_OPTS) + 2
         tk.Label(grid, text="Kissing", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
             row=r, column=0, sticky="w", pady=(10, 0))
@@ -641,7 +654,7 @@ class App(tk.Tk):
 
         self.cut_vars = []
         order = ["sex", "ref", "sleeping", "kiss", "flirt", "relationship", "gore", "religion",
-                 "crude", "bully", "substances"]
+                 "crude", "bully", "substances", "holiday", "birthday", "magic", "darkmagic"]
         for kind in order:
             items = [c for c in cuts if c["kind"] == kind]
             if not items:

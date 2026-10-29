@@ -21,7 +21,8 @@ USING IT
 2. Optional: choose the ebook (EPUB, PDF or TXT) for the same book. It helps catch words
    the narrator mumbles.
 3. Tick what to remove, then click Start cleaning.
-4. If it finds explicit scenes, you'll see the text of each one. Untick any you want to keep.
+4. You'll see everything it found, with the words and sentences. Untick anything you want
+   to keep, then click Save clean audiobook.
 5. The clean audiobook is saved in a "Clean" folder next to the original, along with a
    short report of everything that was removed.
 
@@ -31,7 +32,7 @@ Tick "Also split into chapter files" before you start. You get a "Chapters" fold
 file per chapter, numbered in order. Upload those files to a Make Your Own card and you can
 skip back and forth between chapters.
 - No file is longer than an hour (Yoto's limit). Long chapters are split into "1 of 2", "2 of 2".
-- Books over 5 hours are split into "Card 1", "Card 2" folders, one per card.
+- All the chapter files go in the one folder, however long the book is.
 - If the narrator never says "Chapter One" etc., you get 30-minute "Sections" instead.
 
 
@@ -42,4 +43,6 @@ GOOD TO KNOW
 - Your original files are never changed.
 - Closing the window mid-book is fine. Start it again with the same files and it
   picks up where it left off.
-- Everything runs on your computer. Nothing is uploaded anywhere.
+- Everything runs on your computer. Nothing is uploaded unless you tick the final check by
+  Claude, ChatGPT or Gemini (it sends the book's words, never the audio) or click
+  "Send what CleanListen learned".

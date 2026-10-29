@@ -317,3 +317,45 @@ def test_strict_religion_catches(text):
 ])
 def test_strict_religion_leaves_generic(text):
     assert not E.strict_religion_hit(words(text))
+
+
+# --- for young kids: holidays, candles on a birthday cake, magic, dark magic ---------
+@pytest.mark.parametrize("kind, text", [
+    ("holiday", "Santa brought her a bike."), ("holiday", "We put up the Christmas tree."),
+    ("holiday", "They went trick-or-treating."), ("holiday", "He carved a jack-o'-lantern."),
+    ("holiday", "She gave him a valentine."), ("holiday", "The kids hunted Easter eggs."),
+    ("holiday", "The Easter bunny came."), ("holiday", "A leprechaun guards a pot of gold."),
+    ("holiday", "Happy St. Patrick's Day!"), ("holiday", "Rudolph the red-nosed reindeer"),
+    ("birthday", "She blew out the candles on her cake."),
+    ("birthday", "Blow out your candles and make a wish!"),
+    ("birthday", "They lit the birthday candles."),
+    ("darkmagic", "The witchcraft of the coven grew."), ("darkmagic", "They used a Ouija board."),
+    ("darkmagic", "She put a curse on the village."), ("darkmagic", "a fortune-teller read his palm"),
+    ("darkmagic", "They tried to summon the dead."),
+    ("magic", "He waved his magic wand."), ("magic", "The wizard cast a spell."),
+    ("magic", "She drank the potion."), ("magic", "Her fairy godmother appeared."),
+])
+def test_kid_topics_found(kind, text):
+    assert E.topic_hit(kind, words(text))
+
+
+@pytest.mark.parametrize("kind, text", [
+    ("holiday", "We had turkey for Thanksgiving."), ("holiday", "She boiled some eggs."),
+    ("holiday", "The statues of Easter Island."), ("holiday", "Mass at St. Patrick's Cathedral."),
+    ("holiday", "They sailed to Ireland."), ("holiday", "Rudolph Hill stood over her."),
+    ("birthday", "Happy birthday to you!"), ("birthday", "We had a party with cake."),
+    ("birthday", "She lit the candles for dinner."),
+    ("darkmagic", "You old witch!"), ("darkmagic", "What am I, psychic?"),
+    ("darkmagic", "He cursed under his breath."), ("darkmagic", "Their spirits were high."),
+    ("magic", "It was magic."), ("magic", "Say the magic word."),
+    ("magic", "Can you spell your name?"), ("magic", "He's a wizard with numbers."),
+])
+def test_kid_topics_left_alone(kind, text):
+    assert not E.topic_hit(kind, words(text))
+
+
+def test_kid_topics_are_off_unless_ticked_and_the_ai_knows_them():
+    for t in E.TOPICS:
+        assert t in E.AI_TYPES and t in E.TOPIC_LABELS
+    import inspect
+    assert inspect.signature(E.analyze).parameters["find_topics"].default == ()

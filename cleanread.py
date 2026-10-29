@@ -1514,7 +1514,8 @@ button{{background:#3A3734;color:var(--ink)}} mark{{background:#5A2E27;color:#FF
 CLEAN_LABELS = {"sex": "Explicit scenes", "ref": "Sexual references", "gore": "Gory descriptions",
                 "religion": "Religious content", "relationship": "Same-sex & non-traditional relationships",
                 "crude": "Crude humor", "bully": "Bullying", "flirt": "Flirting", "kiss": "Kissing",
-                "sleeping": "Sleeping around & affairs", "substances": "Drinking, smoking & drugs"}
+                "sleeping": "Sleeping around & affairs", "substances": "Drinking, smoking & drugs",
+                **E.TOPIC_LABELS}
 
 
 def analyze(book, opts, progress=None, cancel=None):
@@ -1572,6 +1573,7 @@ def analyze(book, opts, progress=None, cancel=None):
         ("kiss", kiss_mode in ("passionate", "all"), lambda w: kiss_hit(w, kiss_mode)),
         ("sleeping", opts.get("sleeping"), lambda w: bool(SLEEPING(w))),
         ("substances", opts.get("substances"), lambda w: bool(SUBSTANCES(w))),
+        *((t, opts.get(t), lambda w, t=t: E.topic_hit(t, w)) for t in E.TOPICS),
     ]
     taken = set()
     for n, (kind, on, hit) in enumerate(sentence_filters):
@@ -1594,7 +1596,7 @@ def analyze(book, opts, progress=None, cancel=None):
             ("religion", opts.get("religion")), ("relationship", opts.get("relationships")),
             ("crude", opts.get("crude")), ("bully", opts.get("bully")), ("flirt", opts.get("flirt")),
             ("kiss", kiss_mode in ("passionate", "all")), ("sleeping", opts.get("sleeping")),
-            ("substances", opts.get("substances"))) if on}
+            ("substances", opts.get("substances")), *((t, opts.get(t)) for t in E.TOPICS)) if on}
         if kiss_mode == "passionate":
             kinds["kiss"] = ("passionate romantic kissing or making out (a quick or gentle kiss, or a "
                              "parent kissing a child, is NOT this)")

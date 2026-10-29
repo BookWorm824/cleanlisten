@@ -474,3 +474,88 @@ def test_cleanread_keeps_bleeped_words_whole():
     assert toks("He said #@$% loudly.") == ["He", "said", "#@$%", "loudly"]
     assert toks("* * *") == [] and toks("***") == [] and toks("It cost $$$.") == ["It", "cost"]
     assert toks("well-- maybe f--k") == ["well", "maybe", "f--k"]
+
+
+# --- more of the same kind (CleanView 1.17, Lauren's review 2026-10-28/29) --------------
+@pytest.mark.parametrize("text, phrase", [
+    ("Golly, that's big", "golly"), ("Jeepers!", "jeepers"), ("Crikey, mate", "crikey"),
+    ("Blimey", "blimey"), ("Cripes almighty", "cripes"), ("Well, doggone it", "doggone"),
+    ("Tarnation!", "tarnation"), ("Oh, crud.", "crud"), ("Good grief!", "good grief"),
+    ("Good heavens!", "good heavens"), ("Oh my goodness!", "oh my goodness"),
+    ("Thank goodness you're here", "thank goodness"), ("For Pete's sake", "for pete's sake"),
+    ("For crying out loud!", "for crying out loud"), ("Holy cow!", "holy cow"),
+    ("Holy moly", "holy moly"), ("Holy molly!", "holy molly"), ("Holy smokes", "holy smokes"),
+    ("Gee whiz", "gee whiz"), ("Jeepers creepers", "jeepers creepers"),
+    ("You son of a gun!", "son of a gun"), ("Oh, fudge.", "oh fudge"),
+    ("Oh shoot, I forgot", "oh shoot"), ("Goodness gracious me", "goodness gracious"),
+    ("Gee, thanks", "gee"), ("Gee, Mom!", "gee"), ("You don't know squat", "squat"),
+    ("It doesn't mean squat", "squat"), ("He didn't do squat all day", "squat"),
+    ("That's not worth squat", "squat"), ("You got jack squat", "jack squat"),
+    ("Diddly squat", "diddly squat"), ("diddlysquat", "diddlysquat"),
+])
+def test_more_soft_swears(text, phrase):
+    assert hits(text, ["minced"]) == [(phrase, "minced")]
+
+
+@pytest.mark.parametrize("text", [
+    "Do ten squats", "Squat down low", "Can you do squat jumps?", "He did a squat",
+    "squatters moved in", "a squat little teapot", "Gee up, horse!", "Sit squat on the floor",
+])
+def test_exercise_squats_and_horses_left_alone(text):
+    assert hits(text) == []
+
+
+@pytest.mark.parametrize("text, phrase", [
+    ("Oh my Lord, look at that", "oh my lord"), ("Lord have mercy", "lord have mercy"),
+    ("I swear to God", "swear to god"), ("God forbid", "god forbid"),
+    ("What in God's name?", "in god's name"), ("Lord knows I tried", "lord knows"),
+])
+def test_more_gods_name(text, phrase):
+    assert hits(text, ["deity"]) == [(phrase, "deity")]
+
+
+def test_thank_the_lord_is_left_to_strict_religion():
+    assert hits("Thank the Lord you're safe", ["deity"]) == []
+    assert E.strict_religion_hit(words("Thank the Lord you're safe"))
+
+
+@pytest.mark.parametrize("text, phrase", [
+    ("You wimp!", "wimp"), ("What a weirdo", "weirdo"), ("Don't be a crybaby", "crybaby"),
+    ("You big sissy", "sissy"), ("You twit", "twit"), ("Stop it, you brat", "brat"),
+    ("You imbecile!", "imbecile"), ("scaredy-cat", "scaredycat"), ("I hate you!", "i hate you"),
+    ("Talk to the hand", "talk to the hand"), ("Shut your pie hole", "shut your pie hole"),
+    ("Shut your big mouth", "shut your big mouth"), ("Buzz off!", "buzz off"),
+    ("Eat my shorts", "eat my shorts"),
+])
+def test_more_rude_words(text, phrase):
+    assert hits(text, ["rude"]) == [(phrase, "rude")]
+
+
+@pytest.mark.parametrize("text, muted, cat", [
+    ("We're screwed", ["we're screwed"], "mild"), ("Up yours!", ["up yours"], "mild"),
+    ("That was craptastic", ["craptastic"], "mild"), ("Dayum", ["dayum"], "mild"),
+    ("She's a floozy", ["floozy"], "mild"), ("Can't be arsed", ["arsed"], "moderate"),
+    ("Check out those jugs", ["jugs"], "moderate"), ("Nice rack", ["rack"], "moderate"),
+    ("Kicked him in the junk", ["junk"], "moderate"), ("suck my cock", ["cock"], "moderate"),
+    ("kneed him in the crown jewels", ["crown", "jewels"], "moderate"),
+    ("a big schlong", ["schlong"], "sexual"),
+])
+def test_more_mild_and_crude_words(text, muted, cat):
+    assert hits(text, [cat]) == [(w, cat) for w in muted]
+
+
+def test_more_orientation_words():
+    assert [w for w, _ in hits("lesbos", ["orientation"])] == ["lesbos"]
+
+
+@pytest.mark.parametrize("text", [
+    "The shelf is screwed to the wall", "I screwed up the order", "The lid was screwed on tight",
+    "a rack of lamb", "the spice rack", "The cock crowed at dawn", "Cock the gun",
+    "a cock and bull story", "Throw it in the junk pile", "Your package arrived",
+    "Army brats move a lot", "The Twits by Roald Dahl", "Wimpy ate a burger",
+    "Get that bug off me", "Holy water", "the Holy Bible", "a holy man", "Good night",
+    "My goodwill", "a big jug of milk", "I hate yogurt", "Golf is fun",
+    "the Crown Jewels in London",
+])
+def test_more_everyday_uses_left_alone(text):
+    assert hits(text, EVERY + ["rude"]) == []

@@ -62,7 +62,13 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("religion", "Religious content to cut", "Religious"),
                 ("relationship", "Same-sex & non-traditional relationships to cut", "Relationships"),
                 ("crude", "Crude humor to cut", "Crude humor"), ("bully", "Bullying to cut", "Bullying"),
-                ("flirt", "Flirting to cut", "Flirting"), ("added", "Added by you (or cut before)", "Added"))
+                ("flirt", "Flirting to cut", "Flirting"), ("holiday", "Holidays to cut", "Holidays"),
+                ("birthday", "Candles on a birthday cake to cut", "Birthday candles"),
+                ("magic", "Magic to cut", "Magic"), ("darkmagic", "Dark magic to cut", "Dark magic"),
+                ("added", "Added by you (or cut before)", "Added"))
+# "For young kids" tick boxes (all off unless ticked), two to a row
+KID_TOPICS = (("holiday", "Holidays"), ("birthday", "Birthday candles"), ("magic", "Magic"),
+              ("darkmagic", "Dark magic"))
 CAT_LABELS = {"strong": "swearing", "moderate": "swearing", "mild": "mild word", "deity": "God's name",
               "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation",
               "rude": "rude word"}
@@ -423,6 +429,17 @@ class App(tk.Tk):
                     show = lambda *_, cb=cb, pv=pv: cb.state(["!disabled"] if pv.get() else ["disabled"])
                     pv.trace_add("write", show)
                     show()
+        # under the word boxes, where there's room: Christmas, Halloween, Valentine's, Easter and
+        # St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic
+        kids = tk.Frame(grid, bg=CARD)
+        kids.grid(row=len(columns[0][1]) + 1, column=0, rowspan=3, sticky="nw", pady=(2, 0))
+        tk.Label(kids, text="For young kids", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w")
+        for n, (key, label) in enumerate(KID_TOPICS):
+            v = tk.BooleanVar(value=self.saved_opts.get(key, False))
+            self.opts[key] = v
+            ttk.Checkbutton(kids, text=label, variable=v).grid(row=1 + n // 2, column=n % 2,
+                                                               sticky="w", padx=(0, 26))
 
         b4 = self._card(body, "3", "Extra checks", "optional")
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
@@ -1119,12 +1136,13 @@ class App(tk.Tk):
             groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
         self.find_crude = self.opts["crude"].get()
         self.find_bully, self.find_flirt = self.opts["bully"].get(), self.opts["flirt"].get()
+        self.find_topics = [k for k, _ in KID_TOPICS if self.opts[k].get()]
         self.use_ai = self.ai_var.get()
         self.use_claude = self.claude_var.get()
         self.split_chapters = self.split_var.get()
         if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
                                or self.find_relationships or self.find_crude
-                               or self.find_bully or self.find_flirt):
+                               or self.find_bully or self.find_flirt or self.find_topics):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         self.saved_opts = {k: v.get() for k, v in self.opts.items()}
@@ -1195,6 +1213,7 @@ class App(tk.Tk):
                 use_ai=self.use_ai, find_bully=self.find_bully, find_flirt=self.find_flirt,
                 use_claude=getattr(self, "use_claude", False),
                 strict_religion=getattr(self, "strict_religion", False),
+                find_topics=getattr(self, "find_topics", ()),
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -1808,7 +1827,8 @@ class App(tk.Tk):
                 L.append("Note: " + note)
         names = {"sex": "EXPLICIT SCENE", "ref": "SEXUAL REFERENCE", "gore": "GORE",
                  "religion": "RELIGION", "relationship": "RELATIONSHIP", "crude": "CRUDE HUMOR",
-                 "bully": "BULLYING", "flirt": "FLIRTING"}
+                 "bully": "BULLYING", "flirt": "FLIRTING", "holiday": "HOLIDAY",
+                 "birthday": "BIRTHDAY CANDLES", "magic": "MAGIC", "darkmagic": "DARK MAGIC"}
         class _V:  # stands in for a checkbox when exporting a saved result
             def __init__(self, on): self.on = on
             def get(self): return self.on

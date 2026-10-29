@@ -89,7 +89,7 @@ MODERATE = [
     r"a-?holes?", r"lardass(es)?", r"bia?y?o?tch(es)?", r"beyotch", r"shat",
     r"dick(wad|weed|face|ish|wit|bag|less)s?", r"numbnuts", r"knobheads?", r"tossers?",
     r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed|os?)?", r"retart(s|ed)?", r"(lib)?tards?",
-    r"skeez(e|y|ier)", r"skeevy",
+    r"skeez(e|y|ier)", r"skeevy", r"arsed", r"arses",
 ]
 # swearing said as letters or two words ("S.O.B.", "D-bag" heard as "d bag", "eff you")
 MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag"),
@@ -106,15 +106,42 @@ MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "
                      for o in ("my", "your", "his", "her", "their", "our", "ya", "yer", "someone's",
                                "somebody's", "everyone's", "everybody's", "people's")
                      for c in ("chain", "chains")]
-# "what the fudge", "what the flip": stand-ins for the f-word (muted with the soft swears)
+# "what the fudge", "what the flip": stand-ins for the f-word (muted with the soft swears).
+# And the same for God's name, Jesus and son of a bitch: "good grief", "for Pete's sake",
+# "holy cow" (Lauren, 2026-10-29: "Holy cow and Holy molly are not fine"). Same as CleanView's
+# cvcore.MINCED_SLANG.
 MINCED_PHRASES = [("what", "the", w) for w in ("fudge", "flip", "fork", "frack", "fuh")]
+MINCED_PHRASES += [(o, w) for o in ("oh", "aw", "ah", "ahh", "aww") for w in ("fudge", "shoot", "sugar")]
+MINCED_PHRASES += [("gee", w) for w in ("whiz", "whizz", "willikers", "whillikers", "wilikers")]
+MINCED_PHRASES += [("jeepers", "creepers"), ("goodness", "gracious"), ("my", "goodness"),
+                   ("oh", "my", "goodness"), ("oh", "heavens"), ("for", "crying", "out", "loud")]
+MINCED_PHRASES += [(w, "squat") for w in ("diddly", "diddley", "diddlee", "doodly", "jack")]
+MINCED_PHRASES += [("son", "of", "a", w) for w in ("gun", "biscuit", "b")]
+MINCED_PHRASES += [("good", w) for w in ("grief", "golly", "gravy", "heaven", "heavens", "gracious")]
+MINCED_PHRASES += [("thank", w) for w in ("goodness", "heaven", "heavens")]
+MINCED_PHRASES += [(*o, "heavens", "to", w) for o in ((), ("oh",)) for w in ("betsy", "murgatroyd")]
+MINCED_PHRASES += [("for", w, s_) for w in ("goodness", "goodness's", "heaven's", "heavens", "pete's",
+                                            "petes", "pete", "cripes", "mercy's", "land's", "lands")
+                   for s_ in ("sake", "sakes")]
+MINCED_PHRASES += [("holy", w) for w in ("cow", "cows", "moly", "molly", "moley", "mackerel", "smokes",
+                                         "smoke", "toledo", "guacamole", "cannoli", "schmoley", "moses",
+                                         "crud", "heck", "jeez", "geez", "cats", "socks", "jumping",
+                                         "shamoley")]
 # ("damning" = incriminating and "damnation" are left alone)
 MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"godd?amm?it",
         r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
-        r"sod", r"sodding", r"bloody", r"turds?", r"hella", r"hussy", r"hussies"]
+        r"sod", r"sodding", r"bloody", r"turds?", r"hella", r"hussy", r"hussies",
+        r"crap(pier|piest|ped|ping|pers|holes|loads?|tastic|ola)", r"day+um+n?",   # "dayum"
+        r"floozy", r"floozies", r"trollops?", r"strumpets?"]
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
           r"gosh", r"gosh(darn|dang).*", r"darn.*", r"heck", r"dang", r"dang(it|ed)",
-          r"dagnabb?it", r"frak(s|ked|king|kin)?", r"sheesh"]
+          r"dagnabb?it", r"frak(s|ked|king|kin)?", r"sheesh",
+          # stand-ins for God, Jesus, Christ, damn and shit
+          r"golly", r"jeepers", r"jee+sh", r"crikey", r"blimey", r"gorblimey", r"cripes",
+          r"crim[ie]ny", r"egads?", r"gadzooks", r"zounds", r"lawdy", r"lawd", r"doggone(d|it)?",
+          r"dadgum(med|mit|it)?", r"dadburn(ed|it)?", r"consarn(ed|it)?", r"tarnation",
+          r"d[eu]rn(ed|it)?", r"crud", r"cruddy", r"shiz", r"shiznit", r"gee",
+          r"diddl[ey]+squat", r"jacksquat"]
 DEITY_PHRASES = [
     ("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"),
     ("dear", "god"), ("god", "almighty"), ("for", "god's", "sake"),
@@ -123,7 +150,12 @@ DEITY_PHRASES = [
     ("lord", "almighty"), ("sweet", "jesus"), ("jesus", "christ"),
     ("for", "christ's", "sake"), ("for", "christs", "sake"), ("jesus", "h", "christ"),
     ("christ", "almighty"), ("mother", "of", "god"), ("holy", "mother", "of", "god"),
-    ("good", "god", "almighty"),
+    ("good", "god", "almighty"), ("oh", "my", "lord"), ("lord", "have", "mercy"),
+    ("lord", "knows"), ("god", "help", "us"), ("god", "help", "me"), ("lord", "help", "us"),
+    ("lord", "help", "me"), ("god", "forbid"), ("swear", "to", "god"), ("in", "god's", "name"),
+    ("in", "gods", "name"), ("for", "the", "love", "of", "god"), ("christ", "on", "a", "bike"),
+    ("god", "in", "heaven"),
+    # (not "thank the Lord": like "thank God", that's left to the strict religion filter)
 ]
 DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"oh?m[iy]god", r"goddamn.*"]
 # Sexual words muted one at a time, wherever they come up (separate from
@@ -138,7 +170,7 @@ SEXUAL_WORDS = [
     # crude words for body parts and sex (from CleanView's TV and film list)
     r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
     r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
-    r"cockblock(s|ed|er|ing)?",
+    r"cockblock(s|ed|er|ing)?", r"schlongs?", r"todgers?", r"dildos?",
 ]
 SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
@@ -157,6 +189,12 @@ SEXUAL_PHRASES = [
 # own is left alone, and so is "screw it in / on / tight..." (hardware).
 SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this", "that", "off",
                                         "yourself", "em", "'em", "everyone", "everybody", "y'all")]
+# "up yours", and "we're screwed" (in trouble), not "screwed to the wall" or "screwed up"
+SCREW_PHRASES += [("up", "yours")] + [(*w.split(), "screwed") for w in (
+    "i'm", "we're", "you're", "he's", "she's", "they're", "it's", "we are", "i am", "you are",
+    "totally", "completely", "royally", "so", "really", "just")]
+SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "tight", "tightly", "to",
+                     "the", "it", "that", "this", "back", "off", "up"}
 # "jerked off the road", "jacked off his feet": a place or thing follows, so it's literal
 OFF_SAFE_NEXT = {"the", "a", "an", "his", "her", "its", "their", "my", "your", "our", "of", "to",
                  "into", "onto", "from", "at", "toward", "towards", "course", "balance", "guard",
@@ -225,9 +263,12 @@ def body_slang(words, i):
 # the grapes"). Only these phrases count, never "a melon" or "cherry pie"; as with "stones", only
 # the slang word is muted (as swearing). Same phrases as CleanView's cvcore.BODY_SLANG, which
 # mutes the whole phrase.
-_CHEST = r"(melons|cantaloupes|watermelons|grapefruits|coconuts|honeydews)"
+_CHEST = (r"(melons|cantaloupes|watermelons|grapefruits|coconuts|honeydews|"
+          r"jugs|hooters|knockers|bazongas|bazooms|bazoombas)")
 _BIG = r"((big|huge|giant|great|massive|enormous|perky|nice|lovely) )?"
-_LOW = r"(grapes|plums|berries|beans|walnuts|franks and beans|frank and beans|meat and two veg)"
+_LOW = (r"(grapes|plums|berries|beans|walnuts|franks and beans|frank and beans|meat and two veg|"
+        r"crown jewels|package|junk(?! (pile|piles|yard|yards|drawer|heap|food|mail|room|shop|"
+        r"car|box|bin)\b))")
 _NOT_FRUIT = (r"(?! (pie|pies|tree|trees|tomato|tomatoes|blossom|blossoms|cola|coke|juice|jam|"
               r"stem|stems|pit|pits|lipstick|chapstick|red|wood|bomb|bombs|on top)\b)")
 FRUIT_SLANG = [re.compile(r"(?<!\S)" + p) for p in (
@@ -249,12 +290,18 @@ FRUIT_SLANG = [re.compile(r"(?<!\S)" + p) for p in (
     r"(?P<part>banana|cucumber|zucchini|eggplant|pickle) in (your|his|my) "
     r"(pants|trousers|shorts|jeans|underwear)\b",
     r"(her|his|your) (tight|juicy|round|perfect) (?P<part>peach|buns)\b",
+    r"(nice|great|big|huge|what a) (?P<part>rack)\b(?! of)",           # not "a rack of lamb"
+    # not "the cock crowed", "cock the gun", "a cock and bull story"
+    r"(my|his|your|big|little|hard|suck|sucks|sucking|sucked) (?P<part>cocks?)\b(?! (of the walk|a "
+    r"doodle|doodle|doo|fight|fights|fighting|fighter|fighters|crow|crows|crowed|crowing|robin|"
+    r"robins|sparrow|sparrows|and bull|eyed|pheasant|pheasants|tail|tails)\b)",
     r"(" + "|".join(sorted(OFF_VERBS)) + r") (my|his|your|her|our|their) (?P<part>grapes|plums) off\b",
 )]
 FRUIT_WORDS = {"melons", "cantaloupes", "watermelons", "grapefruits", "coconuts", "honeydews",
                "cherry", "grapes", "plums", "berries", "beans", "walnuts", "franks", "frank",
                "veg", "banana", "cucumber", "zucchini", "eggplant", "carrot", "pickle", "peach",
-               "buns"}
+               "buns", "jugs", "hooters", "knockers", "bazongas", "bazooms", "bazoombas", "crown",
+               "jewels", "package", "junk", "rack", "cock", "cocks"}
 
 
 def fruit_slang(words):
@@ -300,6 +347,26 @@ def bull_swear(words, i):
     return nxt not in BULL_NOT_NEXT and bool(BULL_BEFORE.search(" ".join(words[max(0, i - 3):i])))
 
 
+# "You don't know squat", "it doesn't mean squat": short for "jack shit", a soft swear. Only
+# the word "squat", only straight after these words, and not "do squat jumps" or "squat down".
+# Same as CleanView's cvcore.squat_swear.
+SQUAT_BEFORE = {"know", "knows", "knew", "mean", "means", "meant", "do", "does", "did", "done",
+                "doing", "worth", "care", "cares", "cared", "got", "get", "gets", "gotten",
+                "have", "has", "had", "say", "says", "said", "see", "saw", "seen", "find",
+                "found", "give", "gives", "gave", "pay", "pays", "paid", "about", "for",
+                "learned", "learnt", "proves", "proved", "prove"}
+SQUAT_NOT_NEXT = {"down", "jump", "jumps", "thrust", "thrusts", "rack", "racks", "position",
+                  "toilet", "toilets", "lift", "lifts", "press", "exercise", "exercises", "low",
+                  "lower", "deep", "deeper", "squat", "squats", "reps", "sets", "and", "with"}
+
+
+def squat_swear(words, i):
+    """Is words[i] "squat" said for "jack shit" ("you don't know squat")?"""
+    if words[i] != "squat" or not i or words[i - 1] not in SQUAT_BEFORE:
+        return False
+    return (words[i + 1] if i + 1 < len(words) else "") not in SQUAT_NOT_NEXT
+
+
 PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # deity filled in below
            "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
@@ -316,14 +383,17 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                     for w in ("jerk", "jerks")},
                  "fool": {"around", "with", "proof"}, "fools": {"gold", "around", "rush"},
                  "butt": {"in", "heads"}, "butts": {"in", "heads"},
-                 "dumb": {"waiter", "waiters", "luck", "founded", "show"}}
+                 "dumb": {"waiter", "waiters", "luck", "founded", "show"},
+                 # "gee up" to a horse; the letter G ("a gee string", "gee major")
+                 "gee": {"up", "string", "strings", "major", "minor", "sharp", "flat", "clef"}}
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big"}, "cum": {"summa", "magna"},
                  "hooker": {"general", "john", "joe"}, "hookers": {"general"},
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
                  "butt": {"cigarette", "cigar", "rifle", "gun"},
                  "butts": {"cigarette", "cigar", "rifle", "gun"},
                  "dumb": {"deaf", "struck"}, "dummy": {"test", "ventriloquist", "ventriloquist's"},
-                 "dummies": {"test", "crash"}}
+                 "dummies": {"test", "crash"}, "brat": {"army", "navy", "military"},
+                 "brats": {"army", "navy", "military"}, "twits": {"the"}}   # Roald Dahl's book
 # Rude words kids copy (CleanListen's "Rude words" box, off unless ticked; the same list as
 # CleanView's). "Shut it" is rude, "shut it down" isn't.
 RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?", r"idiotic",
@@ -331,10 +401,20 @@ RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?"
         r"losers?", r"fools?", r"butts?", r"butthead(s)?", r"buttface", r"nincompoops?",
         r"nitwits?", r"dimwits?", r"halfwits?", r"numbskulls?", r"knucklehead(s)?",
         r"dummkopf", r"bonehead(s)?", r"airhead(s)?", r"doofus", r"dingbat(s)?", r"pea-?brain(s)?",
-        r"poopyhead", r"weirdo(s)?"]
+        r"poopyhead", r"weirdo(s)?",
+        r"imbeciles?", r"cretins?", r"buffoons?", r"twits?", r"twerps?", r"pinheads?",
+        r"meatheads?", r"lamebrains?", r"birdbrains?", r"dunces?", r"wimps?",   # not Wimpy
+        r"wuss(es)?", r"wussy", r"sissy", r"sissies", r"crybab(y|ies)", r"scaredy(cats?)?",
+        r"fatsos?", r"putz(es)?", r"schmucks?", r"ignoramus(es)?", r"brats?", r"dumbdumbs?"]
 RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "trap"),
                 ("shut", "your", "face"), ("shut", "it"), ("you", "suck"), ("it", "sucks"),
-                ("this", "sucks"), ("that", "sucks")]
+                ("this", "sucks"), ("that", "sucks"), ("shut", "your", "pie", "hole"),
+                ("shut", "your", "piehole"), ("shut", "your", "cake", "hole"),
+                ("shut", "your", "cakehole"), ("shut", "your", "yap"),
+                ("shut", "your", "big", "mouth"), ("shut", "your", "big", "fat", "mouth"),
+                ("buzz", "off"), ("i", "hate", "you"), ("talk", "to", "the", "hand"),
+                ("eat", "my", "shorts"), ("suck", "it"), ("sucks", "to", "be", "you")]
+# (not "bug off": "get that bug off me")
 NOT_RUDE_NEXT = {"down", "off", "in", "into", "on", "onto", "up", "out", "together", "tight",
                  "tightly", "shut", "back", "open", "closed", "loose", "tighter", "away"}
 # "shut up shop", "shut up in the attic", "shut up the house": shut away, not rude
@@ -441,7 +521,7 @@ PHRASES["deity"] = DEITY_PHRASES
 ORIENTATION_WORDS = [
     r"gays?", r"lesbians?", r"homosexual(s|ity)?", r"bisexual(s|ity)?", r"queers?",
     r"homos?", r"pansexual(s)?", r"lgbt", r"lgbtq", r"lgbtqia", r"lgbtq\+?", r"throuples?",
-    r"polyamor.*", r"dykes?", r"fags?", r"faggots?",
+    r"polyamor.*", r"dykes?", r"fags?", r"faggots?", r"lesbos?", r"lez(z?ie|z?ies|bos?)",
 ]
 EXTRA_CATS = {"orientation": _c(ORIENTATION_WORDS)}
 GROUPS["orientation"] = ["orientation"]
@@ -497,6 +577,8 @@ def _find_language(words, cats):
                         continue  # "shut it down", "shut up in the attic"
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
+                    if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
+                        continue  # "it's screwed to the wall", "we're screwed up"
                     found = (ph, cat)
                     break
             if found:
@@ -507,6 +589,10 @@ def _find_language(words, cats):
             continue
         if ("mild" in cats or "moderate" in cats) and bull_swear(words, i):   # "that's bull"
             hits.append((i, i + 1, "mild" if "mild" in cats else "moderate"))
+            i += 1
+            continue
+        if "minced" in cats and squat_swear(words, i):                   # "you don't know squat"
+            hits.append((i, i + 1, "minced"))
             i += 1
             continue
         w = words[i]
@@ -880,6 +966,50 @@ def bully_hit(words):
     return False
 
 
+# Holidays, candles on a birthday cake, magic and dark magic (for young kids; all off unless
+# ticked). Only phrases that are hard to mistake; the AI helper and Claude catch the rest.
+# The same lists as CleanView's LINE_WORDS, matched on the normalised words (so "x-mas" is
+# "xmas" and "jack-o'-lantern" is "jacko'lantern"). Thanksgiving is fine (Lauren).
+TOPIC_WORDS = {
+    # Christmas, Halloween, Valentine's Day, Easter and St. Patrick's Day: one tick box
+    # (not "elves", "stockings" or "make a wish": too often something else; not "Rudolph" on its
+    # own: a name in one of Lauren's books)
+    "holiday": re.compile(
+        r"\b(christmas|xmas|santa( claus)?|saint nick|north pole|reindeer|rudolph the|"
+        r"rudolph's (red )?nose|mistletoe|"
+        r"yuletide|jingle bells|"
+        r"hallowe'?en|trick ?or ?treat\w*|jack ?o'?lanterns?|all hallows|"
+        r"valentines?|valentine's|cupid|"
+        r"easter\b(?! island)|egg hunts?|"
+        r"(st|saint) (patrick|paddy|patty)'?s( day)?\b(?! (cathedral|church|school|hospital))|"
+        r"leprechauns?|pot of gold)\b"),
+    # only the candles: "happy birthday", birthday parties and cake are fine (Lauren)
+    "birthday": re.compile(
+        r"\b((blow(s|ing|n)?|blew) out (the|your|my|his|her|their|all the|all your) candles|"
+        r"birthday candles?|candles on (the|your|my|his|her|a|that) (birthday )?cake)\b"),
+    # not "witch" (an insult too), "curse" (swearing), "spirits" (drinks, cheer), "psychic" or
+    # "crystal ball" ("what am I, psychic?")
+    "darkmagic": re.compile(
+        r"\b(witchcraft|black magic|dark magic|dark arts|sorcer(y|er|ers|ess|esses)|necromanc\w*|"
+        r"voodoo|hoodoo|warlocks?|ouija|s[eé]?ances?|hex(es|ed)? (on|you|him|her|them)|"
+        r"put a curse|cast a curse|occult|satanic|satanists?|devil worship\w*|pentagrams?|"
+        r"fortune ?tell(er|ers|ing)|tarot|"
+        r"summon(s|ed|ing)? (a |the )?(demons?|spirits?|the dead|dead))\b"),
+    # not "magic" alone ("it was magic", "the magic word") or "spell" (spelling)
+    "magic": re.compile(
+        r"\b(magic (spells?|wands?|potions?|powers?|carpets?|lamps?|beans|mirrors?|rings?|kingdom|"
+        r"book|dust)|magical powers?|cast(s|ing)? a spell|put a spell|under (a|the|her|his) spell|"
+        r"spell (on|to make)|spells?book|wizards?(?! (with|at|of))|wizardry|"
+        r"enchant(ed|ment|ments|ress)|abracadabra|hocus ?pocus|bibbidi|potions?|"
+        r"fairy godmother|gummiberry juice)\b"),
+}
+
+
+def topic_hit(kind, words):
+    """One sentence: does it mention this holiday or magic topic (TOPIC_WORDS)?"""
+    return bool(TOPIC_WORDS[kind].search(" ".join(words)))
+
+
 def religion_score(words):
     s, strong = 0, set()
     for w in words:
@@ -957,7 +1087,10 @@ STRICT_SWEARS = [("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "go
                  ("god", "dammit"), ("goddamn",), ("jesus", "christ"), ("sweet", "jesus"),
                  ("for", "christ's", "sake"), ("for", "christs", "sake"), ("god", "almighty"),
                  ("lord", "almighty"), ("oh", "jesus"), ("jesus", "h", "christ"),
-                 ("christ", "almighty"), ("good", "god", "almighty")]
+                 ("christ", "almighty"), ("good", "god", "almighty"), ("god", "in", "heaven"),
+                 ("oh", "my", "lord"), ("lord", "have", "mercy"), ("god", "help", "us"),
+                 ("god", "help", "me"), ("lord", "help", "us"), ("lord", "help", "me"),
+                 ("swear", "to", "god"), ("for", "the", "love", "of", "god")]
 
 
 def strict_religion_hit(words):
@@ -1299,7 +1432,28 @@ AI_TYPES = {
     "crude": "crude or gross-out humor: jokes about farting, pooping, peeing, burping, boogers or "
              "other bodily functions, toilet humor, or vulgar jokes and pranks (a character simply "
              "feeling sick or using the bathroom is NOT this)",
+    "holiday": "a holiday: Christmas (Santa, Christmas trees and decorations, presents, carols), "
+               "Halloween (trick-or-treating, Halloween costumes, jack-o'-lanterns), Valentine's "
+               "Day (valentines, Cupid), Easter (the Easter bunny, Easter eggs or egg hunts, Easter "
+               "baskets) or St. Patrick's Day (leprechauns, a pot of gold, wearing green or "
+               "shamrocks for the day, its parades) (Thanksgiving, ordinary eggs or rabbits, "
+               "Easter Island, Ireland or Irish people in general, or a church or school named "
+               "St. Patrick's are NOT this)",
+    "birthday": "candles on a birthday cake: lit candles on a cake, blowing them out, or making a "
+                "wish over them (birthdays, parties, cake, presents and singing Happy Birthday are "
+                "NOT this)",
+    "darkmagic": "dark magic and the occult: witchcraft, sorcery, curses and hexes, black magic, "
+                 "voodoo, summoning demons or spirits, talking to the dead, seances, Ouija boards, "
+                 "fortune telling, tarot, psychics or devil worship ('witch' said as an insult, "
+                 "stage magic tricks or a Halloween costume are NOT this)",
+    "magic": "magic: spells, magic wands, wizards, witches or fairies doing magic, potions, "
+             "enchantments, magic powers, a genie's wishes or a magic object (dark magic, stage "
+             "magic tricks, or 'magic' meaning wonderful, as in 'it was magic' or 'the magic "
+             "word', are NOT this)",
 }
+TOPICS = ("holiday", "birthday", "darkmagic", "magic")
+TOPIC_LABELS = {"holiday": "Holidays", "birthday": "Birthday candles", "darkmagic": "Dark magic",
+                "magic": "Magic"}
 
 # Crude humor: words that are almost always toilet / gross-out humor in a story.
 CRUDE_WORDS = _c([
@@ -1339,7 +1493,8 @@ LANGUAGE_DEFS = {
             "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
     "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
              "talk about God; 'thank God' is fine)",
-    "minced": "a soft substitute swear such as gosh, heck, freaking or darn",
+    "minced": "a soft substitute swear such as gosh, heck, freaking, darn, golly, good grief, "
+              "for Pete's sake, holy cow or 'you don't know squat'",
     "sexual": "a sexual word such as sex, sexy or horny, or a crude word for body parts",
     "orientation": "a word about sexual orientation such as gay, lesbian, homosexual or bisexual "
                    "('gay' meaning cheerful or bright is NOT this)",
@@ -1361,7 +1516,8 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
                   "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
-                  "hookers", "tosser", "tossers", "shat", "boner", "boners", "bull", *FRUIT_WORDS}
+                  "hookers", "tosser", "tossers", "shat", "boner", "boners", "bull", "squat", "gee",
+                  "crud", "cruddy", *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
 # verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
 
@@ -1390,6 +1546,8 @@ def _ai_backed(kind, words):
             return bully_hit(words)
         if kind == "flirt":
             return flirt_hit(words)
+        if kind in TOPICS:
+            return topic_hit(kind, words)
     except Exception:
         pass
     return False
@@ -1651,9 +1809,10 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
             find_crude=False, use_ai=False,
             threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False,
-            strict_religion=False):
+            strict_religion=False, find_topics=()):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
-    to workdir/analysis.json)."""
+    to workdir/analysis.json). find_topics: any of TOPICS (holidays, birthday candles, magic,
+    dark magic) to cut."""
     work = Path(workdir)
     work.mkdir(parents=True, exist_ok=True)
     parts = [str(Path(p).resolve()) for p in parts]
@@ -1940,7 +2099,9 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     # sentence-level filters: each flagged sentence (and neighbours that also hit) is cut
     for on, hit, kind, msg in ((find_crude, crude_hit, "crude", "Looking for crude humor…"),
                                (find_bully, bully_hit, "bully", "Looking for bullying…"),
-                               (find_flirt, flirt_hit, "flirt", "Looking for flirting…")):
+                               (find_flirt, flirt_hit, "flirt", "Looking for flirting…"),
+                               *((t in find_topics, lambda w, t=t: topic_hit(t, w), t,
+                                  f"Looking for {TOPIC_LABELS[t].lower()}…") for t in TOPICS)):
         if not on:
             continue
         say(0.99, msg)
@@ -1963,7 +2124,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
                              ("religion", find_religion), ("relationship", find_relationships),
                              ("crude", find_crude), ("bully", find_bully),
-                             ("flirt", find_flirt)) if on]
+                             ("flirt", find_flirt),
+                             *((t, t in find_topics) for t in TOPICS)) if on]
     if use_ai and use_claude:
         # Claude/ChatGPT reads the whole book anyway; the AI on this PC mostly added noise
         # (in one book it flagged 406 things and Claude cleared 387), so it's skipped
@@ -2342,7 +2504,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                      "ref": "sexual reference", "religion": "religious content",
                      "relationship": "relationship content",
                      "crude": "crude humor", "bully": "bullying",
-                     "flirt": "flirting"}.get(c.get("kind"), "scene")
+                     "flirt": "flirting",
+                     **{t: TOPIC_LABELS[t].lower() for t in TOPICS}}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
                           f"{c.get('note') or label}")
     chap = None

@@ -132,3 +132,21 @@ def test_strict_religion(tmp_path):
         assert st["filters"]["strict_religion"] is strict
     assert found[False] == []
     assert found[True] == ["Thank God you're safe, she said.", "The Lord is my shepherd."]
+
+
+def test_kid_topics(tmp_path):
+    """Holidays, birthday candles and magic are cut only when ticked, and the report names them."""
+    audio, work, _ = _book(tmp_path, [
+        (0.5, "We drove home in the rain."),
+        (3.0, "Santa left presents under the tree."),
+        (6.0, "She blew out the candles on her cake."),
+        (8.5, "The wizard waved his magic wand."),
+    ])
+    st = E.analyze([audio], work, groups=(), find_sex=False, log=lambda *a: None)
+    assert st["scenes"] == []
+    st = E.analyze([audio], work, groups=(), find_sex=False, find_topics=("holiday", "magic"),
+                   log=lambda *a: None)
+    assert [(sc["kind"], sc["text"]) for sc in st["scenes"]] == [
+        ("holiday", "Santa left presents under the tree."),
+        ("magic", "The wizard waved his magic wand.")]
+    assert st["filters"]["kinds"] == ["holiday", "magic"]

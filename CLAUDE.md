@@ -83,7 +83,12 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
 4. **Passage detectors**: explicit sex (`sex_score`, needs 2+ explicit words), gore (`gore_score`),
    religion (`religion_score`, `blames_god`, `invokes_providence`, `strict_religion_hit`) — window scoring, then edges trimmed to heavy
    sentences. Sentence filters: sexual references, relationships (`relationship_hit`,
-   `same_sex_flirt`), crude (`crude_hit`), bullying (`bully_hit`), flirting (`flirt_hit`).
+   `same_sex_flirt`), crude (`crude_hit`), bullying (`bully_hit`), flirting (`flirt_hit`), and
+   the "For young kids" topics (`TOPICS`, `topic_hit`, `TOPIC_WORDS`; `analyze(find_topics=)`):
+   holidays (Christmas, Halloween, Valentine's, Easter, St. Patrick's Day: one box), candles on
+   a birthday cake (only the candles: parties and cake are fine), magic, dark magic. Same lists
+   as CleanView's LINE_WORDS, plus "blew out the candles" (books are past tense) and not
+   "Rudolph" on its own (a name in one of Lauren's books). Thanksgiving is fine.
 5. **AI helper on the PC** (`ai_assist`, Ollama gemma3:4b via `cleanview_ai.py`): reads in
    chunks, quotes what it flags, verifies each find. **Weak** — in real books it flagged hundreds
    of false positives. Since 1.6.7 it is **skipped when the Claude/ChatGPT check is on**; on its
@@ -117,7 +122,8 @@ the flattened transcript — `load_asr()` rebuilds it), `filters` ({cats, kinds}
 (passages), `mutes` (words), notes (`claude_note`, `learn_note`, `ai_note`, `ebook_note`),
 `chat_history`, `reviewer`, `title`.
 
-- **scene**: `id, kind (sex|ref|gore|religion|relationship|crude|bully|flirt|added), part, s, e,
+- **scene**: `id, kind (sex|ref|gore|religion|relationship|crude|bully|flirt|holiday|birthday|
+  magic|darkmagic|added), part, s, e,
   text, cut` + optional `ai, claude, learned, by_you, trimmed, ai_note, claude_reason,
   claude_verdict, chat_answer`
 - **mute**: `id, part, s, e, cat, src (audio|ebook|ai|claude), i, j, word/ctx/ctx_after` (starred)
@@ -165,7 +171,13 @@ plain words, learned from Lauren directly and from her exported reviews:
   other filters. Claude gets `STRICT_RELIGION_RULE`; the AI on the PC doesn't second-guess these.
 - **Same-sex and non-traditional relationships** (incl. same-sex flirting, throuples, open
   marriage…) are cut, and orientation words (gay, lesbian…) muted; man-and-woman is fine.
-- **Off by default:** soft substitutes (gosh, heck…), bullying, flirting.
+- **Off by default:** soft substitutes (gosh, heck…), bullying, flirting, and the "For young
+  kids" boxes (holidays, birthday candles, magic, dark magic; CleanView ticks them for its kids'
+  profiles, CleanListen has no profiles). The setup page must still fit: they sit two to a row
+  under the word boxes.
+- Soft swears include "good grief", "for Pete's sake", "holy cow"/"holy moly" (Lauren: not
+  fine; "holy water", "the Holy Bible" are), "gee" and "know squat" (`squat_swear`). "Thank the
+  Lord" is left to the strict religion filter, like "thank God".
 - She does **not** want things split per Yoto card — all chapter files in one folder.
 
 ## 6. Releasing (users update automatically)

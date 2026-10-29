@@ -57,7 +57,8 @@ CONTEXT_SENTS = 12       # sentences shown before a section, for context only
 KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "gory description",
               "religion": "religious content", "relationship": "same-sex / non-traditional relationship",
               "crude": "crude humor", "bully": "bullying", "flirt": "flirting",
-              "added": "passage you chose to cut"}
+              "holiday": "holiday", "birthday": "birthday candles", "darkmagic": "dark magic",
+              "magic": "magic", "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
@@ -99,6 +100,23 @@ KIND_RULES = {
              "argument, a villain's plan or a police interrogation is fine.",
     "flirt": "Flirting: cut sentences where someone flirts, hits on, winks at or makes romantic "
              "advances toward someone. A married couple being affectionate is fine.",
+    "holiday": "Holidays: cut sentences about Christmas (Santa, Christmas trees, presents, carols), "
+               "Halloween (trick-or-treating, costumes, jack-o'-lanterns), Valentine's Day "
+               "(valentines, Cupid), Easter (the Easter bunny, Easter eggs and egg hunts, Easter "
+               "baskets) or St. Patrick's Day (leprechauns, a pot of gold, wearing green or "
+               "shamrocks for the day, its parades). Thanksgiving is fine, and so are ordinary "
+               "eggs or rabbits, Easter Island, Ireland or Irish people in general, and a church "
+               "or school named St. Patrick's.",
+    "birthday": "Birthday candles: cut only candles on a birthday cake - lit candles on a cake, "
+                "blowing them out, making a wish over them. Birthdays, parties, cake, presents "
+                "and singing Happy Birthday are fine.",
+    "darkmagic": "Dark magic: cut witchcraft, sorcery, curses and hexes, black magic, voodoo, "
+                 "summoning demons or spirits, talking to the dead, seances, Ouija boards, fortune "
+                 "telling, tarot, psychics and devil worship. 'Witch' said as an insult, stage "
+                 "magic tricks and a Halloween costume are fine.",
+    "magic": "Magic: cut spells, magic wands, wizards, witches or fairies doing magic, potions, "
+             "enchantments, magic powers, a genie's wishes and magic objects. Stage magic tricks "
+             "and 'magic' meaning wonderful ('it was magic', 'the magic word') are fine.",
 }
 CAT_RULES = {
     "strong": "Strong swearing: the f-word or c-word in any form, and racial slurs - always mute.",
@@ -118,7 +136,9 @@ CAT_RULES = {
     "deity": "God's name as a swear: 'Oh my God', 'Jesus Christ', 'good Lord', 'God knows (what)', "
              "'God, I hope not' as exclamations. "
              "'Thank God' is FINE (the family keeps it), as are prayers and sincere talk about God.",
-    "minced": "Soft substitutes: gosh, heck, darn, dang, jeez, freaking, fricking.",
+    "minced": "Soft substitutes: gosh, heck, darn, dang, jeez, freaking, fricking, golly, gee, "
+              "good grief, for Pete's sake, holy cow, holy moly, son of a gun, 'you don't know "
+              "squat'.",
     "rude": "Rude words kids copy: stupid, dumb, idiot, moron, loser, jerk, fool, butt, and 'shut "
             "up' / 'you suck' / 'this sucks' - mute the word or phrase. The same words in an "
             "everyday sense are fine ('he jerked the door open', 'shut up in the attic', "
@@ -631,6 +651,9 @@ def _trim(st, asr, it, a, b):
 
 def _norm_kind(t, kinds):
     t = str(t).lower()
+    for k in kinds:   # the exact name first: "dark magic" is not "magic"
+        if t in (k, KIND_NAMES.get(k)):
+            return k
     for k in kinds:
         if k == t or KIND_NAMES.get(k, "").split(" ")[0] in t or k in t:
             return k
