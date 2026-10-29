@@ -150,3 +150,45 @@ def test_kid_topics(tmp_path):
         ("holiday", "Santa left presents under the tree."),
         ("magic", "The wizard waved his magic wand.")]
     assert st["filters"]["kinds"] == ["holiday", "magic"]
+
+
+def _both_ais(monkeypatch, review):
+    """Fake AI on this PC: says "damn" isn't swearing, finds a passage and a word the lists
+    missed. It waits for the final check to start, so the two must run at the same time."""
+    import threading
+    import cleanlisten_claude as cc
+    started = threading.Event()
+
+    def ai_assist(asr, scenes, kinds, *a, mutes=None, **k):
+        assert started.wait(10), "the AI on this PC ran after the final check, not alongside it"
+        for m in mutes:
+            m.update(on=False, note="AI thinks this isn't swearing")
+        scenes.append({"kind": "ref", "part": 0, "s": 11.0, "e": 13.0, "ai": True, "cut": True,
+                       "ai_note": "found by AI", "text": "Then everyone went home."})
+        mutes.append({"part": 0, "s": 1.1, "e": 1.4, "cat": "ai", "src": "ai", "word": "quiet",
+                      "on": True, "note": "found by AI"})
+    monkeypatch.setattr(E, "ai_assist", ai_assist)
+    monkeypatch.setattr(cc, "review", lambda st, *a, **k: (started.set(), review(st)))
+
+
+def test_both_ais_look_at_once_and_the_final_check_decides(clip, monkeypatch):
+    audio, work, _ = clip
+    _both_ais(monkeypatch, lambda st: None)
+    st = E.analyze([audio], work, use_ai=True, use_claude=True, log=lambda *a: None)
+    assert [m["on"] for m in st["mutes"] if m["cat"] == "mild"] == [True]
+    added = [x for x in st["scenes"] + st["mutes"] if x.get("ai_note", x.get("note")) == "AI on this PC suggests"]
+    assert len(added) == 2 and not any(x.get("cut", x.get("on")) for x in added)
+    assert sorted(x["id"] for x in st["mutes"]) == list(range(1, len(st["mutes"]) + 1))
+    assert "at the same time" in st["ai_note"]
+
+
+def test_if_the_final_check_fails_the_ai_on_this_pc_works_as_alone(clip, monkeypatch):
+    audio, work, _ = clip
+
+    def broken(st):
+        raise RuntimeError("no plan")
+    _both_ais(monkeypatch, broken)
+    st = E.analyze([audio], work, use_ai=True, use_claude=True, log=lambda *a: None)
+    assert "couldn't check" in st["claude_note"]
+    assert [m["on"] for m in st["mutes"] if m["cat"] == "mild"] == [False]
+    assert [sc["cut"] for sc in st["scenes"] if sc.get("ai")] == [True]

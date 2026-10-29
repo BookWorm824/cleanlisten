@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -1855,6 +1856,79 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     return scenes
 
 
+def in_background(work):
+    """Start work() in a thread. Returns the job for wait_for()."""
+    job = {"error": None}
+
+    def run():
+        try:
+            work()
+        except BaseException as ex:      # KeyboardInterrupt (cancelled) too
+            job["error"] = ex
+    job["thread"] = threading.Thread(target=run, daemon=True)
+    job["thread"].start()
+    return job
+
+
+def wait_for(job, waiting=None, cancel=None):
+    """Wait for an in_background() job; pass on its error (or a cancel)."""
+    while job["thread"].is_alive():
+        if waiting:
+            waiting()
+        if cancel and cancel():
+            raise KeyboardInterrupt
+        job["thread"].join(0.5)
+    if job["error"]:
+        raise job["error"]
+
+
+def _overlaps(x, items):
+    return any(y["part"] == x["part"] and not (x["e"] <= y["s"] or x["s"] >= y["e"]) for y in items)
+
+
+def _merge_ai(st, scene_pairs, mute_pairs, ai_scenes, ai_mutes, claude_ok):
+    """Put what the AI on this PC found (in its own copies) into the checked results. After a
+    final check, it can't untick anything (the final check decides), and what only it found is
+    added unticked for you to decide. If the final check failed, it works as it does alone.
+    Returns the note for the review screen."""
+    scenes, mutes = st["scenes"], st["mutes"]
+    n_new = n_sure = n_off = 0
+    if not claude_ok:
+        live = {id(x) for x in scenes + mutes}
+        for orig, mine in scene_pairs:
+            if id(orig) in live and mine.get("ai_note") == "AI thinks this one is fine" and \
+                    orig.get("cut", True) and not orig.get("by_you"):
+                orig.update(cut=False, ai_note=mine["ai_note"])
+                n_off += 1
+        for orig, mine in mute_pairs:
+            if id(orig) in live and mine.get("note") == "AI thinks this isn't swearing" and \
+                    orig.get("on", True) and not orig.get("by_you"):
+                orig.update(on=False, note=mine["note"])
+                n_off += 1
+    copies = {id(c) for _, c in scene_pairs + mute_pairs}
+    for items, found, key, note_key in ((scenes, ai_scenes, "cut", "ai_note"),
+                                        (mutes, ai_mutes, "on", "note")):
+        for x in found:
+            if id(x) in copies or _overlaps(x, items):
+                continue
+            if claude_ok:
+                x[key], x[note_key] = False, "AI on this PC suggests"
+            n_new += 1
+            n_sure += bool(x[key])
+            items.append(x)
+    scenes.sort(key=lambda x: (x["part"], x["s"]))
+    mutes.sort(key=lambda m: (m["part"], m["s"]))
+    for n, x in enumerate(scenes, 1):
+        x["id"] = n
+    for n, m in enumerate(mutes, 1):
+        m["id"] = n
+    if claude_ok:
+        return (f"The AI on this PC looked too, at the same time: it found {n_new} more the final "
+                "check didn't (left unticked for you to decide).")
+    return (f"AI helper added {n_sure} it's sure about, suggested {n_new - n_sure} more for you to "
+            f"decide (left unticked), and unticked {n_off} it thinks were flagged by mistake.")
+
+
 def load_asr(workdir, parts):
     """The transcript as one word list (same shape analyze() uses)."""
     done = json.loads((Path(workdir) / "transcript.json").read_text())
@@ -2183,12 +2257,19 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                              ("crude", find_crude), ("bully", find_bully),
                              ("flirt", find_flirt),
                              *((t, t in find_topics) for t in TOPICS)) if on]
+    ai_job = None
     if use_ai and use_claude:
-        # Claude/ChatGPT reads the whole book anyway; the AI on this PC mostly added noise
-        # (in one book it flagged 406 things and Claude cleared 387), so it's skipped
-        ai_note = "Skipped the AI on this PC because the final check reads everything."
-        use_ai = False
-    if use_ai:
+        # both look (Lauren, 2026-10-29), at the same time: the AI on this PC reads its own copy
+        # of what was found while Claude/ChatGPT/Gemini reads the book, then the two are merged
+        # (_merge_ai). Not one after the other: that was the same slow step twice.
+        for sc in scenes:
+            sc.setdefault("cut", True)
+        pairs = [(x, dict(x)) for x in scenes], [(m, dict(m)) for m in mutes]
+        ai_scenes, ai_mutes = [c for _, c in pairs[0]], [c for _, c in pairs[1]]
+        ai_job = in_background(lambda: ai_assist(
+            asr, ai_scenes, kinds, to_sentences, span_times, cancel=cancel, mutes=ai_mutes,
+            cats=cats, parts=parts))
+    elif use_ai:
         try:
             for sc in scenes:
                 sc.setdefault("cut", True)
@@ -2238,15 +2319,26 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     except Exception as ex:
         log(f"Learned choices not applied: {ex}")
     if use_claude:
+        claude_ok = False
         try:
             import cleanlisten_claude as cc
             cc.review(st, asr, progress=lambda f, m: say(0.99, m), cancel=cancel)
+            claude_ok = True
         except KeyboardInterrupt:
-            raise
+            raise                        # (the AI on this PC sees the same cancel and stops)
         except Exception as ex:
             st["claude_note"] = (f"Claude couldn't check this book ({ex}). The results below are "
                                  "from the word lists" + (" and the AI helper." if use_ai else "."))
         log(st.get("claude_note", ""))
+        if ai_job:
+            try:
+                wait_for(ai_job, lambda: say(0.99, "Finishing the AI on this PC\u2026"), cancel)
+                st["ai_note"] = _merge_ai(st, *pairs, ai_scenes, ai_mutes, claude_ok)
+            except KeyboardInterrupt:
+                raise
+            except Exception as ex:
+                st["ai_note"] = f"AI helper couldn't run ({ex})."
+            log(st["ai_note"])
     (work / "analysis.json").write_text(json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st

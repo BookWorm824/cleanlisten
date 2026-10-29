@@ -92,11 +92,16 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    "Rudolph" on its own (a name in one of Lauren's books). Thanksgiving is fine.
 5. **AI helper on the PC** (`ai_assist`, Ollama gemma3:4b via `cleanview_ai.py`): reads in
    chunks, quotes what it flags, verifies each find. **Weak** — in real books it flagged hundreds
-   of false positives. Since 1.6.7 it is **skipped when the Claude/ChatGPT check is on**; on its
+   of false positives. With the final check on, **both look at the same time** (Lauren chose
+   this, 2026-10-29; 1.6.7–1.9.3 skipped it): `ai_assist` works on its own copies in a thread
+   (`in_background`/`wait_for`) and `_merge_ai` adds only what it alone found, unticked; the
+   final check decides the rest (if the final check fails, it works as it does alone). On its
    own it skips relationships and its finds start unticked unless the word lists back them up
    (`_ai_backed`). It may only untick listed words that can be innocent (`INNOCENT_WORDS`).
 6. **Learned choices** (`cleanlisten_learn.apply`): sentences the family kept/cut before, words
-   muted in context, shared knowledge.
+   muted in context, shared knowledge. A learned sentence under 5 words is never cut again just
+   for being learned (`LEARNED_SHORTEST`), and one cut for a filter (`cut_for`, also in
+   `shared_learned.json`) is only cut again when that filter is ticked.
 7. **Final check** (`cleanlisten_claude.review`, optional): the whole book in ~30k-word sections
    as numbered sentences + every finding (P = passage, W = word) + the family's rules + past
    examples → JSON per finding: `remove | keep | just_the_word | trim` (+ confidence, reason), plus
@@ -206,7 +211,8 @@ in-app "Check for updates" link does the same and reopens the same review).
 
 ## 7. Learning from the family (the feedback loop)
 
-After saving a book, "Export what we refined…" writes
+After saving a book, "Export what we refined…" (or, before saving, "Send what we refined…" on
+the review page, which counts the ticks as they are now) writes
 `CleanListen refined - <book> <date>.json` (every item with final decision, origin, notes,
 Claude's reasons, chat, plus the PC's `learned.json`). Lauren sends these in. To use one:
 

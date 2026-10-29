@@ -28,6 +28,7 @@ def add(lst, items, drop=()):
 def merge(shared, export):
     for k in ("cut", "kept", "ok_words", "word_mutes"):
         shared.setdefault(k, [])
+    shared.setdefault("cut_for", {})
     d = export.get("learned", {})
     mine_c, mine_k = d.get("cut", []), d.get("kept", [])
     cut = mine_c + [t for t in d.get("claude_cut", []) if t not in mine_k]
@@ -35,6 +36,9 @@ def merge(shared, export):
     shared["kept"] = [t for t in shared["kept"] if t not in cut]
     shared["cut"] = [t for t in shared["cut"] if t not in kept]
     add(shared["cut"], cut)
+    # which filter each sentence was cut for, so it's only cut again when that filter is on
+    shared["cut_for"].update({t: k for t, k in d.get("cut_for", {}).items() if t in cut})
+    shared["cut_for"] = {t: k for t, k in shared["cut_for"].items() if t in set(shared["cut"])}
     add(shared["kept"], kept)
     add(shared["ok_words"], d.get("claude_ok_words", []))
     known = {e[0] for e in shared["word_mutes"]}

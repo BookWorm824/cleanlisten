@@ -61,6 +61,10 @@ def send(path, kind):
         raise RuntimeError(f"the inbox didn't take it ({answer.get('why') or 'no reason given'})")
 SHARED_PATH = HERE / "shared_learned.json"
 MAX = 600
+# A cut passage is learned sentence by sentence, so short everyday lines in it ("What do you
+# think?", "Right, let's go.") would be cut again in every later book. Sentences this short are
+# never cut again just because they were learned (CleanView's LEARNED_SHORTEST).
+LEARNED_SHORTEST = 5
 _shared = None
 
 
@@ -78,6 +82,7 @@ def shared():
             _shared = {}
         for k in ("cut", "kept", "ok_words", "word_mutes"):
             _shared.setdefault(k, [])
+        _shared.setdefault("cut_for", {})
     return _shared
 
 
@@ -87,7 +92,7 @@ def load():
     except Exception:
         d = {}
     for k, v in (("cut", []), ("kept", []), ("kinds", {}), ("words", {}), ("word_mutes", []),
-                 ("claude_cut", []), ("claude_kept", []), ("claude_ok_words", [])):
+                 ("claude_cut", []), ("claude_kept", []), ("claude_ok_words", []), ("cut_for", {})):
         d.setdefault(k, v)
     return d
 
@@ -97,6 +102,7 @@ def save(d):
         APP_DATA.mkdir(parents=True, exist_ok=True)
         for k in ("cut", "kept", "claude_cut", "claude_kept", "claude_ok_words"):
             d[k] = d[k][-MAX:]
+        d["cut_for"] = {t: k for t, k in d.get("cut_for", {}).items() if t in set(d["cut"])}
         tmp = PATH.with_suffix(".tmp")
         tmp.write_text(json.dumps(d, indent=1), encoding="utf8")
         os.replace(tmp, PATH)
@@ -138,6 +144,8 @@ def record(st):
         on = sc.get("cut", True)
         for s in _sentences(sc.get("text", "")):
             _remember(d["cut"] if on else d["kept"], s, d["kept"] if on else d["cut"])
+            if on and sc.get("kind") and sc.get("kind") != "added":
+                d["cut_for"][norm(s)] = sc["kind"]    # cut for this filter (see _for_filters)
         k = d["kinds"].setdefault(sc.get("kind", "?"), {"cut": 0, "kept": 0})
         k["cut" if on else "kept"] += 1
     for m in st.get("mutes", []):
@@ -162,6 +170,17 @@ def _context(m):
     return " ".join(before + [_word(m)] + after)
 
 
+def _for_filters(lines, cut_for, on):
+    """Cut sentences to cut again, without those cut for a filter that isn't ticked now
+    ("cut_for": sentence -> filter; sentences without one count for every filter)."""
+    return {t for t in lines if cut_for.get(t, "") not in KINDS or cut_for[t] in on}
+
+
+# the passage filters a sentence can be remembered for ("added" etc. count for every filter)
+KINDS = {"ref", "sex", "gore", "religion", "relationship", "crude", "bully", "flirt", "holiday",
+         "birthday", "darkmagic", "magic", "vampires"}
+
+
 def apply(st, asr, add_passage, add_word=None):
     """Use what was learned on a fresh analysis. Unticks what you (or Claude, or
     the shared file) said was fine, and adds sentences you cut before that the
@@ -175,6 +194,8 @@ def apply(st, asr, add_passage, add_word=None):
     kept |= set(sh["kept"]) - cut - shared_cut
     cut |= set(d["claude_cut"]) - kept
     cut |= shared_cut
+    on = set((st.get("filters") or {}).get("kinds") or [])
+    cut = _for_filters(cut, {**sh["cut_for"], **d["cut_for"]}, on)
     n_kept = n_added = n_w = 0
     for sc in st.get("scenes", []):
         ss = [norm(s) for s in _sentences(sc.get("text", ""))]
@@ -190,7 +211,8 @@ def apply(st, asr, add_passage, add_word=None):
     if cut and st.get("sentences"):
         for n, (a, b) in enumerate(st["sentences"]):
             t = " ".join(w["t"] for w in asr[a:b + 1])
-            if norm(t) in cut and add_passage(n, n, "added", True, "You cut this before"):
+            if (norm(t) in cut and len(norm(t).split()) >= LEARNED_SHORTEST and
+                    add_passage(n, n, "added", True, "You cut this before")):
                 n_added += 1
     word_mutes = d["word_mutes"] + [e for e in sh["word_mutes"]
                                     if e and e[0] not in {x[0] for x in d["word_mutes"]}]

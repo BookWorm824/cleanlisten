@@ -450,7 +450,7 @@ class App(tk.Tk):
         ttk.Checkbutton(b4, text="AI helper on this PC  (double-checks every filter)",
                         variable=self.ai_var).pack(anchor="w")
         tk.Label(b4, text="Catches what the word lists miss. Downloads about 4 GB the first time. "
-                 "Not used when the final check is on.", bg=CARD, fg=MUTED, font=(FONT, 9),
+                 "Works alongside the final check.", bg=CARD, fg=MUTED, font=(FONT, 9),
                  wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
         self.claude_var = tk.BooleanVar(value=self.saved_opts.get("claude", False))
         ttk.Checkbutton(b4, text="Final check by Claude, ChatGPT or Gemini  (reads the whole book)",
@@ -1453,6 +1453,9 @@ class App(tk.Tk):
                    command=self._save_from_review).pack(side="right")
         ttk.Button(row, text="Change filters & re-check", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
+        # send it in now, without saving the audiobook first (the ticks as they are now count)
+        ttk.Button(row, text="Send what we refined…", style="Plain.TButton",
+                   command=self._send_report_now).pack(side="left")
         body = self._scroll_area(p)
         multi = len(a["parts"]) > 1
         where = lambda x: (f"Part {x['part'] + 1} · " if multi else "") + engine.fmt_t(x["s"])
@@ -1956,6 +1959,12 @@ class App(tk.Tk):
                    command=self.export_refined).pack(anchor="w")
         ttk.Button(self.footer, text="Re-check this book", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right")
+
+    def _send_report_now(self):
+        """"Send what we refined" from the review page, before the clean audiobook is saved."""
+        self._sync_ticks()
+        self._save_analysis()
+        self.export_refined()
 
     def export_refined(self):
         try:
