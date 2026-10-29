@@ -86,7 +86,8 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    `same_sex_flirt`), crude (`crude_hit`), bullying (`bully_hit`), flirting (`flirt_hit`), and
    the "For young kids" topics (`TOPICS`, `topic_hit`, `TOPIC_WORDS`; `analyze(find_topics=)`):
    holidays (Christmas, Halloween, Valentine's, Easter, St. Patrick's Day: one box), candles on
-   a birthday cake (only the candles: parties and cake are fine), magic, dark magic. Same lists
+   a birthday cake (only the candles: parties and cake are fine), magic, dark magic (wizards
+   count as dark magic, Lauren 2026-10-29), vampires and werewolves. Same lists
    as CleanView's LINE_WORDS, plus "blew out the candles" (books are past tense) and not
    "Rudolph" on its own (a name in one of Lauren's books). Thanksgiving is fine.
 5. **AI helper on the PC** (`ai_assist`, Ollama gemma3:4b via `cleanview_ai.py`): reads in
@@ -172,9 +173,9 @@ plain words, learned from Lauren directly and from her exported reviews:
 - **Same-sex and non-traditional relationships** (incl. same-sex flirting, throuples, open
   marriage…) are cut, and orientation words (gay, lesbian…) muted; man-and-woman is fine.
 - **Off by default:** soft substitutes (gosh, heck…), bullying, flirting, and the "For young
-  kids" boxes (holidays, birthday candles, magic, dark magic; CleanView ticks them for its kids'
-  profiles, CleanListen has no profiles). The setup page must still fit: they sit two to a row
-  under the word boxes.
+  kids" boxes (holidays, birthday candles, magic, dark magic, vampires & werewolves; CleanView
+  ticks them for its kids' profiles, CleanListen has no profiles). The setup page must still
+  fit: they sit in two rows under the word boxes (`KID_TOPICS` gives each box's place).
 - Soft swears include "good grief", "for Pete's sake", "holy cow"/"holy moly" (Lauren: not
   fine; "holy water", "the Holy Bible" are), "gee" and "know squat" (`squat_swear`). "Thank the
   Lord" is left to the strict religion filter, like "thank God".

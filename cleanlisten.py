@@ -966,8 +966,8 @@ def bully_hit(words):
     return False
 
 
-# Holidays, candles on a birthday cake, magic and dark magic (for young kids; all off unless
-# ticked). Only phrases that are hard to mistake; the AI helper and Claude catch the rest.
+# Holidays, candles on a birthday cake, magic, dark magic, and vampires and werewolves (for
+# young kids; all off unless ticked). Only phrases that are hard to mistake; the AI helper and Claude catch the rest.
 # The same lists as CleanView's LINE_WORDS, matched on the normalised words (so "x-mas" is
 # "xmas" and "jack-o'-lantern" is "jacko'lantern"). Thanksgiving is fine (Lauren).
 TOPIC_WORDS = {
@@ -994,14 +994,20 @@ TOPIC_WORDS = {
         r"voodoo|hoodoo|warlocks?|ouija|s[eé]?ances?|hex(es|ed)? (on|you|him|her|them)|"
         r"put a curse|cast a curse|occult|satanic|satanists?|devil worship\w*|pentagrams?|"
         r"fortune ?tell(er|ers|ing)|tarot|"
-        r"summon(s|ed|ing)? (a |the )?(demons?|spirits?|the dead|dead))\b"),
+        r"summon(s|ed|ing)? (a |the )?(demons?|spirits?|the dead|dead)|"
+        # wizards are dark magic (Lauren, 2026-10-29); not "a wizard with numbers"
+        r"wizards?(?! (with|at|of))|wizardry)\b"),
     # not "magic" alone ("it was magic", "the magic word") or "spell" (spelling)
     "magic": re.compile(
         r"\b(magic (spells?|wands?|potions?|powers?|carpets?|lamps?|beans|mirrors?|rings?|kingdom|"
         r"book|dust)|magical powers?|cast(s|ing)? a spell|put a spell|under (a|the|her|his) spell|"
-        r"spell (on|to make)|spells?book|wizards?(?! (with|at|of))|wizardry|"
-        r"enchant(ed|ment|ments|ress)|abracadabra|hocus ?pocus|bibbidi|potions?|"
+        r"spell (on|to make)|spells?book|enchant(ed|ment|ments|ress)|abracadabra|hocus ?pocus|bibbidi|potions?|"
         r"fairy godmother|gummiberry juice)\b"),
+    # not "vampire bats" or "vampire squid" (real animals), or "vamp" (a dance, a flirt)
+    "vampires": re.compile(
+        r"\b(vampires?(?! (bats?|squids?|finch|finches|weekend|facials?|energy|power|devices?))|"
+        r"vampiric|vampirism|dracula|nosferatu|the undead|werewol(f|ves|f's)|lycanthrop\w*|"
+        r"wolf ?m[ae]n)\b"),
 }
 
 
@@ -1442,18 +1448,22 @@ AI_TYPES = {
     "birthday": "candles on a birthday cake: lit candles on a cake, blowing them out, or making a "
                 "wish over them (birthdays, parties, cake, presents and singing Happy Birthday are "
                 "NOT this)",
-    "darkmagic": "dark magic and the occult: witchcraft, sorcery, curses and hexes, black magic, "
-                 "voodoo, summoning demons or spirits, talking to the dead, seances, Ouija boards, "
-                 "fortune telling, tarot, psychics or devil worship ('witch' said as an insult, "
-                 "stage magic tricks or a Halloween costume are NOT this)",
-    "magic": "magic: spells, magic wands, wizards, witches or fairies doing magic, potions, "
-             "enchantments, magic powers, a genie's wishes or a magic object (dark magic, stage "
+    "darkmagic": "dark magic and the occult: witchcraft, wizards and witches doing magic, "
+                 "sorcery, curses and hexes, black magic, voodoo, summoning demons or spirits, "
+                 "talking to the dead, seances, Ouija boards, fortune telling, tarot, psychics or "
+                 "devil worship ('witch' said as an insult, 'a wizard with numbers', stage magic "
+                 "tricks or a Halloween costume are NOT this)",
+    "magic": "magic: spells, magic wands, fairies doing magic, potions, enchantments, magic "
+             "powers, a genie's wishes or a magic object (dark magic, wizards or witches, stage "
              "magic tricks, or 'magic' meaning wonderful, as in 'it was magic' or 'the magic "
              "word', are NOT this)",
+    "vampires": "vampires or werewolves: vampires, Dracula, drinking someone's blood, turning "
+                "into a bat, werewolves, turning into a wolf at the full moon (vampire bats or "
+                "other real animals, and ordinary wolves, are NOT this)",
 }
-TOPICS = ("holiday", "birthday", "darkmagic", "magic")
+TOPICS = ("holiday", "birthday", "darkmagic", "magic", "vampires")
 TOPIC_LABELS = {"holiday": "Holidays", "birthday": "Birthday candles", "darkmagic": "Dark magic",
-                "magic": "Magic"}
+                "magic": "Magic", "vampires": "Vampires & werewolves"}
 
 # Crude humor: words that are almost always toilet / gross-out humor in a story.
 CRUDE_WORDS = _c([

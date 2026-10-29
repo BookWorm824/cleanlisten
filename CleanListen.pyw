@@ -65,10 +65,13 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("flirt", "Flirting to cut", "Flirting"), ("holiday", "Holidays to cut", "Holidays"),
                 ("birthday", "Candles on a birthday cake to cut", "Birthday candles"),
                 ("magic", "Magic to cut", "Magic"), ("darkmagic", "Dark magic to cut", "Dark magic"),
+                ("vampires", "Vampires & werewolves to cut", "Vampires"),
                 ("added", "Added by you (or cut before)", "Added"))
-# "For young kids" tick boxes (all off unless ticked), two to a row
-KID_TOPICS = (("holiday", "Holidays"), ("birthday", "Birthday candles"), ("magic", "Magic"),
-              ("darkmagic", "Dark magic"))
+# "For young kids" tick boxes (all off unless ticked): key, label, row, column, columns wide.
+# Two rows, so the setup page still fits.
+KID_TOPICS = (("holiday", "Holidays", 1, 0, 1), ("birthday", "Birthday candles", 1, 1, 1),
+              ("magic", "Magic", 1, 2, 1), ("darkmagic", "Dark magic", 2, 0, 1),
+              ("vampires", "Vampires & werewolves", 2, 1, 2))
 CAT_LABELS = {"strong": "swearing", "moderate": "swearing", "mild": "mild word", "deity": "God's name",
               "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation",
               "rude": "rude word"}
@@ -430,16 +433,17 @@ class App(tk.Tk):
                     pv.trace_add("write", show)
                     show()
         # under the word boxes, where there's room: Christmas, Halloween, Valentine's, Easter and
-        # St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic
+        # St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic;
+        # dark magic and wizards; vampires and werewolves
         kids = tk.Frame(grid, bg=CARD)
         kids.grid(row=len(columns[0][1]) + 1, column=0, rowspan=3, sticky="nw", pady=(2, 0))
         tk.Label(kids, text="For young kids", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
-            row=0, column=0, columnspan=2, sticky="w")
-        for n, (key, label) in enumerate(KID_TOPICS):
+            row=0, column=0, columnspan=3, sticky="w")
+        for key, label, r, c, span in KID_TOPICS:
             v = tk.BooleanVar(value=self.saved_opts.get(key, False))
             self.opts[key] = v
-            ttk.Checkbutton(kids, text=label, variable=v).grid(row=1 + n // 2, column=n % 2,
-                                                               sticky="w", padx=(0, 26))
+            ttk.Checkbutton(kids, text=label, variable=v).grid(row=r, column=c, columnspan=span,
+                                                               sticky="w", padx=(0, 14))
 
         b4 = self._card(body, "3", "Extra checks", "optional")
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
@@ -1136,7 +1140,7 @@ class App(tk.Tk):
             groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
         self.find_crude = self.opts["crude"].get()
         self.find_bully, self.find_flirt = self.opts["bully"].get(), self.opts["flirt"].get()
-        self.find_topics = [k for k, _ in KID_TOPICS if self.opts[k].get()]
+        self.find_topics = [k for k, *_ in KID_TOPICS if self.opts[k].get()]
         self.use_ai = self.ai_var.get()
         self.use_claude = self.claude_var.get()
         self.split_chapters = self.split_var.get()
@@ -1828,7 +1832,8 @@ class App(tk.Tk):
         names = {"sex": "EXPLICIT SCENE", "ref": "SEXUAL REFERENCE", "gore": "GORE",
                  "religion": "RELIGION", "relationship": "RELATIONSHIP", "crude": "CRUDE HUMOR",
                  "bully": "BULLYING", "flirt": "FLIRTING", "holiday": "HOLIDAY",
-                 "birthday": "BIRTHDAY CANDLES", "magic": "MAGIC", "darkmagic": "DARK MAGIC"}
+                 "birthday": "BIRTHDAY CANDLES", "magic": "MAGIC", "darkmagic": "DARK MAGIC",
+                 "vampires": "VAMPIRES & WEREWOLVES"}
         class _V:  # stands in for a checkbox when exporting a saved result
             def __init__(self, on): self.on = on
             def get(self): return self.on

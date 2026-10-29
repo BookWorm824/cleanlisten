@@ -46,7 +46,7 @@ CUT_OPTS = [("sex", "Sex scenes  (whole passages)", True),
 # "For young kids" (all off unless ticked), two to a row: Christmas, Halloween, Valentine's,
 # Easter and St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic
 KID_OPTS = [("holiday", "Holidays"), ("birthday", "Birthday candles"), ("magic", "Magic"),
-            ("darkmagic", "Dark magic")]
+            ("darkmagic", "Dark magic"), ("vampires", "Vampires & werewolves")]
 KISS = [("keep", "Keep all kissing"), ("passionate", "Cut passionate kissing"),
         ("all", "Cut all romantic kissing")]
 STYLE = [("dash", "Replace with a dash  ( — )"), ("stars", "First letter and stars  (d***)"),
@@ -654,7 +654,8 @@ class App(tk.Tk):
 
         self.cut_vars = []
         order = ["sex", "ref", "sleeping", "kiss", "flirt", "relationship", "gore", "religion",
-                 "crude", "bully", "substances", "holiday", "birthday", "magic", "darkmagic"]
+                 "crude", "bully", "substances", "holiday", "birthday", "magic", "darkmagic",
+                 "vampires"]
         for kind in order:
             items = [c for c in cuts if c["kind"] == kind]
             if not items:

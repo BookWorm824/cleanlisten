@@ -331,7 +331,9 @@ def test_strict_religion_leaves_generic(text):
     ("birthday", "They lit the birthday candles."),
     ("darkmagic", "The witchcraft of the coven grew."), ("darkmagic", "They used a Ouija board."),
     ("darkmagic", "She put a curse on the village."), ("darkmagic", "a fortune-teller read his palm"),
-    ("darkmagic", "They tried to summon the dead."),
+    ("darkmagic", "They tried to summon the dead."), ("darkmagic", "The old wizard frowned."),
+    ("vampires", "A vampire bit him!"), ("vampires", "Count Dracula's castle"),
+    ("vampires", "He turns into a werewolf at night."), ("vampires", "Beware the werewolves."),
     ("magic", "He waved his magic wand."), ("magic", "The wizard cast a spell."),
     ("magic", "She drank the potion."), ("magic", "Her fairy godmother appeared."),
 ])
@@ -348,7 +350,10 @@ def test_kid_topics_found(kind, text):
     ("darkmagic", "You old witch!"), ("darkmagic", "What am I, psychic?"),
     ("darkmagic", "He cursed under his breath."), ("darkmagic", "Their spirits were high."),
     ("magic", "It was magic."), ("magic", "Say the magic word."),
-    ("magic", "Can you spell your name?"), ("magic", "He's a wizard with numbers."),
+    ("magic", "Can you spell your name?"), ("darkmagic", "He's a wizard with numbers."),
+    ("magic", "The old wizard frowned."),     # wizards are dark magic (Lauren, 2026-10-29)
+    ("vampires", "Vampire bats live in caves."), ("vampires", "A wolf howled at the moon."),
+    ("vampires", "The wolves ran by."),
 ])
 def test_kid_topics_left_alone(kind, text):
     assert not E.topic_hit(kind, words(text))

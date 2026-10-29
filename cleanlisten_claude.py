@@ -58,7 +58,8 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "religion": "religious content", "relationship": "same-sex / non-traditional relationship",
               "crude": "crude humor", "bully": "bullying", "flirt": "flirting",
               "holiday": "holiday", "birthday": "birthday candles", "darkmagic": "dark magic",
-              "magic": "magic", "added": "passage you chose to cut"}
+              "magic": "magic", "vampires": "vampires and werewolves",
+              "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
@@ -110,13 +111,18 @@ KIND_RULES = {
     "birthday": "Birthday candles: cut only candles on a birthday cake - lit candles on a cake, "
                 "blowing them out, making a wish over them. Birthdays, parties, cake, presents "
                 "and singing Happy Birthday are fine.",
-    "darkmagic": "Dark magic: cut witchcraft, sorcery, curses and hexes, black magic, voodoo, "
-                 "summoning demons or spirits, talking to the dead, seances, Ouija boards, fortune "
-                 "telling, tarot, psychics and devil worship. 'Witch' said as an insult, stage "
-                 "magic tricks and a Halloween costume are fine.",
-    "magic": "Magic: cut spells, magic wands, wizards, witches or fairies doing magic, potions, "
-             "enchantments, magic powers, a genie's wishes and magic objects. Stage magic tricks "
-             "and 'magic' meaning wonderful ('it was magic', 'the magic word') are fine.",
+    "darkmagic": "Dark magic: cut witchcraft, wizards and witches doing magic, sorcery, curses "
+                 "and hexes, black magic, voodoo, summoning demons or spirits, talking to the "
+                 "dead, seances, Ouija boards, fortune telling, tarot, psychics and devil worship. "
+                 "'Witch' said as an insult, 'a wizard with numbers', stage magic tricks and a "
+                 "Halloween costume are fine.",
+    "magic": "Magic: cut spells, magic wands, fairies doing magic, potions, enchantments, magic "
+             "powers, a genie's wishes and magic objects. Wizards and witches are dark magic (a "
+             "separate choice). Stage magic tricks and 'magic' meaning wonderful ('it was "
+             "magic', 'the magic word') are fine.",
+    "vampires": "Vampires and werewolves: cut vampires, Dracula, drinking someone's blood, "
+                "turning into a bat, werewolves, turning into a wolf at the full moon. Vampire "
+                "bats and other real animals, and ordinary wolves, are fine.",
 }
 CAT_RULES = {
     "strong": "Strong swearing: the f-word or c-word in any form, and racial slurs - always mute.",
