@@ -83,13 +83,14 @@ MODERATE = [
     r"nice|cool|pretty|ugly|old|cute|great|bitch)ass(es|ed)?",
     r"bastard.*", r"piss.*", r"dicks?", r"dickhead.*", r"pricks?", r"bollocks",
     r"bugger.*", r"wanker.*", r"wank(s|ed|ing|in)?", r"(jerk|jack)offs?", r"twats?", r"sluts?", r"slutty", r"whores?",
-    r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*", r"cojones", r"nads",
+    r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*", r"cojones", r"ca[jh]ones", r"nads",
     r"(ball|nut)sacks?", r"ballsy", r"balls?bust(er|ers|ing)", r"dbags?",
     # more crude slang heard in TV and films
     r"a-?holes?", r"lardass(es)?", r"bia?y?o?tch(es)?", r"beyotch", r"shat",
     r"dick(wad|weed|face|ish|wit|bag|less)s?", r"numbnuts", r"knobheads?", r"tossers?",
     r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed|os?)?", r"retart(s|ed)?", r"(lib)?tards?",
     r"skeez(e|y|ier)", r"skeevy", r"arsed", r"arses",
+    r"merde", r"scheisse", r"mierda",        # French, German and Spanish for "shit"
 ]
 # swearing said as letters or two words ("S.O.B.", "D-bag" heard as "d bag", "eff you")
 MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag"),
@@ -110,7 +111,8 @@ MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "
 # And the same for God's name, Jesus and son of a bitch: "good grief", "for Pete's sake",
 # "holy cow" (Lauren, 2026-10-29: "Holy cow and Holy molly are not fine"). Same as CleanView's
 # cvcore.MINCED_SLANG.
-MINCED_PHRASES = [("what", "the", w) for w in ("fudge", "flip", "fork", "frack", "fuh")]
+MINCED_PHRASES = [("what", "the", w) for w in ("fudge", "flip", "fork", "frack", "fuh", "devil",
+                                                 "dickens", "deuce", "blazes")]
 MINCED_PHRASES += [(o, w) for o in ("oh", "aw", "ah", "ahh", "aww") for w in ("fudge", "shoot", "sugar")]
 MINCED_PHRASES += [("gee", w) for w in ("whiz", "whizz", "willikers", "whillikers", "wilikers")]
 MINCED_PHRASES += [("jeepers", "creepers"), ("goodness", "gracious"), ("my", "goodness"),
@@ -132,7 +134,7 @@ MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"godd
         r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
         r"sod", r"sodding", r"bloody", r"turds?", r"hella", r"hussy", r"hussies",
         r"crap(pier|piest|ped|ping|pers|holes|loads?|tastic|ola)", r"day+um+n?",   # "dayum"
-        r"floozy", r"floozies", r"trollops?", r"strumpets?"]
+        r"floozy", r"floozies", r"trollops?", r"strumpets?", r"verdammt"]
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
           r"gosh", r"gosh(darn|dang).*", r"darn.*", r"heck", r"dang", r"dang(it|ed)",
           r"dagnabb?it", r"frak(s|ked|king|kin)?", r"sheesh",
@@ -149,12 +151,14 @@ DEITY_PHRASES = [
     ("god", "dammit"), ("oh", "lord"), ("good", "lord"), ("dear", "lord"),
     ("lord", "almighty"), ("sweet", "jesus"), ("jesus", "christ"),
     ("for", "christ's", "sake"), ("for", "christs", "sake"), ("jesus", "h", "christ"),
+    ("for", "god's", "sakes"), ("for", "gods", "sakes"), ("for", "christ's", "sakes"),
+    ("for", "christs", "sakes"),
     ("christ", "almighty"), ("mother", "of", "god"), ("holy", "mother", "of", "god"),
     ("good", "god", "almighty"), ("oh", "my", "lord"), ("lord", "have", "mercy"),
     ("lord", "knows"), ("god", "help", "us"), ("god", "help", "me"), ("lord", "help", "us"),
     ("lord", "help", "me"), ("god", "forbid"), ("swear", "to", "god"), ("in", "god's", "name"),
     ("in", "gods", "name"), ("for", "the", "love", "of", "god"), ("christ", "on", "a", "bike"),
-    ("god", "in", "heaven"),
+    ("god", "in", "heaven"), ("so", "help", "me", "god"), ("holy", "lord"),
     # (not "thank the Lord": like "thank God", that's left to the strict religion filter)
 ]
 DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"oh?m[iy]god", r"goddamn.*"]
@@ -192,7 +196,8 @@ SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this
 # "up yours", and "we're screwed" (in trouble), not "screwed to the wall" or "screwed up"
 SCREW_PHRASES += [("up", "yours")] + [(*w.split(), "screwed") for w in (
     "i'm", "we're", "you're", "he's", "she's", "they're", "it's", "we are", "i am", "you are",
-    "totally", "completely", "royally", "so", "really", "just")]
+    "totally", "completely", "royally", "so", "really", "just",
+    "get", "gets", "got", "getting", "gotten")]
 SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "tight", "tightly", "to",
                      "the", "it", "that", "this", "back", "off", "up"}
 # "jerked off the road", "jacked off his feet": a place or thing follows, so it's literal
@@ -385,7 +390,8 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                  "butt": {"in", "heads"}, "butts": {"in", "heads"},
                  "dumb": {"waiter", "waiters", "luck", "founded", "show"},
                  # "gee up" to a horse; the letter G ("a gee string", "gee major")
-                 "gee": {"up", "string", "strings", "major", "minor", "sharp", "flat", "clef"}}
+                 "gee": {"up", "string", "strings", "major", "minor", "sharp", "flat", "clef"},
+                 "dumdum": {"bullet", "bullets"}, "dumdums": {"bullet", "bullets"}}
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big"}, "cum": {"summa", "magna"},
                  "hooker": {"general", "john", "joe"}, "hookers": {"general"},
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
@@ -405,7 +411,8 @@ RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?"
         r"imbeciles?", r"cretins?", r"buffoons?", r"twits?", r"twerps?", r"pinheads?",
         r"meatheads?", r"lamebrains?", r"birdbrains?", r"dunces?", r"wimps?",   # not Wimpy
         r"wuss(es)?", r"wussy", r"sissy", r"sissies", r"crybab(y|ies)", r"scaredy(cats?)?",
-        r"fatsos?", r"putz(es)?", r"schmucks?", r"ignoramus(es)?", r"brats?", r"dumbdumbs?"]
+        r"fatsos?", r"putz(es)?", r"schmucks?", r"ignoramus(es)?", r"brats?", r"dumbdumbs?",
+        r"dumdums?", r"fatheads?"]   # "dum-dum" is joined to "dumdum"
 RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "trap"),
                 ("shut", "your", "face"), ("shut", "it"), ("you", "suck"), ("it", "sucks"),
                 ("this", "sucks"), ("that", "sucks"), ("shut", "your", "pie", "hole"),
@@ -440,6 +447,13 @@ SEX_TERMS = {
         r"tongue", r"sheets", r"bed", r"bedroom", r"skin", r"shirt", r"blouse",
         r"gasp(ed)?", r"desire", r"body", r"bodies", r"touch(ed|ing)?", r"lips",
         r"stroked?", r"breath(less)?", r"shiver(ed)?", r"zipper", r"husky", r"hungrily"],
+}
+# Polite "a pleasure", and "sex" meaning men or women ("your sex", "the fair sex"), aren't
+# sex talk. (The word before.) Same as CleanView's cvcore.NOT_SEX_BEFORE.
+NOT_SEX_BEFORE = {
+    "pleasure": {"a", "my", "the", "our", "great", "such", "real", "your", "true"},
+    "sex": {"your", "our", "her", "his", "their", "fair", "fairer", "weaker", "gentle",
+            "gentler", "opposite", "same", "other", "either", "each", "whose"},
 }
 SEX_WINDOW_SCORE = 9   # a stretch of ~3 paragraphs (or ~60s) scoring this much gets flagged
 SEX_PARA_SCORE = 3     # a single paragraph inside such a stretch must score this to be cut
@@ -619,7 +633,9 @@ def sex_score(words):
     words count at all: kissing, beds and sheets alone never flag a scene
     (romance without explicit content is left alone)."""
     s, explicit = 0, 0
-    for w in words:
+    for k, w in enumerate(words):
+        if k and words[k - 1] in NOT_SEX_BEFORE.get(w, ()):
+            continue                    # "it's a pleasure", "the fair sex" (Pride and Prejudice)
         for weight, pats in SEX_C.items():
             if any(p.match(w) for p in pats):
                 s += weight
@@ -1416,7 +1432,8 @@ def span_times(asr, i, j):
 # ---------------------------------------------------------------------------
 AI_TYPES = {
     "ref": "a sexual reference, sexual joke or innuendo, or talk about sex (ordinary romance, "
-           "affection and kissing are NOT this)",
+           "affection and kissing, pregnancy or babies, 'sex' meaning men or women ('the fair "
+           "sex'), a polite 'it's a pleasure', or a body part in a threat are NOT this)",
     "sex": "part of an explicit sex scene",
     "gore": "a graphic, gory description of injuries, wounds, dead bodies or violence (simply "
             "saying someone died, was shot or was found dead is NOT this)",

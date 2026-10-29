@@ -559,3 +559,35 @@ def test_more_orientation_words():
 ])
 def test_more_everyday_uses_left_alone(text):
     assert hits(text, EVERY + ["rude"]) == []
+
+
+@pytest.mark.parametrize("text, muted, cat", [
+    ("Grow some cajones", ["cajones"], "moderate"), ("He's got cahones", ["cahones"], "moderate"),
+    ("Merde!", ["merde"], "moderate"), ("Scheisse", ["scheisse"], "moderate"),
+    ("Verdammt!", ["verdammt"], "mild"), ("You still get screwed", ["get screwed"], "mild"),
+    ("We got screwed!", ["got screwed"], "mild"), ("So help me God", ["so help me god"], "deity"),
+    ("Holy Lord!", ["holy lord"], "deity"), ("What the devil?", ["what the devil"], "minced"),
+    ("What the dickens is that?", ["what the dickens"], "minced"),
+])
+def test_cleanview_1_17_4_words(text, muted, cat):
+    assert hits(text, [cat]) == [(w, cat) for w in muted]
+
+
+@pytest.mark.parametrize("text", [
+    "The lid got screwed on tight", "It got screwed to the wall", "Get screwed in properly",
+    "The devil is in the details", "the dickens novel", "He played the devil",
+])
+def test_cleanview_1_17_4_everyday_uses_left_alone(text):
+    assert hits(text, EVERY + ["rude"]) == []
+
+
+@pytest.mark.parametrize("text, phrase, cat", [
+    ("For God's sakes!", "for god's sakes", "deity"), ("For Christ's sakes", "for christ's sakes", "deity"),
+    ("Morning, dum-dum.", "dumdum", "rude"), ("Fathead.", "fathead", "rude"),
+])
+def test_cleanview_1_17_5_words(text, phrase, cat):
+    assert hits(text, [cat]) == [(phrase, cat)]
+
+
+def test_dumdum_bullets_left_alone():
+    assert hits("loaded with dum-dum bullets", EVERY + ["rude"]) == []

@@ -25,6 +25,13 @@ def test_one_explicit_word_is_not_enough():
     assert E.sex_score(words("She was naked in the bath, then kissed him on the lips in bed.")) == 0
 
 
+def test_polite_pleasure_and_the_fair_sex_are_not_sex_talk():
+    # Pride and Prejudice: three polite "it's a pleasure" made a sex scene
+    assert E.sex_score(words("It is a pleasure, sir. Such a pleasure. The fair sex is "
+                             "naked of wit, my pleasure entirely.")) == 0
+    assert E.sex_score(words("Naked, she moaned with pleasure.")) > 0
+
+
 # --- gore: mystery-level violence stays; prolonged graphic description goes -----------
 @pytest.mark.parametrize("text", [
     "They found the body by the river. He had been stabbed and there was blood on the grass.",

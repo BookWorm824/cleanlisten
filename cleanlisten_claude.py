@@ -73,7 +73,9 @@ KIND_RULES = {
            "sexual jokes or innuendo, someone being sexy or aroused, one-night stands. A sentence "
            "that only MENTIONS that someone slept with someone or made love (e.g. 'I should never "
            "have told him I'd slept with someone else') stays - those words are muted on their own "
-           "(answer just_the_word). Ordinary romance, affection, dating, marriage and kissing are fine.",
+           "(answer just_the_word). Ordinary romance, affection, dating, marriage and kissing are fine, "
+           "and so are pregnancy or babies, 'sex' meaning men or women ('the fair sex'), a polite "
+           "'it's a pleasure', and a body part in a threat.",
     "gore": "Gory descriptions: cut only prolonged, very graphic descriptions that dwell on "
             "wounds, mutilation or bodies (several sentences of it). A single violent sentence - "
             "even a split skull or blood seeping - stays, as does saying someone was shot, stabbed, "
@@ -89,8 +91,8 @@ KIND_RULES = {
                 "or denying God or losing their faith; and Providence spoken of as God ('Providence "
                 "only knows', 'trust in Providence'). Fine (keep): a brief mention that someone "
                 "prayed or a short simple prayer ('please, Jesus'), saying grace, thanking God, going "
-                "to church or a prayer service. This family cuts borderline religious talk - when "
-                "unsure, choose remove.",
+                "to church or a prayer service. In a song or hymn, cut only the lines that are about "
+                "it. This family cuts borderline religious talk - when unsure, choose remove.",
     "relationship": "Same-sex and non-traditional relationships: cut sentences that show a "
                     "same-sex couple, romance or flirting (including a man flirting with a man), "
                     "throuples, polyamory, open marriages, swingers, polygamy. A man and woman "

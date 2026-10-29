@@ -178,7 +178,10 @@ plain words, learned from Lauren directly and from her exported reviews:
   fit: they sit in two rows under the word boxes (`KID_TOPICS` gives each box's place).
 - Soft swears include "good grief", "for Pete's sake", "holy cow"/"holy moly" (Lauren: not
   fine; "holy water", "the Holy Bible" are), "gee" and "know squat" (`squat_swear`). "Thank the
-  Lord" is left to the strict religion filter, like "thank God".
+  Lord" is left to the strict religion filter, like "thank God". "What the devil/dickens" are
+  soft swears; "so help me God" and "holy Lord" are God's name.
+- A polite "it's a pleasure" and "sex" meaning men or women ("the fair sex") don't count
+  toward a sex scene (`NOT_SEX_BEFORE`; Pride and Prejudice was flagged).
 - She does **not** want things split per Yoto card — all chapter files in one folder.
 
 ## 6. Releasing (users update automatically)
