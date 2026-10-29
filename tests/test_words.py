@@ -137,6 +137,36 @@ def test_fruit_slang_is_swearing():
     assert hits("Check out those melons!", ["mild", "deity", "sexual"]) == []
 
 
+# --- "that's bull": short for bullshit, mild; never the animal ---------------------------
+@pytest.mark.parametrize("text", [
+    "That's bull!", "That is bull and you know it", "What a load of bull", "This is total bull",
+    "Cut the bull, Castle", "It's all bull", "You're full of bull", "a bunch of bull",
+    "That's complete bull", "no more bull", "thats bull",
+])
+def test_bull_for_bullshit(text):
+    assert hits(text) == [("bull", "mild")]
+
+
+def test_bull_split_from_its_ending():
+    assert hits("that's bull shit") == [("bull", "mild"), ("shit", "moderate")]
+    assert hits("total bull crap") == [("bull", "mild"), ("crap", "mild")]
+
+
+def test_bull_is_moderate_when_only_moderate_is_ticked():
+    assert hits("That's bull!", ["moderate"]) == [("bull", "moderate")]
+    assert hits("That's bull!", ["sexual", "deity"]) == []
+
+
+@pytest.mark.parametrize("text", [
+    "The bull charged at him", "That's bull riding for you", "That's a bull, not a cow",
+    "a bull market", "It's a pit bull", "like a bull in a china shop",
+    "take the bull by the horns", "the Chicago Bulls", "That's bull terrier hair",
+    "a bull's eye", "is that bull dangerous", "Sitting Bull", "a red bull",
+])
+def test_bull_the_animal(text):
+    assert hits(text) == []
+
+
 # --- more swearing and crude slang (from CleanView's TV and film lists) -----------------
 @pytest.mark.parametrize("text, word, cat", [
     ("What a sweet-ass deal.", "sweetass", "moderate"),

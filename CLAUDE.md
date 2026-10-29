@@ -74,6 +74,8 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    ripe"; same phrases as CleanView's `cvcore.BODY_SLANG`). Lauren also wants
    "yanking your chain" (whole phrase, moderate), "sheesh" (minced) and slang for touching
    yourself ("jerking off", "rub one out"; `OFF_SAFE_NEXT` keeps "jerked off the road").
+   "Bull" for bullshit is mild, only after "that's", "load of", "cut the"... or before
+   "shit"/"crap" (`bull_swear`, as CleanView's; "bull riding", "a bull market" are left alone).
    In audio mutes (`analyze`) a swear's lead-in goes too: "what the hell", "where in the heck"
    (`find_language(..., lead_in_too=True)`, swearing groups only; off for CleanRead and
    context starring), plus "what the f / eff / fudge" as phrases.

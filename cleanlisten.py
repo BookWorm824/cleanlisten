@@ -272,6 +272,34 @@ def fruit_slang(words):
     return out
 
 
+# "That's bull", "what a load of bull", "cut the bull": short for bullshit, muted with the
+# mild group. Only the word "bull", only after these words (or just before "crap"/"shit", as
+# speech recognition splits "bullshit"), and not "that's bull riding" or "a bull market".
+# Same as CleanView's cvcore.bull_swear.
+BULL_BEFORE = re.compile(r"(^| )(that's|thats|that is|that was|this is|this was|it's|it is|"
+                         r"it was|all|such|total|complete|utter|absolute|pure|load of|bunch of|"
+                         r"pile of|full of|cut the|cut out the|enough of the|enough with the|"
+                         r"no more)$")
+BULL_SWEAR_NEXT = {"crap", "crapping", "shit", "shits", "shitting", "shitter"}
+BULL_NOT_NEXT = {"riding", "rider", "riders", "ride", "rides", "market", "markets", "terrier",
+                 "terriers", "shark", "sharks", "frog", "frogs", "elephant", "elephants", "seal",
+                 "seals", "moose", "dog", "dogs", "run", "runs", "ring", "rings", "fight",
+                 "fights", "fighter", "fighters", "fighting", "pen", "pens", "horn", "horns",
+                 "whip", "whips", "dozer", "dozers", "session", "sessions", "calf", "calves",
+                 "breed", "breeds", "semen", "snake", "snakes", "mastiff", "mastiffs", "nose",
+                 "neck", "pup", "pups", "elk", "whale", "whales", "pit", "pits"}
+
+
+def bull_swear(words, i):
+    """Is words[i] "bull" said for bullshit ("that's bull")?"""
+    if words[i] != "bull":
+        return False
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    if nxt in BULL_SWEAR_NEXT:
+        return True
+    return nxt not in BULL_NOT_NEXT and bool(BULL_BEFORE.search(" ".join(words[max(0, i - 3):i])))
+
+
 PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # deity filled in below
            "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
@@ -476,6 +504,10 @@ def _find_language(words, cats):
         if found:
             hits.append((i, i + len(found[0]), found[1]))
             i += len(found[0])
+            continue
+        if ("mild" in cats or "moderate" in cats) and bull_swear(words, i):   # "that's bull"
+            hits.append((i, i + 1, "mild" if "mild" in cats else "moderate"))
+            i += 1
             continue
         w = words[i]
         for cat in cats:
@@ -1303,6 +1335,7 @@ LANGUAGE_DEFS = {
                 "or fruit and vegetables used for body parts ('check out those melons', "
                 "'pop her cherry', 'kneed him in the grapes')",
     "mild": "a mild swear word such as damn, hell used as a curse, crap, bloody used as a curse, "
+            "'that's bull' (short for bullshit, not the animal), "
             "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
     "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
              "talk about God; 'thank God' is fine)",
@@ -1328,7 +1361,7 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
                   "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
-                  "hookers", "tosser", "tossers", "shat", "boner", "boners", *FRUIT_WORDS}
+                  "hookers", "tosser", "tossers", "shat", "boner", "boners", "bull", *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
 # verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
 

@@ -112,8 +112,9 @@ CAT_RULES = {
                 "same words in their everyday meaning (tennis balls, a pair of shoes, cherry "
                 "pie, ripe melons) are fine.",
     "mild": "Mild words: damn, hell used as a curse, crap, bloody used as a curse, 'screw you' / "
-            "'screw it'. 'Hell' as the place in religious talk, 'bloody' meaning covered in blood, "
-            "or screwing something in, are fine.",
+            "'screw it', and 'bull' meaning bullshit ('that's bull', 'cut the bull'). 'Hell' as "
+            "the place in religious talk, 'bloody' meaning covered in blood, screwing something "
+            "in, or a real bull, are fine.",
     "deity": "God's name as a swear: 'Oh my God', 'Jesus Christ', 'good Lord', 'God knows (what)', "
              "'God, I hope not' as exclamations. "
              "'Thank God' is FINE (the family keeps it), as are prayers and sincere talk about God.",
