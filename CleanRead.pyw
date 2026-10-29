@@ -274,9 +274,8 @@ class App(tk.Tk):
             ttk.Checkbutton(b3, text="AI helper  (reads for what word lists can't spot)",
                             variable=self.ai_var).pack(anchor="w")
             self._note(b3, "Catches things like a child sneaking around or mocking their parents when "
-                       "no warning words are used. Runs on your PC (the same AI as CleanListen). "
-                       "Without it the check takes under a minute; with it, expect 20–60 minutes "
-                       "for a novel.")
+                       "no warning words are used. Runs on your PC. Without it the check takes under "
+                       "a minute; with it, the check takes longer (20–60 minutes for a novel).")
             return
         b3 = self._card(self.opt_host, "3", "What to take out")
         grid = tk.Frame(b3, bg=CARD)
@@ -322,8 +321,7 @@ class App(tk.Tk):
         ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
                         variable=self.ai_var).pack(anchor="w", pady=(6, 0))
         self._note(b3, "Catches what the word lists missed and unticks anything flagged by mistake. "
-                   "Runs on your PC (shared with CleanListen and CleanView). Adds 20–60 minutes "
-                   "for a novel.")
+                   "Runs on your PC. The check takes longer with it on (20–60 minutes for a novel).")
         b4 = self._card(self.opt_host, "4", "Save to")
         row = tk.Frame(b4, bg=CARD)
         row.pack(fill="x")
@@ -388,7 +386,7 @@ class App(tk.Tk):
         if mode == "check":
             self._save_opts()
             self.show_working("Checking the book…", "Reading every sentence. " + (
-                "The AI helper is on, so this takes a while — you can leave it running."
+                "The AI helper is on, so the check will take longer. You can leave it running."
                 if self.ai_var.get() else "This takes under a minute."))
             threading.Thread(target=self._scan_thread, args=(self.ai_var.get(),), daemon=True).start()
             return
@@ -403,7 +401,7 @@ class App(tk.Tk):
         self.marker = self.marker_var.get()
         self._save_opts()
         self.show_working("Finding what to remove…", "Nothing is changed yet — you'll see "
-                          "everything first." + (" The AI helper is on, so this takes a while."
+                          "everything first." + (" The AI helper is on, so the check will take longer."
                                                  if opts["ai"] else ""))
         threading.Thread(target=self._analyze_thread, args=(opts,), daemon=True).start()
 
@@ -498,6 +496,11 @@ class App(tk.Tk):
                     self.show_done(msg[1])
                 elif kind == "cancelled":
                     self.show_setup()
+                elif kind == "sent":
+                    if msg[2] is None:
+                        messagebox.showinfo(APP, "Sent. Thank you!")
+                    else:
+                        self._saved_by_hand(msg[1], "Couldn't send it just now.\n\n")
                 elif kind == "error":
                     if msg[2]:
                         try:
@@ -518,20 +521,31 @@ class App(tk.Tk):
         if r.get("grade"):
             bits.append(f"about a grade {r['grade']} reading level")
         p = self._new_page(r["title"] or "Content check", " · ".join(b for b in bits if b))
-        if r.get("ai_note"):
-            tk.Label(p, text=r["ai_note"], bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
-                     justify="left").pack(anchor="w", pady=(0, 6))
+        for note in (r.get("ai_note"), r.get("learn_note")):
+            if note:
+                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                         justify="left").pack(anchor="w", pady=(0, 6))
         ttk.Button(self.footer, text="Open full report", style="Accent.TButton",
-                   command=lambda: open_path(r["report_path"])).pack(side="right")
+                   command=lambda: (self._write_report(r), open_path(r["report_path"]))).pack(side="right")
         ttk.Button(self.footer, text="Make a clean copy", style="Plain.TButton",
                    command=self._to_clean).pack(side="right", padx=(0, 10))
         ttk.Button(self.footer, text="Check another book", style="Plain.TButton",
                    command=self.reset).pack(side="left")
+        ttk.Button(self.footer, text="Send what you marked…", style="Plain.TButton",
+                   command=lambda: self.send_marks(r, "check")).pack(side="left", padx=(10, 0))
         body = self._scroll_area(p)
+        tip = tk.Frame(body, bg="#E3EFEC", padx=12, pady=8)
+        tip.pack(fill="x", pady=(0, 8))
+        tk.Label(tip, text="Something here isn't a problem? Click “Not a problem” next to it. It's left "
+                 "out of the report, and CleanRead remembers it next time. When you're done, click "
+                 "“Send what you marked” so CleanRead can get better.", bg="#E3EFEC", fg=ACCENT_DK,
+                 font=(FONT, 10), wraplength=720, justify="left").pack(anchor="w")
         tk.Label(body, text="The full report (with every sentence, printable) is saved as:\n"
                  + os.path.normpath(r["report_path"]), bg=BG, fg=MUTED, font=(FONT, 9),
                  justify="left", wraplength=740).pack(anchor="w", pady=(0, 8))
 
+        for kind, c in r["cats"].items():
+            c["kind"] = kind
         all_cats = list(r["cats"].values())
         lang = []
         for cat, label in engine.LANG_CATS:
@@ -540,11 +554,12 @@ class App(tk.Tk):
                                      "chapters_list": [], "group": "Language"})
             lang[-1]["group"] = "Language"
             lang[-1]["lang"] = True
+            lang[-1]["kind"] = "word"
         none_found = []
         for grp in engine.SCAN_GROUPS:
             cats = lang if grp == "Language" else [c for c in all_cats if c["group"] == grp]
-            found = [c for c in cats if c["count"]]
-            none_found += [c["label"] for c in cats if not c["count"]]
+            found = [c for c in cats if c["items"]]
+            none_found += [c["label"] for c in cats if not c["items"]]
             if not found:
                 continue
             tk.Label(body, text=grp, bg=BG, fg=INK, font=(FONT, 13, "bold")).pack(anchor="w", pady=(14, 4))
@@ -567,18 +582,28 @@ class App(tk.Tk):
         card.pack(fill="x", padx=1, pady=1)
         top = tk.Frame(card, bg=CARD)
         top.pack(fill="x")
-        bg, fg = CHIP[c["rating"]]
-        tk.Label(top, text=engine.RATING_LABEL[c["rating"]], bg=bg, fg=fg, font=(FONT, 9, "bold"),
-                 padx=8).pack(side="right")
-        tk.Label(top, text=str(c["count"]), bg=CARD, fg=MUTED, font=(FONT, 10), padx=10).pack(side="right")
+        chip = tk.Label(top, bg=CARD, font=(FONT, 9, "bold"), padx=8)
+        chip.pack(side="right")
+        count = tk.Label(top, bg=CARD, fg=MUTED, font=(FONT, 10), padx=10)
+        count.pack(side="right")
         left = tk.Frame(top, bg=CARD)
         left.pack(side="left", fill="x", expand=True)
         tk.Label(left, text=c["label"], bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(anchor="w")
-        chs = c.get("chapters_list") or []
-        where = ", ".join(chs[:8]) + (f" and {len(chs) - 8} more" if len(chs) > 8 else "")
-        if where:
-            tk.Label(left, text="Where: " + where, bg=CARD, fg=MUTED, font=(FONT, 9),
-                     wraplength=560, justify="left").pack(anchor="w")
+        where_lbl = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=560, justify="left")
+        where_lbl.pack(anchor="w")
+
+        def show_counts():
+            engine.recount(c)
+            bg, fg = CHIP[c["rating"]]
+            chip.config(text=engine.RATING_LABEL[c["rating"]], bg=bg, fg=fg)
+            fine = len(c["items"]) - c["count"]
+            count.config(text=str(c["count"]) + (f"  (+{fine} not a problem)" if fine else ""))
+            chs = c.get("chapters_list") or []
+            where = ", ".join(chs[:8]) + (f" and {len(chs) - 8} more" if len(chs) > 8 else "")
+            where_lbl.config(text="Where: " + where if where else "")
+
+        show_counts()
+        c["_changed"] = lambda: (show_counts(), self._report_changed(self.report))
         holder = tk.Frame(card, bg=CARD)
         state = {"open": False}
         link = self._link(card, "Show examples", lambda: toggle(), bg=CARD)
@@ -594,29 +619,103 @@ class App(tk.Tk):
                 self._fill_examples(holder, c)
             holder.pack(fill="x", pady=(6, 0))
 
-    def _fill_examples(self, holder, c):
+    def _fill_examples(self, holder, c, start=0):
         items = c["items"]
-        show = items[:12]
-        for it in show:
-            tk.Label(holder, text=it["where"] + (f"   · {it['ai']}" if it.get("ai") else ""),
-                     bg=CARD, fg=MUTED, font=(FONT, 8)).pack(anchor="w", pady=(6, 0))
-            if c.get("lang"):
-                text = f"…{it['before']} {it['word']} {it['after']}…"
-                hl = [(len(it["before"]) + 2, len(it["before"]) + 2 + len(it["word"]))]
-            else:
-                text, hl = it["text"], it.get("hl") or []
-            t = tk.Text(holder, wrap="word", width=20, height=1, font=(FONT, 10), bg="#FBFAF8", fg=INK,
-                        relief="flat", padx=8, pady=4, borderwidth=0, highlightthickness=0)
-            t.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
-            t.insert("1.0", text)
-            for a, b in hl:
-                t.tag_add("w", f"1.0+{a}c", f"1.0+{b}c")
-            lines = max(1, min(8, len(text) // 88 + 1 + text.count("\n")))
-            t.configure(state="disabled", height=lines)
-            t.pack(fill="x")
-        if len(items) > len(show):
-            tk.Label(holder, text=f"…and {len(items) - len(show)} more in the full report.",
-                     bg=CARD, fg=MUTED, font=(FONT, 9)).pack(anchor="w", pady=(6, 0))
+        for it in items[start:start + 12]:
+            self._example(holder, c, it)
+        left = len(items) - start - 12
+        if left > 0:
+            more = self._link(holder, f"Show more ({left} left)", lambda: None, bg=CARD)
+            more.bind("<Button-1>", lambda e: (more.destroy(), self._fill_examples(holder, c, start + 12)))
+            more.pack(anchor="w", pady=(8, 0))
+
+    def _example(self, holder, c, it):
+        head = tk.Frame(holder, bg=CARD)
+        head.pack(fill="x", pady=(6, 0))
+        tk.Label(head, text=it["where"] + (f"   · {it['ai']}" if it.get("ai") else ""),
+                 bg=CARD, fg=MUTED, font=(FONT, 8)).pack(side="left")
+        mark = self._link(head, "", lambda: flip(), bg=CARD)
+        mark.pack(side="right")
+        if c.get("lang"):
+            text = f"…{it['before']} {it['word']} {it['after']}…"
+            hl = [(len(it["before"]) + 2, len(it["before"]) + 2 + len(it["word"]))]
+            raw = f"{it['before_raw']} {it['word_raw']} {it['after_raw']}"
+        else:
+            text, hl = it["text"], it.get("hl") or []
+            raw = it.get("raw") or it["text"]
+        t = tk.Text(holder, wrap="word", width=20, height=1, font=(FONT, 10), bg="#FBFAF8", fg=INK,
+                    relief="flat", padx=8, pady=4, borderwidth=0, highlightthickness=0)
+        t.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
+        t.insert("1.0", text)
+        for a, b in hl:
+            t.tag_add("w", f"1.0+{a}c", f"1.0+{b}c")
+        lines = max(1, min(8, len(text) // 88 + 1 + text.count("\n")))
+        t.configure(state="disabled", height=lines)
+        t.pack(fill="x")
+
+        def show():
+            fine = it.get("fine")
+            mark.config(text="✓ Not a problem  ·  Undo" if fine else "Not a problem",
+                        fg=MUTED if fine else ACCENT)
+            t.configure(fg="#A49E96" if fine else INK)
+            t.tag_configure("w", background="#EEEAE4" if fine else "#F3E3DF",
+                            foreground="#A49E96" if fine else "#8A3B2E")
+
+        def flip():
+            it["fine"] = not it.get("fine")
+            engine.learn_marks([(c["kind"], it.get("key"), raw, it["fine"])])
+            show()
+            c["_changed"]()
+
+        show()
+
+    def _report_changed(self, r):
+        """Rewrite the saved report a moment after the last "Not a problem" click."""
+        if getattr(self, "_rewrite_job", None):
+            self.after_cancel(self._rewrite_job)
+        self._rewrite_job = self.after(800, lambda: self._write_report(r))
+
+    def _write_report(self, r):
+        if getattr(self, "_rewrite_job", None):
+            self.after_cancel(self._rewrite_job)
+        self._rewrite_job = None
+        try:
+            Path(r["report_path"]).write_text(engine.report_html(r), encoding="utf8")
+        except OSError:
+            pass
+
+    # ---------- sending what you marked ----------
+    def send_marks(self, found, mode):
+        try:
+            path = engine.export_marks(found, mode)
+        except Exception as ex:
+            messagebox.showerror(APP, f"Couldn't save the file: {ex}")
+            return
+        try:
+            import cleanlisten_learn as learn
+        except Exception:
+            learn = None
+        if learn and learn.send_url() and messagebox.askyesno(
+                APP, "Send it in now?\n\nIt has the sentences and words CleanRead found and what you "
+                "marked, so CleanRead can get better. Not the whole book."):
+            def go():
+                try:
+                    learn.send(path, "refined")
+                    self.q.put(("sent", path, None))
+                except Exception as ex:
+                    self.q.put(("sent", path, ex))
+            threading.Thread(target=go, daemon=True).start()
+            return
+        self._saved_by_hand(path)
+
+    def _saved_by_hand(self, path, why=""):
+        if os.name == "nt":
+            subprocess.Popen(f'explorer /select,"{path}"')
+        messagebox.showinfo(
+            APP, why + f"Saved as “{path.name}” in {path.parent}.\n\n"
+            "Send that file to whoever set up CleanRead for you, or attach it in a chat with "
+            "Claude and ask for it to be added to CleanRead.\n\nIt has the sentences and words "
+            "CleanRead found and what you marked. Not the whole book.")
 
     def _to_clean(self):
         self.mode.set("clean")
@@ -628,15 +727,19 @@ class App(tk.Tk):
         a = self.analysis
         cuts, mutes = a["cuts"], a["mutes"]
         sub = ("Nothing to remove was found in this book." if not cuts and not mutes else
-               "Everything ticked below will be taken out. Untick anything you want to keep.")
+               "Everything ticked below will be taken out. Untick anything you want to keep: "
+               "CleanRead remembers it next time.")
         p = self._new_page("Review before saving", sub)
-        if a.get("ai_note"):
-            tk.Label(p, text=a["ai_note"], bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
-                     justify="left").pack(anchor="w", pady=(0, 4))
+        for note in (a.get("ai_note"), a.get("learn_note")):
+            if note:
+                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                         justify="left").pack(anchor="w", pady=(0, 4))
         ttk.Button(self.footer, text="Save clean copy", style="Main.TButton",
                    command=self._save_from_review).pack(side="right")
         ttk.Button(self.footer, text="Back", style="Plain.TButton",
                    command=self.show_setup).pack(side="right", padx=(0, 10))
+        ttk.Button(self.footer, text="Send what you marked…", style="Plain.TButton",
+                   command=self._send_from_review).pack(side="right", padx=(0, 10))
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
         self.summary_lbl.pack(side="left")
         body = self._scroll_area(p)
@@ -676,7 +779,7 @@ class App(tk.Tk):
                 ttk.Checkbutton(top, text=f"Cut this   ·   {c['where']}   ·   {size}",
                                 variable=v, command=self._update_summary).pack(side="left")
                 if c.get("ai_note"):
-                    soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests")
+                    soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests", "You kept this before")
                     tk.Label(top, text=c["ai_note"], bg="#FFF4D6" if soft else "#E3EFEC",
                              fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 9), padx=6).pack(side="right")
                 txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(c["text"]) // 95),
@@ -704,7 +807,7 @@ class App(tk.Tk):
                                 cursor="hand2", padx=6)
                 show.pack(side="right")
                 if m.get("note"):
-                    soft = m["note"].startswith(("AI thinks", "AI suggests", "probably"))
+                    soft = m["note"].startswith(("AI thinks", "AI suggests", "probably", "You kept"))
                     tk.Label(row, text=m["note"], bg="#FFF4D6" if soft else "#E3EFEC",
                              fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 8), padx=4).pack(side="right")
                 line = tk.Text(row, wrap="word", width=20, height=1, font=(FONT, 10), bg=rbg, fg=MUTED,
@@ -741,7 +844,26 @@ class App(tk.Tk):
         self.summary_lbl.config(text=f"{nm} word{'s' if nm != 1 else ''} marked out · "
                                      f"{nc} cut{'s' if nc != 1 else ''}")
 
+    def _send_from_review(self):
+        """Send the ticks as they are now (nothing is saved or learned yet)."""
+        an = dict(self.analysis)
+        an["cuts"] = [dict(c, cut=v.get()) for v, c in self.cut_vars]
+        an["mutes"] = [dict(m, on=v.get()) for v, m in self.mute_vars]
+        self.send_marks(an, "clean")
+
     def _save_from_review(self):
+        # what you ticked or unticked yourself is remembered for next time
+        marks = []
+        for v, c in self.cut_vars:
+            if v.get() != c.get("cut", True):
+                marks.append((c["kind"], c.get("key"), c.get("raw") or c["text"], not v.get()))
+            c["cut"] = v.get()
+        for v, m in self.mute_vars:
+            if v.get() != m.get("on", True):
+                marks.append(("word", m.get("key"), f"{m['ctx_raw']} {m['word_raw']} {m['ctx_after_raw']}",
+                              not v.get()))
+            m["on"] = v.get()
+        engine.learn_marks(marks)
         cuts = [c for v, c in self.cut_vars if v.get()]
         mutes = [m for v, m in self.mute_vars if v.get()]
         self.show_working("Saving the clean copy…")
@@ -773,6 +895,10 @@ class App(tk.Tk):
         if res.get("report"):
             ttk.Button(row, text="See what was removed", style="Plain.TButton",
                        command=lambda: open_path(res["report"])).pack(side="left", padx=(10, 0))
+        if self.analysis:
+            an = self.analysis
+            self._link(p, "Help CleanRead get better: send what you changed…",
+                       lambda: self.send_marks(an, "clean")).pack(anchor="w", pady=(18, 0))
 
     def reset(self):
         self.book_path, self.book, self.outdir, self.report, self.analysis = None, None, None, None, None

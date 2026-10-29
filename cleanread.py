@@ -19,11 +19,13 @@ import difflib
 import hashlib
 import html
 import json
+import os
 import re
 import sys
 import time
 import unicodedata
 import zipfile
+from datetime import date
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 
@@ -1102,9 +1104,12 @@ def _ai():
                            "update, then try again.") from ex
 
 
-def ai_find(book, defs, progress=None, cancel=None, chunk=25):
-    """The AI reads the book and quotes sentences that fit a type, then each find
-    is double-checked one at a time. Returns {(sentence index, type): 'high'|'medium'}."""
+def ai_find(book, defs, progress=None, cancel=None, chunk=40):
+    """The AI reads numbered sentences and names the ones that fit a type, quoting the words
+    that show it (a find whose words aren't in that sentence is dropped); then each find is
+    double-checked one at a time. Returns {(sentence index, type): 'high'|'medium'}.
+    Answers are short on purpose: on a PC without a graphics card, writing the answer was
+    most of the time (the old "quote the first 8 words" prompt flagged half of every chunk)."""
     ai = _ai()
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
@@ -1113,26 +1118,29 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=25):
         return {}
     listing_defs = "\n".join(f'- "{t}": {defs[t]}' for t in types)
     schema = {"type": "object", "properties": {"flags": {"type": "array", "items": {
-        "type": "object", "properties": {"quote": {"type": "string"},
-                                         "type": {"type": "string", "enum": types}},
-        "required": ["quote", "type"]}}}, "required": ["flags"]}
+        "type": "object", "properties": {"n": {"type": "integer"},
+                                         "type": {"type": "string", "enum": types},
+                                         "words": {"type": "string"}},
+        "required": ["n", "type", "words"]}}}, "required": ["flags"]}
     S = len(book.sents)
 
-    def locate(quote, lo, hi):
-        q = [nrm(w) for w in str(quote).split() if nrm(w)]
-        if len(q) < 2:
-            return None
-        best, best_i = 0.0, None
-        for i in range(lo, hi):
-            words = book.sent_words(i)
-            for st in range(0, max(1, len(words) - len(q) + 1)):
-                r = difflib.SequenceMatcher(None, q, words[st:st + len(q)], autojunk=False).ratio()
-                if r > best:
-                    best, best_i = r, i
-                if r == 1.0:
-                    break
-        return best_i if best >= 0.8 else None
+    def shows(words, i):
+        """Are the quoted words (nearly) in sentence i?"""
+        q = [nrm(w) for w in str(words).split() if nrm(w)]
+        if not q or not 0 <= i < S:
+            return False
+        sw = book.sent_words(i)
+        best = 0.0
+        for st in range(0, max(1, len(sw) - len(q) + 1)):
+            best = max(best, difflib.SequenceMatcher(None, q, sw[st:st + len(q)], autojunk=False).ratio())
+            if best == 1.0:
+                break
+        return best >= 0.8
 
+    fine = load_learned()["fine"]
+    not_these = [(t, e[1]) for t in types for e in fine.get(t, [])[-4:] if e[1]][-12:]
+    teach = ("\n\nThis family marked sentences like these as NOT a problem, so don't flag ones "
+             "like them:\n" + "\n".join(f'- "{x}" (not "{t}")' for t, x in not_these)) if not_these else ""
     cands = set()
     starts = list(range(0, S, chunk - 3))
     t0 = time.time()
@@ -1146,22 +1154,28 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=25):
         say(0.75 * n / max(len(starts), 1), f"AI is reading the book · "
             f"{100 * n // max(len(starts), 1)}%{left}")
         part = range(a, min(S, a + chunk))
-        listing = "\n".join("- " + " ".join(book.sent_text(i).split()) for i in part)
-        prompt = ("You help parents know what is in a book before their child reads it. Here are "
-                  "sentences from the book, in order:\n\n" + listing + "\n\nFind sentences that "
-                  "CLEARLY contain one of these:\n" + listing_defs + "\n\nBe strict. Ordinary "
-                  "conversation, affection, worry, danger and adventure are NOT flagged unless they "
-                  "clearly fit a type above. For each sentence you flag, copy its first 8 words "
-                  "exactly into \"quote\". Answer in JSON like {\"flags\": [{\"quote\": \"first "
-                  "words of the sentence\", \"type\": \"" + types[0] + "\"}]}; use an empty list if "
-                  "nothing fits.")
+        listing = "\n".join(f"{i - a + 1}. " + " ".join(book.sent_text(i).split()) for i in part)
+        prompt = ("You help parents know what is in a book before their child reads it. You will read "
+                  "numbered sentences and point out only the ones that clearly show one of these:\n" +
+                  listing_defs + "\n\nMost sentences in a book show none of these: everyday actions, "
+                  "feelings, worry, danger, driving, running away from a threat, and adventure are NOT "
+                  "flagged. Most of the time the answer is an empty list. Flag a sentence only if you "
+                  "can quote the exact words in it that show the type (for example, for \"ref\" the "
+                  "words must be about sex or sexual body parts)." + teach +
+                  "\n\nAnswer in JSON: {\"flags\": [{\"n\": sentence number, \"type\": \"one of the "
+                  "types\", \"words\": \"the exact words that show it\"}]}, or {\"flags\": []}."
+                  "\n\nThe sentences:\n" + listing)
         try:
             res = ai.chat(prompt, schema=schema, timeout=300)
         except Exception:
             continue
         for f in res.get("flags", []):
-            i = locate(f.get("quote", ""), part.start, part.stop)
-            if i is not None and f.get("type") in defs:
+            if f.get("type") not in defs or not isinstance(f.get("n"), int):
+                continue
+            i = a + f["n"] - 1
+            # the number is sometimes one off; the quoted words decide
+            i = next((k for k in (i, i - 1, i + 1) if k in part and shows(f.get("words"), k)), None)
+            if i is not None:
                 cands.add((i, f["type"]))
         if a + chunk >= S:
             break
@@ -1178,11 +1192,14 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=25):
         prev = " ".join(book.sent_text(i - 1).split()) if i > 0 else ""
         nxt = " ".join(book.sent_text(i + 1).split()) if i + 1 < S else ""
         ex = f"{prev}\n>>> {' '.join(book.sent_text(i).split())} <<<\n{nxt}".strip()
+        seen = [e[1] for e in fine.get(kind, [])[-3:] if e[1]]
+        seen = ("\nThe family said sentences like these do NOT count:\n" +
+                "\n".join(f'- "{x}"' for x in seen)) if seen else ""
         try:
             res = ai.chat("Below is a short excerpt from a book. The sentence between >>> and <<< is "
                           "the one being checked; the others are only context.\n\n" + ex +
-                          f"\n\nQuestion: Does the marked sentence clearly contain {defs[kind]}? "
-                          "Judge only the marked sentence. Be strict: when in doubt, answer false.\n"
+                          f"\n\nQuestion: Does the marked sentence clearly contain {defs[kind]}? " + seen +
+                          "\nJudge only the marked sentence. Be strict: when in doubt, answer false.\n"
                           'Answer in JSON: {"fits": true or false, "confidence": "high", "medium" or "low"}',
                           schema=sure_schema, timeout=120)
         except Exception:
@@ -1203,6 +1220,136 @@ def ai_second_opinion(text, definition):
         return res.get("fits")
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Learning from your marks: what you mark "Not a problem" on a content check, or
+# untick on the review page, is left out (or starts unticked) when it comes back,
+# and the AI helper sees it as examples. export_marks() puts one book's finds and
+# your marks in a file to send in (through CleanListen's inbox).
+# ---------------------------------------------------------------------------
+APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
+LEARNED = APP_DATA / "cleanread_learned.json"
+MAX_LEARNED = 400       # per kind
+
+
+def item_key(text):
+    return " ".join(re.sub(r"[^a-z0-9' ]+", " ", str(text).lower().replace("’", "'")).split())[:300]
+
+
+def word_key(before, word, after):
+    """A flagged word with up to three words either side, so only that spot matches."""
+    return item_key(" ".join(str(before).split()[-3:] + [str(word)] + str(after).split()[:3]))
+
+
+def load_learned():
+    try:
+        d = json.loads(LEARNED.read_text(encoding="utf8"))
+    except Exception:
+        d = {}
+    d.setdefault("fine", {})        # kind -> [[key, text], ...]; words are kind "word"
+    return d
+
+
+def save_learned(d):
+    try:
+        LEARNED.parent.mkdir(parents=True, exist_ok=True)
+        tmp = LEARNED.with_suffix(".tmp")
+        tmp.write_text(json.dumps(d, indent=1), encoding="utf8")
+        os.replace(tmp, LEARNED)
+    except OSError:
+        pass
+
+
+def learn_marks(marks):
+    """marks: [(kind, key, text, fine)] — remember each as fine, or forget that it was."""
+    d = load_learned()
+    for kind, key, text, fine in marks:
+        if not key:
+            continue
+        lst = [e for e in d["fine"].get(kind, []) if e[0] != key]
+        if fine:
+            lst.append([key, " ".join(str(text).split())[:200]])
+        d["fine"][kind] = lst[-MAX_LEARNED:]
+    save_learned(d)
+
+
+LEARNED_SHORTEST = 5    # shorter lines ("Shut up, Sam.") are too common to re-apply (as CleanListen)
+
+
+def fine_keys(d=None):
+    """What was marked fine, per filter. A mark only applies to what that same filter finds
+    again, so it never acts while its filter is off."""
+    d = d or load_learned()
+    return {kind: {e[0] for e in lst if len(e[0].split()) >= LEARNED_SHORTEST}
+            for kind, lst in d["fine"].items()}
+
+
+def recount(c):
+    """Count, rating and chapters of a report category, leaving out what was marked fine."""
+    items = [it for it in c["items"] if not it.get("fine")]
+    c["count"] = len(items)
+    c["rating"] = _rating(len(items))
+    c["chapters_list"] = _chapter_list(items)
+    return c
+
+
+def without_fine(res):
+    """A copy of a content check without the finds marked "Not a problem" (for the report)."""
+    out = dict(res)
+    out["cats"] = {k: recount(dict(c, items=[it for it in c["items"] if not it.get("fine")]))
+                   for k, c in res["cats"].items()}
+    out["lang"] = {k: recount(dict(c, items=[it for it in c["items"] if not it.get("fine")]))
+                   for k, c in res["lang"].items()}
+    return out
+
+
+def export_marks(found, mode, dest_dir=None):
+    """One book's finds and what you marked, in a file to send in. found is a content check
+    (mode "check") or a review (mode "clean", with the final ticks)."""
+    out = {"what": "CleanRead refined", "mode": mode, "date": date.today().isoformat(),
+           "book": found.get("title") or "", "notes": [found[k] for k in ("ai_note", "learn_note")
+                                                         if found.get(k)],
+           "items": [], "learned": load_learned()}
+    try:
+        out["version"] = json.loads((HERE / "version.json").read_text())["version"]
+    except Exception:
+        pass
+    if mode == "check":
+        for kind, c in found["cats"].items():
+            for it in c["items"]:
+                out["items"].append({"type": "sentence" if not it.get("passage") else "passage",
+                                     "kind": kind, "where": it["where"],
+                                     "origin": "AI on PC" if it.get("src") == "ai" else "word lists",
+                                     "ai": it.get("ai"), "not_a_problem": bool(it.get("fine")),
+                                     "text": it.get("raw") or it["text"]})
+        for cat, c in found["lang"].items():
+            for it in c["items"]:
+                out["items"].append({"type": "word", "kind": cat, "where": it["where"],
+                                     "word": it["word_raw"], "not_a_problem": bool(it.get("fine")),
+                                     "text": f'{it["before_raw"]} [{it["word_raw"]}] {it["after_raw"]}'})
+    else:
+        out["filters"] = found.get("opts")
+        for c in found["cuts"]:
+            out["items"].append({"type": "passage" if c.get("paras") else "sentence",
+                                 "kind": c["kind"], "where": c["where"], "removed": bool(c.get("cut", True)),
+                                 "origin": "AI on PC" if c.get("ai") else "word lists",
+                                 "note": c.get("ai_note"), "text": c.get("raw") or c["text"]})
+        for m in found["mutes"]:
+            out["items"].append({"type": "word", "kind": m["cat"], "where": m["where"],
+                                 "removed": bool(m.get("on", True)), "word": m["word_raw"],
+                                 "note": m.get("note"),
+                                 "text": f'{m["ctx_raw"]} [{m["word_raw"]}] {m["ctx_after_raw"]}'})
+    home = Path(os.environ.get("USERPROFILE") or Path.home())
+    dest = Path(dest_dir) if dest_dir else next(
+        (d for d in (home / "OneDrive" / "Desktop", home / "Desktop", home / "Documents") if d.exists()),
+        APP_DATA)
+    dest.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r'[<>:"/\\|?*]', "", out["book"])[:60].strip() or "book"
+    what = "checked" if mode == "check" else "refined"
+    path = dest / f"CleanRead {what} - {safe} {out['date']}.json"
+    path.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf8")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -1250,7 +1397,8 @@ def scan(book, use_ai=False, progress=None, cancel=None):
                 hl.append((book.words[w0 + i][1] - a, book.words[w0 + j - 1][2] - a))
         return {"si": si, "para": q, "where": book.where(q), "chapter": book.chapter_of_para(q),
                 "text": book.masked_sent(si), "raw": " ".join(book.sent_text(si).split())
-                if book.has_bad(q, a, b) else None, "hl": _hl_masked(book, si, hl), "src": src}
+                if book.has_bad(q, a, b) else None, "hl": _hl_masked(book, si, hl), "src": src,
+                "key": item_key(book.sent_text(si))}
 
     for n, (key, grp, label, desc, m) in enumerate(SCAN):
         if cancel and cancel():
@@ -1276,7 +1424,8 @@ def scan(book, use_ai=False, progress=None, cancel=None):
                 text = "\n\n".join(book.masked(x, 0, len(book.paras[x].text)) for x in run_)
                 items.append({"para": q, "paras": run_, "where": book.where(q),
                               "chapter": book.chapter_of_para(q), "text": text, "hl": [],
-                              "passage": True, "src": "list"})
+                              "passage": True, "src": "list",
+                              "key": item_key(" ".join(book.paras[x].text for x in run_))})
         res["cats"][key] = {"label": label, "group": SCAN_GROUPS[grp], "desc": desc, "items": items}
 
     say(0.47, "Counting language…")
@@ -1296,7 +1445,8 @@ def scan(book, use_ai=False, progress=None, cancel=None):
             "para": q, "where": book.where(q), "chapter": book.chapter_of_para(q),
             "word": mask_words(word), "word_raw": word,
             "before": book.masked(q, lo, a), "after": book.masked(q, b, hi),
-            "before_raw": " ".join(t[lo:a].split()), "after_raw": " ".join(t[b:hi].split())})
+            "before_raw": " ".join(t[lo:a].split()), "after_raw": " ".join(t[b:hi].split()),
+            "key": word_key(t[lo:a], word, t[b:hi])})
 
     if use_ai:
         try:
@@ -1322,13 +1472,23 @@ def scan(book, use_ai=False, progress=None, cancel=None):
             raise
         except Exception as ex:
             res["ai_note"] = f"The AI helper couldn't run ({ex}). These results are from the word lists only."
-    for c in res["cats"].values():
-        c["count"] = len(c["items"])
-        c["rating"] = _rating(c["count"])
-        c["chapters_list"] = _chapter_list(c["items"])
+    # what you marked "Not a problem" before stays marked (left out of the counts and report)
+    fk = fine_keys()
+    known = 0
+    for kind, c in res["cats"].items():
+        for it in c["items"]:
+            if it["key"] in fk.get(kind, ()):
+                it["fine"] = True
+                known += 1
+        recount(c)
     for cat, items in res["lang"].items():
-        res["lang"][cat] = {"label": dict(LANG_CATS)[cat], "items": items, "count": len(items),
-                            "rating": _rating(len(items)), "chapters_list": _chapter_list(items)}
+        for it in items:
+            if it["key"] in fk.get("word", ()):
+                it["fine"] = True
+                known += 1
+        res["lang"][cat] = recount({"label": dict(LANG_CATS)[cat], "items": items})
+    if known:
+        res["learn_note"] = f"Left out {known} thing(s) you marked “Not a problem” before."
     say(1.0, "Done")
     return res
 
@@ -1387,7 +1547,8 @@ def _hl_html(text, hl):
 
 
 def report_html(res):
-    chip = {"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
+    res = without_fine(res)
+    chip ={"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
             "some": ("#FFF1D6", "#8A5A00"), "a lot": ("#FBE1DC", "#9A2F1F")}
     when = time.strftime("%B %d, %Y")
     title = res["title"] or "Book"
@@ -1542,14 +1703,17 @@ def analyze(book, opts, progress=None, cancel=None):
                       "word": mask_words(word), "word_raw": word,
                       "ctx": book.masked(q, lo, a), "ctx_after": book.masked(q, b, hi),
                       "ctx_raw": " ".join(t[lo:a].split()), "ctx_after_raw": " ".join(t[b:hi].split()),
+                      "key": word_key(t[lo:a], word, t[b:hi]),
                       "on": not doubt, **({"note": doubt} if doubt else {})})
 
     cuts = []
 
     def add_passages(kind):
         for run_ in find_passages(book, kind):
+            raw = "\n\n".join(book.paras[x].text for x in run_)
             cuts.append({"kind": kind, "paras": run_, "para": run_[0], "where": book.where(run_[0]),
-                         "text": "\n\n".join(book.masked(x, 0, len(book.paras[x].text)) for x in run_)})
+                         "text": "\n\n".join(book.masked(x, 0, len(book.paras[x].text)) for x in run_),
+                         "raw": raw, "key": item_key(raw)})
 
     if opts.get("sex"):
         say(0.1, "Looking for sex scenes…")
@@ -1611,14 +1775,28 @@ def analyze(book, opts, progress=None, cancel=None):
     for n, c in enumerate(cuts, 1):
         c["id"] = n
         c.setdefault("cut", True)
+    # what you kept (or marked "Not a problem") before starts unticked
+    fk = fine_keys()
+    known = 0
+    for c in cuts:
+        if c["key"] in fk.get(c["kind"], ()):
+            c["cut"], c["ai_note"] = False, "You kept this before"
+            known += 1
+    for m in mutes:
+        if m["key"] in fk.get("word", ()):
+            m["on"], m["note"] = False, "You kept this before"
+            known += 1
+    learn_note = f"Left {known} thing(s) unticked that you kept before." if known else ""
     say(1.0, "Done")
-    return {"cuts": cuts, "mutes": mutes, "ai_note": ai_note, "title": book.title}
+    return {"cuts": cuts, "mutes": mutes, "ai_note": ai_note, "learn_note": learn_note,
+            "title": book.title, "opts": opts}
 
 
 def _sent_cut(book, kind, run_):
     q = book.sents[run_[0]][0]
+    raw = " ".join(" ".join(book.sent_text(si).split()) for si in run_)
     return {"kind": kind, "sents": run_, "para": q, "where": book.where(q),
-            "text": " ".join(book.masked_sent(si) for si in run_)}
+            "text": " ".join(book.masked_sent(si) for si in run_), "raw": raw, "key": item_key(raw)}
 
 
 AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks", "bugger",
