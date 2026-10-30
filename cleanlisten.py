@@ -641,16 +641,33 @@ def listed_word(text, cats):
     return bool(ws) and bool(find_language(ws, list(cats)))
 
 
-def find_language(words, cats, lead_in_too=False):
+def find_language(words, cats, lead_in_too=False, mine=()):
     """Return (i, j, category) spans of words[i:j] to mute. With lead_in_too, a swear's
-    lead-in ("what the" hell) is part of its span."""
-    hits = _find_language(words, cats)
+    lead-in ("what the" hell) is part of its span. mine: your own words and phrases (tuples of
+    normalised words), always muted, as category "mine" (as in CleanView)."""
+    own = []
+    for ph in sorted(mine, key=len, reverse=True):
+        for i in range(len(words) - len(ph) + 1):
+            if tuple(words[i:i + len(ph)]) == ph and not any(a < i + len(ph) and i < b for a, b, _ in own):
+                own.append((i, i + len(ph), "mine"))
+    hits = [h for h in _find_language(words, cats)
+            if not any(a < h[1] and h[0] < b for a, b, _ in own)]
     if lead_in_too:
         for k, (i, j, cat) in enumerate(hits):
             back = lead_in(words, i) if cat in LEAD_CATS else 0
             if back and (k == 0 or hits[k - 1][1] <= i - back):
                 hits[k] = (i - back, j, cat)
-    return hits
+    return sorted(own + hits)
+
+
+def own_phrases(lines):
+    """Your own words to mute (one per line, as typed) -> tuples of normalised words."""
+    out = []
+    for line in lines or ():
+        ph = tuple(w for w in (norm(t) for t in str(line).split()) if w)
+        if ph and ph not in out:
+            out.append(ph)
+    return out
 
 
 def _find_language(words, cats):
@@ -1543,8 +1560,25 @@ AI_TYPES = {
     "sex": "part of a sex scene, judged by what is happening, not by where they are or whether "
            "they are dressed: it includes oral sex and touching someone's private parts (two "
            "people only talking, sitting or lying in bed is NOT this)",
-    "gore": "a graphic, gory description of injuries, wounds, dead bodies or violence (simply "
-            "saying someone died, was shot or was found dead is NOT this)",
+    "graphic": "a graphic description of blood, bloody wounds or injuries, or a bloody body "
+               "(simply saying someone died, was shot or was found dead is NOT this)",
+    "gore": "a description of insides on the outside: organs, entrails, brains, or a body cut "
+            "apart or dismembered",
+    "violence": "violence: a fight, a shooting, a stabbing, a beating or an attack, or a killing "
+                "heard or described by what follows (a gunshot, then someone or an animal is dead) "
+                "(saying someone died of illness or old age, or a weapon simply mentioned, is NOT "
+                "this)",
+    "disturbing": "disturbing violence outside a fight: torture, an execution, cruelty to someone "
+                  "helpless or to an animal, or the bloody aftermath of an accident (a car crash, a "
+                  "fall)",
+    "nudity": "someone described naked, or their private parts shown or seen (being in the bath or "
+              "getting undressed without the body being described is NOT this)",
+    "implied": "implied nudity: someone naked but covered or not described: under the sheets, in a "
+               "towel, a bare back, skinny-dipping, getting undressed",
+    "immodest": "immodest clothing: someone wearing or shown in a swimsuit, underwear or revealing "
+                "clothes, or sexy dancing",
+    "gestures": "a rude or sexual gesture: someone giving the middle finger ('flipped him off', 'gave "
+                "him the finger') or making a crude sexual gesture",
     "religion": None,      # set below from RELIGION_PARTS (religion_def)
     "relationship": "a same-sex couple, romance, relationship or flirting (for example a man "
                     "flirting with or hitting on another man), or a non-traditional relationship "
@@ -1561,11 +1595,16 @@ AI_TYPES = {
                   "they're told, openly disobeying, sneaking out or lying to them (grown-ups "
                   "disagreeing with each other, a child politely saying no or standing up to "
                   "something wrong, friendly teasing, or a child asking why are NOT this)",
-    "kiss": "romantic kissing or making out between two people (a parent kissing a child, or a "
+    "kiss": "a man and a woman kissing romantically or making out (a parent kissing a child, or a "
             "greeting kiss on the cheek, is NOT this)",
-    "sleeping": "an unmarried couple sleeping together or living together, sleeping around, "
-                "cheating on a husband, wife or partner, or an affair",
-    "substances": "someone drinking alcohol, being drunk, smoking, vaping or using drugs",
+    "kiss_ss": "two men or two women kissing romantically or making out (a friendly kiss on the "
+               "cheek is NOT this)",
+    "sleeping": "sleeping around: casual sex, hooking up, a one-night stand, cheating on a husband, "
+                "wife or partner, or an affair",
+    "unmarried": "an unmarried man and woman living together or sleeping together",
+    "smoking": "someone smoking or vaping (cigarettes, cigars, a pipe)",
+    "drinking": "someone drinking alcohol or being drunk",
+    "drugs": "someone using illegal drugs or being high",
     "flirt": "flirting: someone flirting with, hitting on, winking at, sweet-talking or making "
              "romantic advances toward someone (a married couple being affectionate, a simple "
              "compliment or ordinary friendliness is NOT this)",
@@ -1707,15 +1746,21 @@ def religion_def(parts=("preach", "anger")):
 
 
 AI_TYPES["religion"] = religion_def()
-PASSIONATE_KISS = ("passionate romantic kissing or making out (a quick or gentle kiss, or a parent "
-                   "kissing a child, is NOT this)")
+PASSIONATE_KISS = ("a man and a woman kissing passionately or making out (a quick or gentle kiss, "
+                   "or a parent kissing a child, is NOT this)")
 
 
-def ai_defs_for(religion_parts=("preach", "anger"), kiss="all"):
+PASSIONATE_KISS_SS = ("two men or two women kissing passionately or making out (a quick or "
+                      "friendly kiss on the cheek is NOT this)")
+
+
+def ai_defs_for(religion_parts=("preach", "anger"), kiss="all", kiss_ss="all"):
     """The AI's definitions that depend on the options: religion's parts, and kissing."""
     out = {"religion": religion_def(religion_parts)}
     if kiss == "passionate":
         out["kiss"] = PASSIONATE_KISS
+    if kiss_ss == "passionate":
+        out["kiss_ss"] = PASSIONATE_KISS_SS
     return out
 
 
@@ -1726,17 +1771,48 @@ def _read():
     return cleanread
 
 
+# CleanView's sentence filters for books (1.11.0): each is its own box, with CleanRead's word lists
+MORE_KINDS = ("sleeping", "unmarried", "nudity", "implied", "immodest", "violence", "disturbing",
+              "smoking", "drinking", "drugs", "gestures")
+MORE_LABELS = {"sleeping": "sleeping around", "unmarried": "unmarried couples living together",
+               "nudity": "nudity", "implied": "implied nudity", "immodest": "immodest clothing",
+               "violence": "violence", "disturbing": "disturbing violence", "smoking": "smoking",
+               "drinking": "drinking", "drugs": "drug use", "gestures": "rude gestures",
+               "graphic": "graphic violence", "kiss_ss": "same-sex kissing"}
+_MATCHERS = {"sleeping": "SLEEPING", "unmarried": "UNMARRIED", "nudity": "NUDITY",
+             "implied": "IMPLIED", "immodest": "IMMODEST", "violence": "VIOLENCE",
+             "disturbing": "DISTURBING", "smoking": "SMOKING", "drinking": "DRINKING",
+             "drugs": "DRUGS", "gestures": "GESTURES"}
+
+
+def sentence_hit(kind, words):
+    """Does one sentence fit one of MORE_KINDS by the word lists?"""
+    return bool(getattr(_read(), _MATCHERS[kind])(words))
+
+
 def sleeping_hit(words):
-    return bool(_read().SLEEPING(words))
-
-
-def substances_hit(words):
-    return bool(_read().SUBSTANCES(words))
+    return sentence_hit("sleeping", words)
 
 
 def kiss_hit(words, mode="all"):
-    """mode: "passionate" (only passionate kissing) or "all" (any romantic kiss)."""
-    return bool(_read().kiss_hit(words, mode))
+    """A man and a woman kissing. mode: "passionate" (only passionate kissing) or "all"."""
+    return bool(_read().kiss_hit(words, mode)) and not relationship_hit(words)
+
+
+def kiss_ss_hit(words, mode="all"):
+    """Two men or two women kissing (the word lists see a same-sex relationship in it)."""
+    return bool(_read().kiss_hit(words, mode)) and relationship_hit(words)
+
+
+# Gory descriptions come in two levels, as in CleanView: graphic (blood, bloody wounds) and gore
+# (insides on the outside). A gory passage with any of these words is gore.
+GORE_INSIDES = _c([r"entrails", r"intestines?", r"innards", r"viscera", r"guts", r"organs",
+                   r"disembowel.*", r"eviscerat.*", r"decapitat.*", r"beheaded", r"dismember.*",
+                   r"severed", r"brains", r"insides", r"eyeballs?"])
+
+
+def gore_level(words):
+    return "gore" if any(p.match(w) for w in words for p in GORE_INSIDES) else "graphic"
 
 
 def _ai_backed(kind, words):
@@ -1759,12 +1835,14 @@ def _ai_backed(kind, words):
             return flirt_hit(words)
         if kind == "relationship":
             return relationship_hit(words)
-        if kind == "sleeping":
-            return sleeping_hit(words)
-        if kind == "substances":
-            return substances_hit(words)
+        if kind in MORE_KINDS:
+            return sentence_hit(kind, words)
+        if kind == "graphic":
+            return is_gory(words)
         if kind == "kiss":
             return kiss_hit(words, "all")
+        if kind == "kiss_ss":
+            return kiss_ss_hit(words, "all")
         if kind in TOPICS:
             return topic_hit(kind, words)
     except Exception:
@@ -2106,7 +2184,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False,
             find_disrespect=False,
             strict_religion=False, find_topics=(), title="", find_sleeping=False,
-            find_substances=False, kiss="keep", religion_parts=None):
+            find_substances=False, kiss="keep", religion_parts=None, more=(), kiss_ss="keep",
+            find_graphic=None, mine=()):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json). find_topics: any of TOPICS (holidays, birthday candles, magic,
     dark magic) to cut."""
@@ -2146,11 +2225,22 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     say(0.93, "Finding language…")
     asr_t = [w["t"] for w in asr]
     mutes = []
-    for i, j, cat in find_language(asr_n, cats, lead_in_too=True):
+    # CleanView's filters for books (1.11.0): more = the sentence filters ticked (MORE_KINDS);
+    # find_substances (1.10.0's one box) means smoking, drinking and drugs; gory descriptions
+    # are graphic (blood) and gore (insides), and find_gore alone means both, as before
+    more = set(more) | ({"smoking", "drinking", "drugs"} if find_substances else set())
+    more |= {"sleeping"} if find_sleeping else set()
+    more &= set(MORE_KINDS)
+    if find_graphic is None:
+        find_graphic = find_gore
+    mine = [tuple(m) for m in mine]
+    for i, j, cat in find_language(asr_n, cats, lead_in_too=True, mine=mine):
         b, a = clean_context(asr_t, asr_n, i, j)
         mutes.append({"part": asr[i]["part"], "s": asr[i]["s"], "e": asr[j - 1]["e"], "cat": cat,
                       "src": "audio", "word": shown(asr_t[i:j], asr_n[i:j]),
-                      "ctx": b, "ctx_after": a, "i": i, "j": j, **raw_fields(asr_t, i, j)})
+                      "ctx": b, "ctx_after": a, "i": i, "j": j, **raw_fields(asr_t, i, j),
+                      # your own words: yours, so no AI ever unticks them
+                      **({"by_you": True, "note": "Your own words"} if cat == "mine" else {})})
 
     paras = mapping = None
     ebook_note = ""
@@ -2180,7 +2270,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             paras = mapping = None
         else:
             added = 0
-            for i, j, cat in find_language(eb_n, cats, lead_in_too=True):
+            for i, j, cat in find_language(eb_n, cats, lead_in_too=True, mine=mine):
                 t = est_time(i, mapping, asr)
                 if not t:
                     continue
@@ -2330,9 +2420,12 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     if find_sex:
         say(0.97, "Looking for sex scenes\u2026")
         scenes += find_passages(sex_score, SEX_C, SEX_WINDOW_SCORE, "sex")
-    if find_gore:
+    if find_gore or find_graphic:
         say(0.98, "Looking for gory descriptions\u2026")
-        scenes += find_passages(gore_score, GORE_C, GORE_WINDOW_SCORE, "gore")
+        for sc in find_passages(gore_score, GORE_C, GORE_WINDOW_SCORE, "gore"):
+            sc["kind"] = gore_level([norm(w) for w in sc["text"].split()])
+            if find_gore if sc["kind"] == "gore" else find_graphic:
+                scenes.append(sc)
     if find_refs:
         # any sentence that talks about sex, even in passing
         say(0.99, "Looking for sexual references\u2026")
@@ -2409,12 +2502,12 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                                (find_disrespect, disrespect_hit, "disrespect",
                                 "Looking for disrespect…"),
                                (find_flirt, flirt_hit, "flirt", "Looking for flirting…"),
-                               (find_sleeping, sleeping_hit, "sleeping",
-                                "Looking for sleeping around…"),
-                               (find_substances, substances_hit, "substances",
-                                "Looking for drinking, smoking & drugs…"),
+                               *((True, lambda w, k=k: sentence_hit(k, w), k,
+                                  f"Looking for {MORE_LABELS[k]}…") for k in MORE_KINDS if k in more),
                                (kiss in ("passionate", "all"), lambda w: kiss_hit(w, kiss), "kiss",
                                 "Looking for kissing…"),
+                               (kiss_ss in ("passionate", "all"), lambda w: kiss_ss_hit(w, kiss_ss),
+                                "kiss_ss", "Looking for same-sex kissing…"),
                                *((t in find_topics, lambda w, t=t: topic_hit(t, w), t,
                                   f"Looking for {TOPIC_LABELS[t].lower()}…") for t in TOPICS)):
         if not on:
@@ -2436,14 +2529,16 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             scenes.append({"kind": kind, "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     ai_note = ""
-    kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
+    kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("graphic", find_graphic),
+                             ("gore", find_gore),
                              ("religion", find_religion), ("relationship", find_relationships),
                              ("crude", find_crude), ("bully", find_bully),
                              ("disrespect", find_disrespect),
-                             ("flirt", find_flirt), ("sleeping", find_sleeping),
-                             ("substances", find_substances), ("kiss", kiss in ("passionate", "all")),
+                             ("flirt", find_flirt), *((k, k in more) for k in MORE_KINDS),
+                             ("kiss", kiss in ("passionate", "all")),
+                             ("kiss_ss", kiss_ss in ("passionate", "all")),
                              *((t, t in find_topics) for t in TOPICS)) if on]
-    ai_defs = ai_defs_for(rparts, kiss)
+    ai_defs = ai_defs_for(rparts, kiss, kiss_ss)
     ai_job = None
     if use_ai and use_claude:
         # both look (Lauren, 2026-10-29), at the same time: the AI on this PC reads its own copy
@@ -2496,7 +2591,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
           "ai_note": ai_note, "sentences": sents, "title": title,
           "filters": {"cats": cats, "kinds": kinds,
                       "strict_religion": bool(find_religion and "prayers" in rparts),
-                      "religion_parts": sorted(rparts) if find_religion else [], "kiss": kiss}}
+                      "religion_parts": sorted(rparts) if find_religion else [], "kiss": kiss,
+                      "kiss_ss": kiss_ss}}
     try:   # what CleanListen has learned from your past choices (and Claude's, and the shared file)
         import cleanlisten_learn as learn
         import cleanlisten_claude as cc
@@ -2842,8 +2938,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                      "ref": "sexual reference", "religion": "religious content",
                      "relationship": "relationship content",
                      "crude": "crude humor", "bully": "bullying", "disrespect": "disrespect",
-                     "sleeping": "sleeping around", "substances": "drinking, smoking & drugs",
-                     "kiss": "kissing",
+                     **MORE_LABELS, "kiss": "kissing",
                      "flirt": "flirting",
                      **{t: TOPIC_LABELS[t].lower() for t in TOPICS}}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "

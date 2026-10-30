@@ -737,24 +737,42 @@ def romance_spans(words, near=None):
     return sp
 
 
-_SLEEPING = Matcher(
+# Sleeping around (casual sex, affairs) and unmarried couples living or sleeping together are two
+# boxes, as in CleanView (1.11.0)
+_CASUAL = Matcher(
     words=[r"adulter(y|ous|er|ers|ess)", r"infidelit(y|ies)", r"adulterers?"],
-    phrases=["slept|sleep|sleeping|sleeps together", "spent|spend|spending|spends the night together",
-             "spent|spend|spending the night with", "moved|move|moving in together",
-             "living|lived|live|lives together", "one night stand|stands",
+    phrases=["one night stand|stands",
              "cheated|cheating|cheats|cheat on " + P(["her", "him", "his", "my", "your", "their"]),
              "having|had|has|have an affair", "an|the|their|his|her|secret|torrid affair with",
-             "live-in|livein boyfriend|girlfriend|lover", "sleeping|slept|sleeps around",
+             "sleeping|slept|sleeps around", "hooked|hooking|hook up with",
              "were|became|become|are|be|being|been lovers", "secret|illicit lover|lovers",
              "took|take|taking|taken|takes a lover", "his mistress",
              "kept|keep|keeps|keeping|took|take a mistress"])
+_UNMARRIED = Matcher(
+    phrases=["slept|sleep|sleeping|sleeps together", "spent|spend|spending|spends the night together",
+             "spent|spend|spending the night with", "moved|move|moving in together",
+             "living|lived|live|lives together", "live-in|livein boyfriend|girlfriend|lover",
+             "moved|move|moving in with her|his|my boyfriend|girlfriend"])
+NOT_A_COUPLE = FAMILY | {"girls", "boys", "sisters", "brothers", "friends", "roommates", "family",
+                         "families", "children"}
 
 
 def SLEEPING(words, near=None):
-    """Not "we slept together as children" or "living together with her sisters"."""
-    sp = _SLEEPING(words)
-    return sp if sp and not (FAMILY | {"girls", "boys", "sisters", "brothers", "friends", "roommates",
-                                       "family", "families", "children"}) & set(words) else []
+    """Sleeping around: casual sex, affairs, cheating."""
+    sp = _CASUAL(words)
+    return sp if sp and not NOT_A_COUPLE & set(words) else []
+
+
+def UNMARRIED(words, near=None):
+    """An unmarried couple living or sleeping together. Not "we slept together as children" or
+    "living together with her sisters"; and a married couple isn't this."""
+    sp = _UNMARRIED(words)
+    return sp if sp and not (NOT_A_COUPLE | {"married", "husband", "wife", "wedding"}) & set(words) else []
+
+
+def SLEEPING_ALL(words, near=None):
+    """Both, for the content check's "Sleeping around, affairs & living together"."""
+    return SLEEPING(words) + UNMARRIED(words)
 SUBSTANCES = Matcher(
     words=[r"drunk(en|enly|ard|ards|s)?", r"beers?", r"wines?", r"whiske?y", r"vodka", r"tequila",
            r"booze", r"boozing", r"liquor", r"alcohol(ic|ics|ism)?", r"hangover", r"hungover",
@@ -763,6 +781,62 @@ SUBSTANCES = Matcher(
            r"champagne", r"cocktails?", r"brandy", r"bourbon", r"gin", r"tipsy", r"smoked",
            r"smoking", r"stoned"],
     phrases=["got|getting|get high", "a|another|his|her drink"])
+
+# CleanView's other filters, for books (1.11.0): smoking, drinking and drugs as three boxes, and
+# nudity, implied nudity, immodest clothing, rude gestures, violence and disturbing violence.
+# The word lists catch the plain cases; the AI helper and Claude read for the rest.
+SMOKING = Matcher(
+    words=[r"cigarettes?", r"cigars?", r"cigarillos?", r"tobacco", r"vap(e|es|ing|ed)", r"smoked",
+           r"smoking", r"smokes", r"nicotine"],
+    phrases=["lit|lighting|lights a|his|her|another cigarette|cigar|pipe",
+             "smoke|smoked|smoking|smokes a|his|her pipe"])
+DRINKING = Matcher(
+    words=[r"drunk(en|enly|ard|ards|s)?", r"beers?", r"wines?", r"whiske?y", r"vodka", r"tequila",
+           r"booze", r"boozing", r"liquor", r"alcohol(ic|ics|ism)?", r"hangover", r"hungover",
+           r"champagne", r"cocktails?", r"brandy", r"bourbon", r"gin", r"tipsy", r"rum", r"scotch",
+           r"sloshed"],
+    phrases=["a|another|his|her drink", "had|has|have been drinking", "got|getting|get drunk"])
+DRUGS = Matcher(
+    words=[r"marijuana", r"cocaine", r"heroin", r"meth", r"methamphetamine", r"opioids?",
+           r"overdos(e|ed|es|ing)", r"bong", r"stoned", r"ecstasy", r"lsd",
+           r"junkie", r"junkies", r"narcotics?"],
+    phrases=["got|getting|get|was|were high", "smoked|smoking|smoke|smokes pot|weed",
+             "smoked|smoking|smoke|smokes a joint",
+             "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line",
+             "shot|shooting up"])
+NUDITY = Matcher(
+    words=[r"naked", r"nude", r"nudity", r"nudist", r"topless", r"bottomless"],
+    phrases=["in the buff|raw", "stark naked", "bare breasts|breast|bottom|buttocks",
+             "took|takes|taking off all her|his|their|my clothes"])
+IMPLIED = Matcher(
+    words=[r"undress(ed|es|ing)?", r"skinnydipping"],
+    phrases=["wrapped|wearing nothing but a|her|his towel|sheet", "in only a|her|his towel",
+             "wrapped in a|her|his towel|sheet",
+             "under the sheets !with", "bare back|backs|shoulders|chest", "skinny dipping|dip|dipped",
+             "nothing on but", "wasn't|weren't|was not wearing anything"])
+IMMODEST = Matcher(
+    words=[r"bikinis?", r"lingerie", r"thongs?", r"negligees?", r"miniskirts?", r"striptease",
+           r"strippers?"],
+    phrases=["in her|his|their underwear|bra|panties|boxers", "low cut dress|top|neckline", "lowcut dress|top|neckline",
+             "pole|lap dance|dancing|dancer", "skimpy|revealing outfit|dress|top|clothes|swimsuit"])
+GESTURES = Matcher(
+    phrases=["flipped|flip|flips|flipping him|her|them|me|us|you|everyone off",
+             "flipped|flip|flips|flipping him|her|them|me|us|you the bird",
+             "gave|give|gives|giving him|her|them|me|us|you the finger", "middle finger",
+             "flipped|flip the bird"])
+VIOLENCE = Matcher(
+    words=[r"kill(s|ed|ing)", r"murder(s|ed|ing)?", r"punch(ed|es|ing)", r"stab(s|bed|bing)",
+           r"strangl(ed|es|ing)", r"slaughter(ed|ing)?", r"brawl(s|ed|ing)?", r"assault(ed|ing)",
+           r"slapp(ed|ing)", r"pummel(l)?(ed|ing)", r"clubbed", r"bludgeon(ed|ing)", r"gunshots?",
+           r"shootout", r"gunfire", r"fistfight"],
+    phrases=["beat|beats|beating|beaten him|her|them|me|you|us up", "beat up",
+             "shot him|her|them|me|you|at|dead", "slit his|her|their throat",
+             "kicked|kicks|kicking him|her|them|me in", "hit|punched him|her|them in the"])
+DISTURBING = Matcher(
+    words=[r"tortur(e|ed|es|ing|er|ers)", r"executions?", r"executioners?", r"behead(ed|ing)",
+           r"hanged", r"lynch(ed|ing)", r"massacre(d|s)?"],
+    phrases=["executed him|her|them", "firing squad", "burned alive", "buried alive"])
+
 
 CLEAN_AI = dict(E.AI_TYPES)     # the same definitions as CleanListen (kissing, drinking... too)
 
@@ -894,7 +968,7 @@ SCAN = [
     ("ref", 2, "Sexual references", "sentences that mention sex or sexual body parts", None),
     ("sex", 2, "Sexual or sensual scenes", "whole passages heavy with sexual or sensual description", None),
     ("sleeping", 2, "Sleeping around, affairs & living together",
-     "unmarried couples sleeping or living together, affairs, cheating", SLEEPING),
+     "unmarried couples sleeping or living together, affairs, cheating", SLEEPING_ALL),
     ("relationship", 2, "Same-sex & non-traditional relationships",
      "same-sex couples or flirting, throuples, open marriages, polygamy", "rel"),
     ("gender", 2, "Gender identity topics", "transgender or non-binary characters, pronoun talk",
@@ -1691,9 +1765,24 @@ button{{background:#3A3734;color:var(--ink)}} mark{{background:#5A2E27;color:#FF
 CLEAN_LABELS = {"sex": "Explicit scenes", "ref": "Sexual references", "gore": "Gory descriptions",
                 "religion": "Religious content", "relationship": "Same-sex & non-traditional relationships",
                 "crude": "Crude humor", "bully": "Bullying", "disrespect": "Disrespect",
-                "flirt": "Flirting", "kiss": "Kissing",
-                "sleeping": "Sleeping around & affairs", "substances": "Drinking, smoking & drugs",
-                **E.TOPIC_LABELS}
+                "flirt": "Flirting", "kiss": "Kissing", "kiss_ss": "Same-sex kissing",
+                "graphic": "Graphic violence", "violence": "Violence", "disturbing": "Disturbing",
+                "sleeping": "Sleeping around & affairs", "unmarried": "Unmarried couples together",
+                "nudity": "Nudity", "implied": "Implied nudity", "immodest": "Immodest clothing",
+                "smoking": "Smoking", "drinking": "Drinking", "drugs": "Drug use",
+                "gestures": "Rude gestures", **E.TOPIC_LABELS}
+
+
+def _upgrade(opts):
+    """Ticks saved before 1.11.0: one box for smoking, drinking and drugs, gory descriptions
+    meaning graphic and gore, and same-sex words going with the relationships box."""
+    opts = dict(opts)
+    if "substances" in opts:
+        for k in ("smoking", "drinking", "drugs"):
+            opts.setdefault(k, opts["substances"])
+    opts.setdefault("graphic", opts.get("gore"))
+    opts.setdefault("samesexwords", opts.get("relationships"))
+    return opts
 
 
 def religion_parts(opts):
@@ -1708,15 +1797,17 @@ def religion_parts(opts):
 def analyze(book, opts, progress=None, cancel=None):
     """opts: dict of the filter ticks. Returns {"cuts": [...], "mutes": [...]}."""
     say = progress or (lambda f, m: None)
+    opts = _upgrade(opts)
     cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude") if opts.get(g)
             for c in E.GROUPS[g]]
     # religion in parts, as in CleanListen (Jason): preaching, anger at God, prayers & verses
     rparts = religion_parts(opts)
-    if opts.get("relationships"):
+    if opts.get("samesexwords"):        # words about same-sex relationships (gay, lesbian...)
         cats.append("orientation")
+    mine = E.own_phrases(opts.get("mywords"))      # your own words, always marked out
     say(0.02, "Finding language…")
     mutes = []
-    for i, j, cat in E.find_language(book.wn, cats):
+    for i, j, cat in E.find_language(book.wn, cats, mine=mine):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
@@ -1746,9 +1837,13 @@ def analyze(book, opts, progress=None, cancel=None):
     if opts.get("sex"):
         say(0.1, "Looking for sex scenes…")
         add_passages("sex")
-    if opts.get("gore"):
+    if opts.get("gore") or opts.get("graphic"):
         say(0.15, "Looking for gory descriptions…")
+        n0 = len(cuts)
         add_passages("gore")
+        for c in cuts[n0:]:            # graphic (blood) or gore (insides), as in CleanView
+            c["kind"] = E.gore_level([E.norm(w) for w in c["raw"].split()])
+        cuts[n0:] = [c for c in cuts[n0:] if opts.get(c["kind"])]
     if "preach" in rparts:
         say(0.2, "Looking for religious content…")
         add_passages("religion")
@@ -1766,9 +1861,10 @@ def analyze(book, opts, progress=None, cancel=None):
         ("bully", opts.get("bully"), E.bully_hit),
         ("disrespect", opts.get("disrespect"), E.disrespect_hit),
         ("flirt", opts.get("flirt"), E.flirt_hit),
-        ("kiss", kiss_mode in ("passionate", "all"), lambda w: kiss_hit(w, kiss_mode)),
-        ("sleeping", opts.get("sleeping"), lambda w: bool(SLEEPING(w))),
-        ("substances", opts.get("substances"), lambda w: bool(SUBSTANCES(w))),
+        ("kiss", kiss_mode in ("passionate", "all"), lambda w: E.kiss_hit(w, kiss_mode)),
+        ("kiss_ss", opts.get("kiss_ss", "keep") in ("passionate", "all"),
+         lambda w: E.kiss_ss_hit(w, opts.get("kiss_ss"))),
+        *((k, opts.get(k), lambda w, k=k: E.sentence_hit(k, w)) for k in E.MORE_KINDS),
         *((t, opts.get(t), lambda w, t=t: E.topic_hit(t, w)) for t in E.TOPICS),
     ]
     taken = set()
@@ -1787,14 +1883,17 @@ def analyze(book, opts, progress=None, cancel=None):
 
     ai_note = ""
     if opts.get("ai"):
+        kiss_ss = opts.get("kiss_ss", "keep")
         kinds = {k: CLEAN_AI[k] for k, on in (
-            ("ref", opts.get("refs")), ("sex", opts.get("sex")), ("gore", opts.get("gore")),
+            ("ref", opts.get("refs")), ("sex", opts.get("sex")), ("graphic", opts.get("graphic")),
+            ("gore", opts.get("gore")),
             ("religion", bool(rparts)), ("relationship", opts.get("relationships")),
             ("crude", opts.get("crude")), ("bully", opts.get("bully")),
             ("disrespect", opts.get("disrespect")), ("flirt", opts.get("flirt")),
-            ("kiss", kiss_mode in ("passionate", "all")), ("sleeping", opts.get("sleeping")),
-            ("substances", opts.get("substances")), *((t, opts.get(t)) for t in E.TOPICS)) if on}
-        kinds.update({k: t for k, t in E.ai_defs_for(rparts, kiss_mode).items() if k in kinds})
+            ("kiss", kiss_mode in ("passionate", "all")),
+            ("kiss_ss", kiss_ss in ("passionate", "all")),
+            *((k, opts.get(k)) for k in E.MORE_KINDS), *((t, opts.get(t)) for t in E.TOPICS)) if on}
+        kinds.update({k: t for k, t in E.ai_defs_for(rparts, kiss_mode, kiss_ss).items() if k in kinds})
         try:
             ai_note = _ai_clean(book, cuts, mutes, kinds, taken, in_passage,
                                 lambda f, m: say(0.4 + 0.6 * f, m), cancel)

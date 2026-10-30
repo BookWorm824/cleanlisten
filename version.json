@@ -1,5 +1,5 @@
 {
- "version": "1.10.1",
+ "version": "1.11.0",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -12,6 +12,7 @@
   "icon.ico",
   "cleanview_ai.py",
   "CleanView.pyw",
+  "filters.py",
   "shortcuts.py",
   "cleanread.py",
   "CleanRead.pyw",

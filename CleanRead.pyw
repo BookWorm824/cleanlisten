@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cleanread as engine  # noqa: E402
+import filters as F  # noqa: E402  (the filters, shared with CleanListen)
 
 
 def chime():
@@ -38,31 +39,6 @@ CHIP = {"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
         "some": ("#FFF1D6", "#8A5A00"), "a lot": ("#FBE1DC", "#9A2F1F")}
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt"), ("All files", "*.*")]
 
-# (key, label, on by default)
-WORD_OPTS = [("swearing", "Swearing  (f-word, s-word, b-word…)", True),
-             ("mild", "Mild words  (damn, hell, crap, “screw you”)", True),
-             ("deity", "God's name used as a swear", True),
-             ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
-             ("sexual", "Sexual words  (sex, sexy, horny…)", True),
-             ("rude", "Rude words kids copy  (stupid, shut up…)", False)]
-CUT_OPTS = [("sex", "Sex scenes  (whole passages)", True),
-            ("refs", "Sexual references", True),
-            ("sleeping", "Sleeping around, affairs & living together", False),
-            ("flirt", "Flirting", False),
-            ("relationships", "Same-sex & non-traditional relationships", True),
-            ("gore", "Gory descriptions", True),
-            ("religion", "Religious content", True),
-            ("religion_parts", None, None),     # preaching, anger at God, prayers & verses (Jason)
-            ("crude", "Crude humor  (toilet & gross-out jokes)", True),
-            ("bully", "Bullying  (taunts, name-calling)", False),
-            ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
-            ("substances", "Drinking, smoking & drugs", False)]
-# "For young kids" (all off unless ticked), two to a row: Christmas, Halloween, Valentine's,
-# Easter and St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic
-KID_OPTS = [("holiday", "Holidays"), ("birthday", "Birthday candles"), ("magic", "Magic"),
-            ("darkmagic", "Dark magic"), ("vampires", "Vampires & werewolves")]
-KISS = [("keep", "Keep all kissing"), ("passionate", "Cut passionate kissing"),
-        ("all", "Cut all romantic kissing")]
 STYLE = [("dash", "Replace with a dash  ( — )"), ("stars", "First letter and stars  (d***)"),
          ("remove", "Take the word out completely")]
 
@@ -295,58 +271,14 @@ class App(tk.Tk):
                        "a minute; with it, the check takes longer (20–60 minutes for a novel).")
             return
         b3 = self._card(self.opt_host, "3", "What to take out")
-        grid = tk.Frame(b3, bg=CARD)
-        grid.pack(fill="x")
-        self.opts = {}
-        tk.Label(grid, text="Words (marked out)", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
-            row=0, column=0, sticky="w")
-        tk.Label(grid, text="Content (cut)", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
-            row=0, column=1, sticky="w")
-        for n, (key, label, on) in enumerate(WORD_OPTS):
-            v = tk.BooleanVar(value=st.get(key, on))
-            self.opts[key] = v
-            ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=0, sticky="w",
-                                                               padx=(0, 24), pady=2)
-        for n, (key, label, on) in enumerate(CUT_OPTS):
-            if key == "religion_parts":       # only used while Religious content is ticked
-                row = tk.Frame(grid, bg=CARD)
-                row.grid(row=n + 1, column=1, sticky="w", padx=(22, 0))
-                boxes = []
-                for part, plabel in engine.E.RELIGION_LABELS.items():
-                    v = tk.BooleanVar(value=st.get("religion_" + part, st.get("religion_strict", False)
-                                                   if part == "prayers" else True))
-                    self.opts["religion_" + part] = v
-                    boxes.append(ttk.Checkbutton(row, text=plabel, variable=v))
-                    boxes[-1].pack(side="left", padx=(0, 8))
-                pv = self.opts["religion"]
-                show = lambda *_, bs=boxes, pv=pv: [b.state(["!disabled"] if pv.get() else ["disabled"])
-                                                    for b in bs]
-                pv.trace_add("write", show)
-                show()
-                continue
-            v = tk.BooleanVar(value=st.get(key, on))
-            self.opts[key] = v
-            ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=1, sticky="w", pady=2)
-        kids = tk.Frame(grid, bg=CARD)
-        kids.grid(row=len(CUT_OPTS) + 1, column=1, rowspan=3, sticky="nw", pady=(8, 0))
-        tk.Label(kids, text="For young kids", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
-            row=0, column=0, columnspan=2, sticky="w")
-        for n, (key, label) in enumerate(KID_OPTS):
-            v = tk.BooleanVar(value=st.get(key, False))
-            self.opts[key] = v
-            ttk.Checkbutton(kids, text=label, variable=v).grid(row=1 + n // 2, column=n % 2,
-                                                               sticky="w", padx=(0, 26), pady=2)
-        r = len(WORD_OPTS) + 2
-        tk.Label(grid, text="Kissing", bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
-            row=r, column=0, sticky="w", pady=(10, 0))
-        self.kiss_box = ttk.Combobox(grid, state="readonly", width=30, values=[l for _, l in KISS])
-        self.kiss_box.current([k for k, _ in KISS].index(st.get("kiss", "keep")))
-        self.kiss_box.grid(row=r + 1, column=0, sticky="w")
-        tk.Label(grid, text="How marked-out words look", bg=CARD, fg=MUTED,
-                 font=(FONT, 9, "bold")).grid(row=r + 2, column=0, sticky="w", pady=(10, 0))
-        self.style_box = ttk.Combobox(grid, state="readonly", width=30, values=[l for _, l in STYLE])
+        # the same filters as CleanListen and CleanView, chosen in their own window (filters.py)
+        self.filter_card = F.FilterCard(b3, wrap=640)
+        row = tk.Frame(b3, bg=CARD)
+        row.pack(anchor="w", pady=(10, 0))
+        tk.Label(row, text="How marked-out words look:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
+        self.style_box = ttk.Combobox(row, state="readonly", width=30, values=[l for _, l in STYLE])
         self.style_box.current([k for k, _ in STYLE].index(st.get("style", "dash")))
-        self.style_box.grid(row=r + 3, column=0, sticky="w")
+        self.style_box.pack(side="left", padx=(8, 0))
         self.marker_var = tk.BooleanVar(value=st.get("marker", True))
         ttk.Checkbutton(b3, text="Show […] where something was cut  (so a jump in the story "
                         "makes sense)", variable=self.marker_var).pack(anchor="w", pady=(12, 0))
@@ -401,9 +333,6 @@ class App(tk.Tk):
             if built == "check":
                 st["check_ai"] = self.ai_var.get()
             elif built == "clean":
-                for k, v in self.opts.items():
-                    st[k] = v.get()
-                st["kiss"] = KISS[self.kiss_box.current()][0]
                 st["style"] = STYLE[self.style_box.current()][0]
                 st["marker"] = self.marker_var.get()
                 st["clean_ai"] = self.ai_var.get()
@@ -423,13 +352,12 @@ class App(tk.Tk):
                 if self.ai_var.get() else "This takes under a minute."))
             threading.Thread(target=self._scan_thread, args=(self.ai_var.get(),), daemon=True).start()
             return
-        opts = {k: v.get() for k, v in self.opts.items()}
-        opts["kiss"] = KISS[self.kiss_box.current()][0]
-        opts["ai"] = self.ai_var.get()
-        if not any(v for k, v in opts.items() if k not in ("kiss", "ai") and not k.startswith(
-                "religion_")) and opts["kiss"] == "keep":
-            messagebox.showinfo(APP, "Tick at least one thing to take out.")
+        ticks, mywords = self.filter_card.ticks(), self.filter_card.mywords()
+        if not F.anything_on(ticks) and not mywords:
+            messagebox.showinfo(APP, "Tick at least one thing to take out (Choose filters\u2026).")
             return
+        opts = F.read_opts(ticks, mywords)
+        opts["ai"] = self.ai_var.get()
         self.clean_opts = opts
         self.style = STYLE[self.style_box.current()][0]
         self.marker = self.marker_var.get()
@@ -790,9 +718,10 @@ class App(tk.Tk):
                                                             self._update_summary())).pack(side="left", padx=6)
 
         self.cut_vars = []
-        order = ["sex", "ref", "sleeping", "kiss", "flirt", "relationship", "gore", "religion",
-                 "crude", "bully", "disrespect", "substances", "holiday", "birthday", "magic", "darkmagic",
-                 "vampires"]
+        order = ["sex", "nudity", "implied", "immodest", "ref", "sleeping", "unmarried", "kiss",
+                 "kiss_ss", "flirt", "relationship", "violence", "graphic", "gore", "disturbing",
+                 "religion", "crude", "bully", "disrespect", "smoking", "drinking", "drugs", "gestures",
+                 "holiday", "birthday", "magic", "darkmagic", "vampires"]
         for kind in order:
             items = [c for c in cuts if c["kind"] == kind]
             if not items:

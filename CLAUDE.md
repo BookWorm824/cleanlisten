@@ -30,6 +30,7 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `cleanlisten_learn.py` | Learning from the family's choices; exports ("Send what CleanListen learned", "Export what we refined"); findings spreadsheet. `send()` posts an export to the owner's inbox (the Google Apps Script shared with CleanView, `tools/cleanview_inbox.gs` in the CleanView repo) when `SEND_URL` is set (`CLEANLISTEN_INBOX` overrides it, for tests); while it's empty, or if sending fails, the app falls back to "saved in…, attach it in your chat with Claude". |
 | `shared_learned.json` | Built-in knowledge every copy starts with (merged from exports — see §7). |
 | `launcher.pyw` | Desktop shortcut target: checks GitHub for a newer `version.json`, downloads the listed files, swaps them in, starts the app (`read` → CleanRead; `view` → the CleanView hand-over). |
+| `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
 | `shortcuts.py` | Creates the CleanRead desktop icon; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
 | `version.json` | Version + **the list of files the launcher downloads**. Anything not listed never reaches users. |
@@ -213,11 +214,22 @@ plain words, learned from Lauren directly and from her exported reviews:
   group's list; anything else is offered unticked. Same-sex isn't "gay" meaning cheerful;
   bullying includes a villain's mocking song and a passed-on insult; sexual references are only
   the sentences that are sexual themselves (not plain underwear talk).
-- **Same filters in CleanListen and CleanRead** (Lauren, 2026-10-30): CleanListen gained
-  sleeping around, drinking/smoking/drugs and kissing (keep / passionate / all; CleanRead's word
-  lists through `E.sleeping_hit` / `substances_hit` / `kiss_hit`, which import cleanread lazily);
-  CleanRead gained rude words and the religion parts. `tests/test_parity.py` reads both setup
-  pages and fails if their options differ.
+- **The same filters as CleanView** (Lauren, 2026-10-30: "CleanRead needs all the same filters as
+  CleanListen and CleanView"; 1.11.0): `filters.py` holds every box for both apps, grouped as in
+  CleanView (Language with religion parts and your own words; Sex and nudity; Kissing and
+  relationships with man & woman / same-sex kissing levels; Violence: violence, graphic, gore,
+  disturbing; Other: smoking, drinking, drugs, rude gestures; Holidays; Magic). The setup page shows
+  "Filtering for: Young kids / Kids / Teens / Adults" (CleanView's PRESETS; Adults = this family's
+  book standard, which keeps everything new off except the splits of what was on), a one-line
+  summary and "Choose filters…" (the FiltersWindow). Ticks per age and your own words are kept in
+  `filters.json`, shared by both apps; the first time, Adults starts from CleanRead's old ticks.
+  Engine: `E.MORE_KINDS` / `sentence_hit()` (CleanRead's word lists: SLEEPING, UNMARRIED, NUDITY,
+  IMPLIED, IMMODEST, VIOLENCE, DISTURBING, SMOKING, DRINKING, DRUGS, GESTURES), `gore_level()`
+  splits gory passages into graphic / gore, `kiss_hit` / `kiss_ss_hit`, `find_language(mine=)`
+  (own words, cat "mine", by_you). analyze(more=, kiss_ss=, find_graphic=, mine=); old
+  find_substances / find_sleeping still work. Lauren's CleanView violence calls are in the rules:
+  a killing heard or described by what follows is violence; accident blood is disturbing.
+  Learning is still shared across ages (CleanView learns per age). Loud music is video-only.
 - **Same-sex relationships and the small AI** (Lauren, 2026-10-30: "I still want it to look for
   those in books"): both apps' AI helper looks for them, but its finds are only ticked when the
   word lists see it too (`_ai_backed` / CleanRead `rel_hit`); otherwise "AI suggests", unticked.

@@ -223,7 +223,9 @@ def test_religion_parts_and_cleanreads_filters(tmp_path):
     assert st["filters"]["religion_parts"] == ["prayers"] and st["filters"]["strict_religion"]
     st = E.analyze([audio], work, find_religion=True, religion_parts=["anger"], **kw)
     assert [sc["text"] for sc in st["scenes"]] == ["I hate God for taking her away."]
-    st = E.analyze([audio], work, find_sleeping=True, find_substances=True, kiss="passionate", **kw)
-    assert [sc["kind"] for sc in st["scenes"]] == ["sleeping", "substances", "kiss"]
-    assert st["filters"]["kinds"] == ["sleeping", "substances", "kiss"]
+    st = E.analyze([audio], work, more=["sleeping", "drinking"], kiss="passionate", **kw)
+    assert [sc["kind"] for sc in st["scenes"]] == ["sleeping", "drinking", "kiss"]
+    assert st["filters"]["kinds"] == ["sleeping", "drinking", "kiss"]
     assert st["filters"]["kiss"] == "passionate"
+    st = E.analyze([audio], work, find_substances=True, **kw)       # 1.10.0's one box
+    assert [sc["kind"] for sc in st["scenes"]] == ["drinking"]

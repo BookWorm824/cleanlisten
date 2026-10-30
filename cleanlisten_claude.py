@@ -58,13 +58,19 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "religion": "religious content", "relationship": "same-sex / non-traditional relationship",
               "crude": "crude humor", "bully": "bullying",
               "disrespect": "disrespect or talking back to a parent", "flirt": "flirting",
-              "kiss": "kissing", "sleeping": "sleeping around or an affair",
-              "substances": "drinking, smoking or drugs",
+              "kiss": "man & woman kissing", "kiss_ss": "same-sex kissing",
+              "sleeping": "sleeping around or an affair",
+              "unmarried": "unmarried couple living or sleeping together",
+              "graphic": "graphic violence", "violence": "violence", "disturbing": "disturbing violence",
+              "nudity": "nudity", "implied": "implied nudity", "immodest": "immodest clothing",
+              "smoking": "smoking", "drinking": "drinking", "drugs": "drug use",
+              "gestures": "rude gesture",
               "holiday": "holiday", "birthday": "birthday candles", "darkmagic": "dark magic",
               "magic": "magic", "vampires": "vampires and werewolves",
               "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
+             "mine": "the family's own word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
 
 # What the family wants, filter by filter (from Lauren's own rules for CleanListen)
@@ -85,9 +91,9 @@ KIND_RULES = {
            "(answer just_the_word). Ordinary romance, affection, dating, marriage and kissing are fine, "
            "and so are pregnancy or babies, 'sex' meaning men or women ('the fair sex'), a polite "
            "'it's a pleasure', and a body part in a threat.",
-    "gore": "Gory descriptions: cut only prolonged, very graphic descriptions that dwell on "
-            "wounds, mutilation or bodies (several sentences of it). A single violent sentence - "
-            "even a split skull or blood seeping - stays, as does saying someone was shot, stabbed, "
+    "gore": "Gore: cut descriptions that dwell on insides on the outside: organs, entrails, "
+            "brains, mutilation or a body cut apart (several sentences of it). A single violent "
+            "sentence - even a split skull - stays, as does saying someone was shot, stabbed, "
             "beaten, killed or found dead. This family is fine with mystery-level violence.",
     "religion": "Religious content: cut people explaining, preaching, teaching or debating "
                 "religious beliefs of any faith - Christian, Catholic (saints, the rosary, "
@@ -123,14 +129,38 @@ KIND_RULES = {
                   "something wrong, friendly teasing and a child asking why are fine. Still cut it "
                   "if they learn their lesson later, but say so in the reason (\"learns their "
                   "lesson: apologizes later\"), or say they get away with it.",
-    "kiss": "Kissing: cut sentences where two people kiss romantically or make out. A parent "
-            "kissing a child, or a greeting kiss on the cheek, is fine.",
-    "sleeping": "Sleeping around, affairs & living together: cut sentences where an unmarried "
-                "couple sleeps or lives together, someone sleeps around, cheats on a husband, wife "
-                "or partner, or has an affair. A married couple, and friends or family sharing a "
-                "home or a room, are fine.",
-    "substances": "Drinking, smoking & drugs: cut sentences where someone drinks alcohol, is "
-                  "drunk, smokes, vapes or uses drugs. Medicine taken for an illness is fine.",
+    "kiss": "Man & woman kissing: cut sentences where a man and a woman kiss romantically or make "
+            "out. A parent kissing a child, or a greeting kiss on the cheek, is fine.",
+    "kiss_ss": "Same-sex kissing: cut sentences where two men or two women kiss romantically or "
+               "make out. A friendly kiss on the cheek is fine.",
+    "sleeping": "Sleeping around: cut sentences about casual sex, hooking up, one-night stands, "
+                "someone cheating on a husband, wife or partner, or an affair.",
+    "unmarried": "Unmarried couples: cut sentences where an unmarried man and woman live or sleep "
+                 "together. A married couple, and friends or family sharing a home or a room, are "
+                 "fine.",
+    "violence": "Violence: cut sentences describing a fight, a shooting, a stabbing, a beating or an "
+                "attack, including a killing heard or described by what follows (a gunshot, then "
+                "someone or an animal is dead: remove). Saying someone died of illness or old age, "
+                "or a weapon simply mentioned, is fine.",
+    "graphic": "Graphic violence: cut only prolonged, very graphic descriptions that dwell on "
+               "blood, bloody wounds or a bloody body (several sentences of it). A single violent "
+               "sentence - even blood seeping - stays, as does saying someone was shot, stabbed, "
+               "beaten, killed or found dead. This family is fine with mystery-level violence.",
+    "disturbing": "Disturbing violence: cut torture, executions, cruelty to someone helpless or to "
+                  "an animal, and the bloody aftermath of an accident (a car crash, a fall).",
+    "nudity": "Nudity: cut sentences describing someone naked or their private parts shown or "
+              "seen. Being in the bath or getting undressed without the body described is implied "
+              "nudity, not this.",
+    "implied": "Implied nudity: cut sentences where someone is naked but covered or not described: "
+               "under the sheets, in a towel, a bare back, skinny-dipping, getting undressed.",
+    "immodest": "Immodest clothing: cut sentences describing someone in a swimsuit, underwear or "
+                "revealing clothes, or sexy dancing.",
+    "smoking": "Smoking: cut sentences where someone smokes or vapes (cigarettes, cigars, a pipe).",
+    "drinking": "Drinking: cut sentences where someone drinks alcohol or is drunk.",
+    "drugs": "Drug use: cut sentences where someone uses illegal drugs or is high. Medicine taken "
+             "for an illness is fine.",
+    "gestures": "Rude gestures: cut sentences where someone gives the middle finger ('flipped him "
+                "off', 'gave him the finger') or makes a crude sexual gesture.",
     "flirt": "Flirting: cut sentences where someone flirts, hits on, winks at or makes romantic "
              "advances toward someone. A married couple being affectionate is fine.",
     "holiday": "Holidays: cut sentences about Christmas (Santa, Christmas trees, presents, carols), "
@@ -509,7 +539,7 @@ STRICT_RELIGION_RULE = (
 
 
 PASSIONATE_KISS_RULE = (
-    "Passionate kissing: cut sentences with passionate romantic kissing or making out. A quick "
+    "Passionate kissing: cut sentences where a man and a woman kiss passionately or make out. A quick "
     "or gentle kiss, a peck, and a parent kissing a child are fine.")
 # The religion boxes the family left OFF (Jason, 2026-10-30: religion in parts)
 RELIGION_OFF = {
@@ -534,6 +564,9 @@ def _kind_rule(k, f):
         return religion_rule(f)
     if k == "kiss" and f.get("kiss") == "passionate":
         return PASSIONATE_KISS_RULE
+    if k == "kiss_ss" and f.get("kiss_ss") == "passionate":
+        return ("Passionate same-sex kissing: cut sentences where two men or two women kiss "
+                "passionately or make out. A friendly kiss on the cheek is fine.")
     return KIND_RULES[k]
 
 
