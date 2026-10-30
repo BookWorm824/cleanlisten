@@ -1789,13 +1789,11 @@ def analyze(book, opts, progress=None, cancel=None):
     if opts.get("ai"):
         kinds = {k: CLEAN_AI[k] for k, on in (
             ("ref", opts.get("refs")), ("sex", opts.get("sex")), ("gore", opts.get("gore")),
-            ("religion", bool(rparts)),
+            ("religion", bool(rparts)), ("relationship", opts.get("relationships")),
             ("crude", opts.get("crude")), ("bully", opts.get("bully")),
             ("disrespect", opts.get("disrespect")), ("flirt", opts.get("flirt")),
             ("kiss", kiss_mode in ("passionate", "all")), ("sleeping", opts.get("sleeping")),
             ("substances", opts.get("substances")), *((t, opts.get(t)) for t in E.TOPICS)) if on}
-        # (same-sex relationships are left to the word lists, as in CleanListen: the small AI
-        # put 56 ordinary man-and-woman lines of one romance there)
         kinds.update({k: t for k, t in E.ai_defs_for(rparts, kiss_mode).items() if k in kinds})
         try:
             ai_note = _ai_clean(book, cuts, mutes, kinds, taken, in_passage,
@@ -1859,6 +1857,10 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel):
         for run_ in runs:
             c = _sent_cut(book, kind, run_)
             sure = any(idx[si] == "high" for si in run_)
+            if kind == "relationship":   # only ticked when the word lists see it too: the small
+                # AI put 56 ordinary man-and-woman lines of one romance there (Love Songs Suck)
+                sure = sure and rel_hit([w for si in run_ for w in (
+                    E.norm(t) for t in book.sent_text(si).split()) if w], book.old_style)
             c.update(ai=True, cut=sure, ai_note="found by AI" if sure else "AI suggests")
             cuts.append(c)
             taken.update(run_)

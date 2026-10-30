@@ -118,3 +118,22 @@ def test_exclamations_and_idioms_are_not_religious_talk():
     assert "'Thank God'" not in E.religion_def(("preach", "anger", "prayers"))
     assert "a match made in heaven" in cc.KIND_RULES["religion"]
     assert "a match made in heaven" in cc.STRICT_RELIGION_RULE
+
+
+def test_the_ai_looks_for_same_sex_content_but_only_ticks_what_the_lists_see(book, monkeypatch):
+    # Lauren, 2026-10-30: "I still want it to look for those in books"; but the small AI once
+    # ticked 56 ordinary man-and-woman lines of one romance
+    found = {}
+
+    def fake_find(bk, kinds, progress=None, cancel=None):
+        found["kinds"] = set(kinds)
+        return {(i, "relationship"): "high" for i, s in enumerate(bk.sents)
+                if "barn" in bk.sent_text(i) or "brother" in bk.sent_text(i)}
+    monkeypatch.setattr(R, "ai_find", fake_find)
+    monkeypatch.setattr(R, "_ai", lambda: type("AI", (), {"chat": staticmethod(lambda *a, **k: {})})())
+    an = R.analyze(book, {"relationships": True, "kiss": "keep", "ai": True})
+    assert "relationship" in found["kinds"]
+    ai = [c for c in an["cuts"] if c.get("ai")]
+    assert ai and all(c["cut"] is False and c["ai_note"] == "AI suggests" for c in ai)
+    assert E._ai_backed("relationship", words("He kissed his husband goodbye."))
+    assert not E._ai_backed("relationship", words("He kissed his wife goodbye."))

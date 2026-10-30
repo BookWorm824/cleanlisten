@@ -1549,8 +1549,9 @@ AI_TYPES = {
     "relationship": "a same-sex couple, romance, relationship or flirting (for example a man "
                     "flirting with or hitting on another man), or a non-traditional relationship "
                     "such as a throuple, polyamory, an open marriage, swingers or polygamy "
-                    "('gay' meaning happy or cheerful, as in an old song or 'gay apparel', is NOT "
-                    "this)",
+                    "(a man and a woman together, dating, engaged or married, is NOT this, and "
+                    "neither is 'gay' meaning happy or cheerful, as in an old song or 'gay "
+                    "apparel')",
     "bully": "bullying or mean-spirited cruelty: taunting, name-calling, mocking or humiliating "
              "someone, or picking on someone weaker, including a villain's mocking song and an "
              "insult passed on ('she called you a ...') (an ordinary argument, a villain's plot or "
@@ -1756,6 +1757,8 @@ def _ai_backed(kind, words):
             return disrespect_hit(words)
         if kind == "flirt":
             return flirt_hit(words)
+        if kind == "relationship":
+            return relationship_hit(words)
         if kind == "sleeping":
             return sleeping_hit(words)
         if kind == "substances":
@@ -1787,9 +1790,10 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     ai = _ai_module()
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
-    # relationship talk is left to the word lists and Claude/ChatGPT: the small AI here
-    # flagged almost every man-and-woman scene as a same-sex relationship
-    kinds = [k for k in kinds if k in AI_TYPES and k != "relationship"]
+    # same-sex relationships too (Lauren, 2026-10-30: "I still want it to look for those"), but
+    # the small AI here flags many man-and-woman scenes there, so its finds are only ticked when
+    # the word lists back them (_ai_backed); the rest come in unticked for you to decide
+    kinds = [k for k in kinds if k in AI_TYPES]
     lang = [c for c in cats if c in LANGUAGE_DEFS]
     mutes = mutes if mutes is not None else []
     if not kinds and not lang:

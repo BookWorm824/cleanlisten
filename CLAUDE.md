@@ -217,8 +217,11 @@ plain words, learned from Lauren directly and from her exported reviews:
   sleeping around, drinking/smoking/drugs and kissing (keep / passionate / all; CleanRead's word
   lists through `E.sleeping_hit` / `substances_hit` / `kiss_hit`, which import cleanread lazily);
   CleanRead gained rude words and the religion parts. `tests/test_parity.py` reads both setup
-  pages and fails if their options differ. Neither app's small AI reads same-sex relationships
-  (it filed ordinary romance there).
+  pages and fails if their options differ.
+- **Same-sex relationships and the small AI** (Lauren, 2026-10-30: "I still want it to look for
+  those in books"): both apps' AI helper looks for them, but its finds are only ticked when the
+  word lists see it too (`_ai_backed` / CleanRead `rel_hit`); otherwise "AI suggests", unticked.
+  It once ticked 56 ordinary man-and-woman lines of one romance (Love Songs Suck).
 - **Off by default:** soft substitutes (gosh, heck…), bullying, disrespect, flirting, and the "For young
   kids" boxes (holidays, birthday candles, magic, dark magic, vampires & werewolves; CleanView
   ticks them for its kids' profiles, CleanListen has no profiles). The setup page must still
