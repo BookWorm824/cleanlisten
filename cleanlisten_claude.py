@@ -56,7 +56,8 @@ CONTEXT_SENTS = 12       # sentences shown before a section, for context only
 
 KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "gory description",
               "religion": "religious content", "relationship": "same-sex / non-traditional relationship",
-              "crude": "crude humor", "bully": "bullying", "flirt": "flirting",
+              "crude": "crude humor", "bully": "bullying",
+              "disrespect": "disrespect or talking back to a parent", "flirt": "flirting",
               "holiday": "holiday", "birthday": "birthday candles", "darkmagic": "dark magic",
               "magic": "magic", "vampires": "vampires and werewolves",
               "added": "passage you chose to cut"}
@@ -101,6 +102,14 @@ KIND_RULES = {
              "pranks like that). Someone being sick or using the bathroom plainly is fine.",
     "bully": "Bullying: cut taunting, name-calling, mocking or picking on someone. An ordinary "
              "argument, a villain's plan or a police interrogation is fine.",
+    "disrespect": "Disrespect: cut sentences where a child or teen is bratty or disrespectful to "
+                  "a parent, teacher or other grown-up: talking back, sassing, mocking or "
+                  "insulting them, refusing to do what they're told, openly disobeying, sneaking "
+                  "out or lying to them. Cut the whole sentence (never just_the_word). Grown-ups "
+                  "disagreeing with each other, a child politely saying no or standing up to "
+                  "something wrong, friendly teasing and a child asking why are fine. Still cut it "
+                  "if they learn their lesson later, but say so in the reason (\"learns their "
+                  "lesson: apologizes later\"), or say they get away with it.",
     "flirt": "Flirting: cut sentences where someone flirts, hits on, winks at or makes romantic "
              "advances toward someone. A married couple being affectionate is fine.",
     "holiday": "Holidays: cut sentences about Christmas (Santa, Christmas trees, presents, carols), "

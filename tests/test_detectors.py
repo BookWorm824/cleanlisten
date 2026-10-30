@@ -371,3 +371,29 @@ def test_kid_topics_are_off_unless_ticked_and_the_ai_knows_them():
         assert t in E.AI_TYPES and t in E.TOPIC_LABELS
     import inspect
     assert inspect.signature(E.analyze).parameters["find_topics"].default == ()
+
+
+# --- disrespect: a child talking back to or disobeying a parent (CleanView 1.18.0) --------
+@pytest.mark.parametrize("text", [
+    "You can't tell me what to do!", "You're not the boss of me.", "You're not my real mom!",
+    "I don't have to listen to you.", "You can't make me!", "I hate you, Dad!",
+    "I don't care what you say.",
+])
+def test_disrespect_found(text):
+    assert E.disrespect_hit(words(text))
+
+
+@pytest.mark.parametrize("text", [
+    "Whatever you want for dinner.", "Make me a sandwich, please.", "Leave the light on.",
+    "I don't care which one, they're both nice.", "Can you tell me what to do next?",
+])
+def test_disrespect_left_alone(text):
+    assert not E.disrespect_hit(words(text))
+
+
+def test_disrespect_is_known_to_every_reader():
+    import cleanlisten_claude as cc
+    import cleanlisten_learn as learn
+    assert "disrespect" in E.AI_TYPES and "disrespect" in learn.KINDS
+    assert "learn their lesson" in cc.KIND_RULES["disrespect"]
+    assert E._ai_backed("disrespect", words("You can't make me!"))

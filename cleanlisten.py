@@ -1013,6 +1013,22 @@ def bully_hit(words):
     return False
 
 
+# Disrespect: a child talking back to or disobeying a parent ("you can't tell me what to do",
+# "you're not my real mom"). Only lines that are hard to mistake; the AI helper and Claude catch
+# the rest (sassing, sneaking out, lying to them). Not "whatever" or "make me": too common.
+# The same list as CleanView's LINE_WORDS["disrespect"] (Lauren, 2026-10-30).
+DISRESPECT = re.compile(
+    r"\b(you can'?t tell me what to do|you'?re not the boss of me|"
+    r"you'?re not my (real )?(mom|mum|dad|mother|father|boss)|"
+    r"i don'?t have to (listen to|obey|do what) you|you can'?t make me|"
+    r"i hate you,? (mom|mum|mommy|mummy|dad|daddy|mother|father)|"
+    r"i don'?t care what you (say|think|want))\b")
+
+
+def disrespect_hit(words):
+    return bool(DISRESPECT.search(" ".join(words)))
+
+
 # Holidays, candles on a birthday cake, magic, dark magic, and vampires and werewolves (for
 # young kids; all off unless ticked). Only phrases that are hard to mistake; the AI helper and Claude catch the rest.
 # The same lists as CleanView's LINE_WORDS, matched on the normalised words (so "x-mas" is
@@ -1480,6 +1496,11 @@ AI_TYPES = {
     "bully": "bullying or mean-spirited cruelty: taunting, name-calling, mocking or humiliating "
              "someone, or picking on someone weaker (an ordinary argument, a villain's plot or a "
              "police interrogation is NOT this)",
+    "disrespect": "a child or teen being bratty or disrespectful to a parent, teacher or other "
+                  "grown-up: talking back, sassing, mocking or insulting them, refusing to do what "
+                  "they're told, openly disobeying, sneaking out or lying to them (grown-ups "
+                  "disagreeing with each other, a child politely saying no or standing up to "
+                  "something wrong, friendly teasing, or a child asking why are NOT this)",
     "flirt": "flirting: someone flirting with, hitting on, winking at, sweet-talking or making "
              "romantic advances toward someone (a married couple being affectionate, a simple "
              "compliment or ordinary friendliness is NOT this)",
@@ -1602,6 +1623,8 @@ def _ai_backed(kind, words):
             return crude_hit(words)
         if kind == "bully":
             return bully_hit(words)
+        if kind == "disrespect":
+            return disrespect_hit(words)
         if kind == "flirt":
             return flirt_hit(words)
         if kind in TOPICS:
@@ -1940,6 +1963,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_refs=False, find_gore=False, find_religion=False, find_relationships=False,
             find_crude=False, use_ai=False,
             threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False,
+            find_disrespect=False,
             strict_religion=False, find_topics=()):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json). find_topics: any of TOPICS (holidays, birthday candles, magic,
@@ -2230,6 +2254,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     # sentence-level filters: each flagged sentence (and neighbours that also hit) is cut
     for on, hit, kind, msg in ((find_crude, crude_hit, "crude", "Looking for crude humor…"),
                                (find_bully, bully_hit, "bully", "Looking for bullying…"),
+                               (find_disrespect, disrespect_hit, "disrespect",
+                                "Looking for disrespect…"),
                                (find_flirt, flirt_hit, "flirt", "Looking for flirting…"),
                                *((t in find_topics, lambda w, t=t: topic_hit(t, w), t,
                                   f"Looking for {TOPIC_LABELS[t].lower()}…") for t in TOPICS)):
@@ -2255,6 +2281,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     kinds = [k for k, on in (("ref", find_refs), ("sex", find_sex), ("gore", find_gore),
                              ("religion", find_religion), ("relationship", find_relationships),
                              ("crude", find_crude), ("bully", find_bully),
+                             ("disrespect", find_disrespect),
                              ("flirt", find_flirt),
                              *((t, t in find_topics) for t in TOPICS)) if on]
     ai_job = None
@@ -2652,7 +2679,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
             label = {"sex": "explicit scene", "gore": "gory description",
                      "ref": "sexual reference", "religion": "religious content",
                      "relationship": "relationship content",
-                     "crude": "crude humor", "bully": "bullying",
+                     "crude": "crude humor", "bully": "bullying", "disrespect": "disrespect",
                      "flirt": "flirting",
                      **{t: TOPIC_LABELS[t].lower() for t in TOPICS}}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "

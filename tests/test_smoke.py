@@ -192,3 +192,17 @@ def test_if_the_final_check_fails_the_ai_on_this_pc_works_as_alone(clip, monkeyp
     assert "couldn't check" in st["claude_note"]
     assert [m["on"] for m in st["mutes"] if m["cat"] == "mild"] == [False]
     assert [sc["cut"] for sc in st["scenes"] if sc.get("ai")] == [True]
+
+
+def test_disrespect_is_cut_only_when_ticked(tmp_path):
+    audio, work, _ = _book(tmp_path, [
+        (0.5, "We drove home in the rain."),
+        (3.0, "You're not the boss of me, Mom!"),
+        (6.5, "Then everyone went to bed."),
+    ])
+    st = E.analyze([audio], work, groups=(), find_sex=False, log=lambda *a: None)
+    assert st["scenes"] == []
+    st = E.analyze([audio], work, groups=(), find_sex=False, find_disrespect=True, log=lambda *a: None)
+    assert [(sc["kind"], sc["text"]) for sc in st["scenes"]] == [
+        ("disrespect", "You're not the boss of me, Mom!")]
+    assert st["filters"]["kinds"] == ["disrespect"]

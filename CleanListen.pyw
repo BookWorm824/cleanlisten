@@ -62,6 +62,7 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("religion", "Religious content to cut", "Religious"),
                 ("relationship", "Same-sex & non-traditional relationships to cut", "Relationships"),
                 ("crude", "Crude humor to cut", "Crude humor"), ("bully", "Bullying to cut", "Bullying"),
+                ("disrespect", "Disrespect to cut", "Disrespect"),
                 ("flirt", "Flirting to cut", "Flirting"), ("holiday", "Holidays to cut", "Holidays"),
                 ("birthday", "Candles on a birthday cake to cut", "Birthday candles"),
                 ("magic", "Magic to cut", "Magic"), ("darkmagic", "Dark magic to cut", "Dark magic"),
@@ -332,8 +333,8 @@ class App(tk.Tk):
 
     def _card(self, parent, step, heading, note=""):
         outer = tk.Frame(parent, bg=LINE)
-        outer.pack(fill="x", pady=4)
-        c = tk.Frame(outer, bg=CARD, padx=16, pady=10)
+        outer.pack(fill="x", pady=3)
+        c = tk.Frame(outer, bg=CARD, padx=16, pady=8)
         c.pack(fill="x", padx=1, pady=1)
         top = tk.Frame(c, bg=CARD)
         top.pack(fill="x")
@@ -418,6 +419,7 @@ class App(tk.Tk):
             ("relationships", "Same-sex & non-traditional relationships", True),
             ("crude", "Crude humor  (toilet jokes)", True),
             ("bully", "Bullying  (taunts, name-calling)", False),
+            ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
             ("flirt", "Flirting", False)]))
         for col, (heading, items) in enumerate(columns):
             tk.Label(grid, text=heading, bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
@@ -1140,13 +1142,15 @@ class App(tk.Tk):
             groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
         self.find_crude = self.opts["crude"].get()
         self.find_bully, self.find_flirt = self.opts["bully"].get(), self.opts["flirt"].get()
+        self.find_disrespect = self.opts["disrespect"].get()
         self.find_topics = [k for k, *_ in KID_TOPICS if self.opts[k].get()]
         self.use_ai = self.ai_var.get()
         self.use_claude = self.claude_var.get()
         self.split_chapters = self.split_var.get()
         if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
                                or self.find_relationships or self.find_crude
-                               or self.find_bully or self.find_flirt or self.find_topics):
+                               or self.find_bully or self.find_disrespect or self.find_flirt
+                               or self.find_topics):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
         self.saved_opts = {k: v.get() for k, v in self.opts.items()}
@@ -1215,6 +1219,7 @@ class App(tk.Tk):
                 find_refs=self.find_refs, find_gore=self.find_gore, find_religion=self.find_religion,
                 find_relationships=self.find_relationships, find_crude=self.find_crude,
                 use_ai=self.use_ai, find_bully=self.find_bully, find_flirt=self.find_flirt,
+                find_disrespect=getattr(self, "find_disrespect", False),
                 use_claude=getattr(self, "use_claude", False),
                 strict_religion=getattr(self, "strict_religion", False),
                 find_topics=getattr(self, "find_topics", ()),
@@ -1834,7 +1839,8 @@ class App(tk.Tk):
                 L.append("Note: " + note)
         names = {"sex": "EXPLICIT SCENE", "ref": "SEXUAL REFERENCE", "gore": "GORE",
                  "religion": "RELIGION", "relationship": "RELATIONSHIP", "crude": "CRUDE HUMOR",
-                 "bully": "BULLYING", "flirt": "FLIRTING", "holiday": "HOLIDAY",
+                 "bully": "BULLYING", "disrespect": "DISRESPECT", "flirt": "FLIRTING",
+                 "holiday": "HOLIDAY",
                  "birthday": "BIRTHDAY CANDLES", "magic": "MAGIC", "darkmagic": "DARK MAGIC",
                  "vampires": "VAMPIRES & WEREWOLVES"}
         class _V:  # stands in for a checkbox when exporting a saved result

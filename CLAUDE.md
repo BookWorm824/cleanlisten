@@ -181,7 +181,12 @@ plain words, learned from Lauren directly and from her exported reviews:
   other filters. Claude gets `STRICT_RELIGION_RULE`; the AI on the PC doesn't second-guess these.
 - **Same-sex and non-traditional relationships** (incl. same-sex flirting, throuples, open
   marriage…) are cut, and orientation words (gay, lesbian…) muted; man-and-woman is fine.
-- **Off by default:** soft substitutes (gosh, heck…), bullying, flirting, and the "For young
+- **Disrespect** (Lauren, 2026-10-30; CleanView 1.18.0): a child talking back to or disobeying a
+  parent, cut sentence by sentence. Word lists catch only clear lines (`DISRESPECT`: "you're
+  not the boss of me", "you can't make me"; not "whatever" or "make me"); the AI helper and
+  Claude catch the rest. Claude still cuts it if they learn their lesson later, and says so in
+  the reason (or that they get away with it). Off by default, under Bullying.
+- **Off by default:** soft substitutes (gosh, heck…), bullying, disrespect, flirting, and the "For young
   kids" boxes (holidays, birthday candles, magic, dark magic, vampires & werewolves; CleanView
   ticks them for its kids' profiles, CleanListen has no profiles). The setup page must still
   fit: they sit in two rows under the word boxes (`KID_TOPICS` gives each box's place).

@@ -42,6 +42,7 @@ CUT_OPTS = [("sex", "Sex scenes  (whole passages)", True),
             ("religion", "Religious content  (preaching, anger at God)", True),
             ("crude", "Crude humor  (toilet & gross-out jokes)", True),
             ("bully", "Bullying  (taunts, name-calling)", False),
+            ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
             ("substances", "Drinking, smoking & drugs", False)]
 # "For young kids" (all off unless ticked), two to a row: Christmas, Halloween, Valentine's,
 # Easter and St. Patrick's Day; candles on a birthday cake (parties and cake are fine); magic
@@ -757,7 +758,7 @@ class App(tk.Tk):
 
         self.cut_vars = []
         order = ["sex", "ref", "sleeping", "kiss", "flirt", "relationship", "gore", "religion",
-                 "crude", "bully", "substances", "holiday", "birthday", "magic", "darkmagic",
+                 "crude", "bully", "disrespect", "substances", "holiday", "birthday", "magic", "darkmagic",
                  "vampires"]
         for kind in order:
             items = [c for c in cuts if c["kind"] == kind]
