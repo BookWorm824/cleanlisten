@@ -116,3 +116,25 @@ def test_ai_reading_checks_the_quoted_words(book, monkeypatch):
     found = R.ai_find(book, {"rebellion": "x", "witchcraft": "y"})
     assert [(book.sent_text(i)[:8], k) for i, k in found] == [("Sam told", "rebellion")]
     assert "He told his mom he hated her." in prompts[0]
+
+
+def test_built_in_marks_from_sent_in_reports(book, tmp_path, monkeypatch):
+    # families' clear wrong flags ship in shared_learned.json; your own marks still come first
+    key = R.item_key("The witch cast a spell on the old oak tree and stirred her potion.")
+    shared = tmp_path / "shared.json"
+    shared.write_text(json.dumps({"cleanread_fine": {"witchcraft": [[key, "The witch cast a spell"]]}}),
+                      encoding="utf8")
+    monkeypatch.setattr(R, "SHARED", shared)
+    assert R.scan(book)["cats"]["witchcraft"]["count"] == 0
+    assert key not in R.fine_keys(shared=False).get("witchcraft", ())
+    R.learn_marks([("magic", "something else entirely here today", "x", True)])
+    assert [e[0] for e in R.all_fine()["witchcraft"]] == [key]
+    assert "cleanread_fine" not in json.loads(R.LEARNED.read_text("utf8"))
+
+
+def test_shipped_marks_are_well_formed():
+    fine = R.shared_fine()
+    assert fine and set(fine) <= set(R.CLEAN_AI)
+    for kind, lst in fine.items():
+        for key, text in lst:
+            assert key == R.item_key(text) or R.item_key(text).startswith(key[:150]), (kind, text)

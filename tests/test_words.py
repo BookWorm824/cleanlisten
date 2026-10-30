@@ -610,3 +610,25 @@ def test_suck_meaning_bad_is_rude(text, phrase):
 ])
 def test_sucking_something_left_alone(text):
     assert hits(text, EVERY + ["rude"]) == []
+
+
+def test_po_d_is_pissed_but_po_would_is_not():
+    # CleanView 1.18.4: "PO'd" (pissed off), not "Po'd" (Po would, Kung Fu Panda)
+    assert E.find_language(words("He's PO'd at me."), ["moderate"])
+    assert E.find_language(words("Po'd never do that."), list(E.CATS)) == []
+
+
+def test_listed_word_only_counts_the_ticked_lists():
+    assert E.listed_word("butts", ["rude"]) and not E.listed_word("butts", ["mild", "moderate"])
+    assert E.listed_word("Lord help that", ["deity"]) and not E.listed_word("Grafi", list(E.CATS))
+
+
+@pytest.mark.parametrize("text,cat,hit", [
+    # CleanView 1.18.5 (The Resident)
+    ("If they find out, we would be screwed.", "mild", True),
+    ("The shelf was screwed to the wall.", "mild", False),
+    ("What in heaven's name are you doing?", "minced", True),
+    ("Oh, hallelujah, it's over!", "deity", True),
+    ("The choir sang hallelujah at the end.", "deity", False)])
+def test_cleanview_1_18_5_words(text, cat, hit):
+    assert bool(E.find_language(words(text), [cat])) is hit

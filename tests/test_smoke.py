@@ -206,3 +206,24 @@ def test_disrespect_is_cut_only_when_ticked(tmp_path):
     assert [(sc["kind"], sc["text"]) for sc in st["scenes"]] == [
         ("disrespect", "You're not the boss of me, Mom!")]
     assert st["filters"]["kinds"] == ["disrespect"]
+
+
+def test_religion_parts_and_cleanreads_filters(tmp_path):
+    """Religion in parts (Jason), and CleanRead's filters for audiobooks too (Lauren)."""
+    audio, work, _ = _book(tmp_path, [
+        (0.5, "I hate God for taking her away."),
+        (3.0, "Thank God you're safe, she said."),
+        (5.5, "They had an affair that summer."),
+        (8.0, "He got drunk on cheap whiskey."),
+        (10.5, "She kissed him passionately."),
+    ])
+    kw = dict(groups=(), find_sex=False, log=lambda *a: None)
+    st = E.analyze([audio], work, find_religion=True, religion_parts=["prayers"], **kw)
+    assert [sc["text"] for sc in st["scenes"]] == ["Thank God you're safe, she said."]
+    assert st["filters"]["religion_parts"] == ["prayers"] and st["filters"]["strict_religion"]
+    st = E.analyze([audio], work, find_religion=True, religion_parts=["anger"], **kw)
+    assert [sc["text"] for sc in st["scenes"]] == ["I hate God for taking her away."]
+    st = E.analyze([audio], work, find_sleeping=True, find_substances=True, kiss="passionate", **kw)
+    assert [sc["kind"] for sc in st["scenes"]] == ["sleeping", "substances", "kiss"]
+    assert st["filters"]["kinds"] == ["sleeping", "substances", "kiss"]
+    assert st["filters"]["kiss"] == "passionate"

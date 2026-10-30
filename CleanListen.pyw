@@ -74,11 +74,16 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("relationship", "Same-sex & non-traditional relationships to cut", "Relationships"),
                 ("crude", "Crude humor to cut", "Crude humor"), ("bully", "Bullying to cut", "Bullying"),
                 ("disrespect", "Disrespect to cut", "Disrespect"),
-                ("flirt", "Flirting to cut", "Flirting"), ("holiday", "Holidays to cut", "Holidays"),
+                ("flirt", "Flirting to cut", "Flirting"), ("kiss", "Kissing to cut", "Kissing"),
+                ("sleeping", "Sleeping around & affairs to cut", "Sleeping around"),
+                ("substances", "Drinking, smoking & drugs to cut", "Drinking & drugs"),
+                ("holiday", "Holidays to cut", "Holidays"),
                 ("birthday", "Candles on a birthday cake to cut", "Birthday candles"),
                 ("magic", "Magic to cut", "Magic"), ("darkmagic", "Dark magic to cut", "Dark magic"),
                 ("vampires", "Vampires & werewolves to cut", "Vampires"),
                 ("added", "Added by you (or cut before)", "Added"))
+# Kissing: one choice, as in CleanRead and CleanView
+KISS_CHOICES = (("keep", "Keep all"), ("passionate", "Cut passionate"), ("all", "Cut all"))
 # "For young kids" tick boxes (all off unless ticked): key, label, row, column, columns wide.
 # Two rows, so the setup page still fits.
 KID_TOPICS = (("holiday", "Holidays", 1, 0, 1), ("birthday", "Birthday candles", 1, 1, 1),
@@ -348,7 +353,7 @@ class App(tk.Tk):
     def _card(self, parent, step, heading, note=""):
         outer = tk.Frame(parent, bg=LINE)
         outer.pack(fill="x", pady=3)
-        c = tk.Frame(outer, bg=CARD, padx=16, pady=8)
+        c = tk.Frame(outer, bg=CARD, padx=16, pady=6)
         c.pack(fill="x", padx=1, pady=1)
         top = tk.Frame(c, bg=CARD)
         top.pack(fill="x")
@@ -358,7 +363,7 @@ class App(tk.Tk):
         if note:
             tk.Label(top, text=note, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=8)
         body = tk.Frame(c, bg=CARD)
-        body.pack(fill="x", pady=(6, 0), padx=(32, 0))
+        body.pack(fill="x", pady=(4, 0), padx=(32, 0))
         return body
 
     # ---------- page 1: setup ----------
@@ -436,9 +441,10 @@ class App(tk.Tk):
                    ("Sentences and scenes to cut", [
             ("refs", "Sexual references", True),
             ("sex", "Explicit sex scenes", True),
+            ("sleeping", "Sleeping around, affairs & living together", False),
             ("gore", "Gory descriptions", True),
-            ("religion", "Religious content  (preaching, anger at God)", True),
-            ("religion_strict", "Strict: even “thank God”, prayers, verses", False, "religion"),
+            ("religion", "Religious content", True),
+            ("religion_parts", None, None, "religion"),
             ("relationships", "Same-sex & non-traditional relationships", True),
             ("crude", "Crude humor  (toilet jokes)", True),
             ("bully", "Bullying  (taunts, name-calling)", False),
@@ -448,13 +454,26 @@ class App(tk.Tk):
             tk.Label(grid, text=heading, bg=CARD, fg=MUTED, font=(FONT, 9, "bold")).grid(
                 row=0, column=col, sticky="w")
             for n, (key, label, on, *parent) in enumerate(items, 1):
-                v = tk.BooleanVar(value=self.saved_opts.get(key, on))
-                self.opts[key] = v
-                cb = ttk.Checkbutton(grid, text=label, variable=v)
-                cb.grid(row=n, column=col, sticky="w", padx=(24 if parent else 0, 26), pady=0)
+                if key == "religion_parts":       # which kinds of religious content (Jason)
+                    row = tk.Frame(grid, bg=CARD)
+                    row.grid(row=n, column=col, sticky="w", padx=(22, 0))
+                    boxes = []
+                    for part, plabel in engine.RELIGION_LABELS.items():
+                        old = self.saved_opts.get("religion_strict", False)   # the old "Strict" box
+                        v = tk.BooleanVar(value=self.saved_opts.get("religion_" + part,
+                                                                    old if part == "prayers" else True))
+                        self.opts["religion_" + part] = v
+                        boxes.append(ttk.Checkbutton(row, text=plabel, variable=v))
+                        boxes[-1].pack(side="left", padx=(0, 6))
+                else:
+                    v = tk.BooleanVar(value=self.saved_opts.get(key, on))
+                    self.opts[key] = v
+                    boxes = [ttk.Checkbutton(grid, text=label, variable=v)]
+                    boxes[0].grid(row=n, column=col, sticky="w", padx=(24 if parent else 0, 26), pady=0)
                 if parent:   # only used when the option above it is ticked
                     pv = self.opts[parent[0]]
-                    show = lambda *_, cb=cb, pv=pv: cb.state(["!disabled"] if pv.get() else ["disabled"])
+                    show = lambda *_, bs=boxes, pv=pv: [b.state(["!disabled"] if pv.get() else ["disabled"])
+                                                        for b in bs]
                     pv.trace_add("write", show)
                     show()
         # under the word boxes, where there's room: Christmas, Halloween, Valentine's, Easter and
@@ -469,6 +488,23 @@ class App(tk.Tk):
             self.opts[key] = v
             ttk.Checkbutton(kids, text=label, variable=v).grid(row=r, column=c, columnspan=span,
                                                                sticky="w", padx=(0, 14))
+        # drinking (as in CleanRead) under the kids' boxes, and kissing beside Flirting, where
+        # there's room (the setup page must fit without scrolling)
+        v = tk.BooleanVar(value=self.saved_opts.get("substances", False))
+        self.opts["substances"] = v
+        ttk.Checkbutton(grid, text="Drinking, smoking & drugs", variable=v).grid(
+            row=len(columns[0][1]) + 4, column=0, sticky="w", pady=(4, 0))
+        krow = tk.Frame(grid, bg=CARD)
+        krow.grid(row=len(columns[1][1]), column=1, sticky="e", padx=(0, 26))
+        tk.Label(krow, text="Kissing:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
+        kiss = self.saved_opts.get("kiss", "keep")
+        self.opts["kiss"] = tk.StringVar(value=kiss if kiss in dict(KISS_CHOICES) else "keep")
+        kvar = tk.StringVar(value=dict(KISS_CHOICES)[self.opts["kiss"].get()])
+        kbox = ttk.Combobox(krow, textvariable=kvar, values=[n for _, n in KISS_CHOICES],
+                            state="readonly", width=15, font=(FONT, 10))
+        kbox.pack(side="left", padx=(6, 0))
+        kbox.bind("<<ComboboxSelected>>", lambda e: self.opts["kiss"].set(
+            next(k for k, n in KISS_CHOICES if n == kvar.get())))
 
         b4 = self._card(body, "3", "Extra checks", "optional")
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
@@ -1199,14 +1235,18 @@ class App(tk.Tk):
                   if self.opts[g].get()]
         find_sex = self.opts["sex"].get()
         self.find_refs, self.find_gore = self.opts["refs"].get(), self.opts["gore"].get()
-        self.find_religion = self.opts["religion"].get()
-        self.strict_religion = self.find_religion and self.opts["religion_strict"].get()
+        self.religion_parts = [p for p in engine.RELIGION_PARTS if self.opts["religion_" + p].get()]
+        self.find_religion = self.opts["religion"].get() and bool(self.religion_parts)
+        self.strict_religion = self.find_religion and "prayers" in self.religion_parts
         self.find_relationships = self.opts["relationships"].get()
         if self.find_relationships:
             groups.append("orientation")  # also mute gay, lesbian, homosexual... one word at a time
         self.find_crude = self.opts["crude"].get()
         self.find_bully, self.find_flirt = self.opts["bully"].get(), self.opts["flirt"].get()
         self.find_disrespect = self.opts["disrespect"].get()
+        self.find_sleeping = self.opts["sleeping"].get()
+        self.find_substances = self.opts["substances"].get()
+        self.kiss = self.opts["kiss"].get()
         self.find_topics = [k for k, *_ in KID_TOPICS if self.opts[k].get()]
         self.use_ai = self.ai_var.get()
         self.use_claude = self.claude_var.get()
@@ -1214,6 +1254,7 @@ class App(tk.Tk):
         if not groups and not (find_sex or self.find_refs or self.find_gore or self.find_religion
                                or self.find_relationships or self.find_crude
                                or self.find_bully or self.find_disrespect or self.find_flirt
+                               or self.find_sleeping or self.find_substances or self.kiss != "keep"
                                or self.find_topics):
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove.")
             return
@@ -1287,6 +1328,10 @@ class App(tk.Tk):
                 find_disrespect=getattr(self, "find_disrespect", False),
                 use_claude=getattr(self, "use_claude", False),
                 strict_religion=getattr(self, "strict_religion", False),
+                religion_parts=getattr(self, "religion_parts", None),
+                find_sleeping=getattr(self, "find_sleeping", False),
+                find_substances=getattr(self, "find_substances", False),
+                kiss=getattr(self, "kiss", "keep"),
                 find_topics=getattr(self, "find_topics", ()), title=book_title(self.audio),
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
@@ -1908,6 +1953,7 @@ class App(tk.Tk):
         names = {"sex": "EXPLICIT SCENE", "ref": "SEXUAL REFERENCE", "gore": "GORE",
                  "religion": "RELIGION", "relationship": "RELATIONSHIP", "crude": "CRUDE HUMOR",
                  "bully": "BULLYING", "disrespect": "DISRESPECT", "flirt": "FLIRTING",
+                 "kiss": "KISSING", "sleeping": "SLEEPING AROUND", "substances": "DRINKING & DRUGS",
                  "holiday": "HOLIDAY",
                  "birthday": "BIRTHDAY CANDLES", "magic": "MAGIC", "darkmagic": "DARK MAGIC",
                  "vampires": "VAMPIRES & WEREWOLVES"}

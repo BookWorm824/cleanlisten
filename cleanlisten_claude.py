@@ -58,6 +58,8 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "religion": "religious content", "relationship": "same-sex / non-traditional relationship",
               "crude": "crude humor", "bully": "bullying",
               "disrespect": "disrespect or talking back to a parent", "flirt": "flirting",
+              "kiss": "kissing", "sleeping": "sleeping around or an affair",
+              "substances": "drinking, smoking or drugs",
               "holiday": "holiday", "birthday": "birthday candles", "darkmagic": "dark magic",
               "magic": "magic", "vampires": "vampires and werewolves",
               "added": "passage you chose to cut"}
@@ -67,11 +69,17 @@ CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mil
 
 # What the family wants, filter by filter (from Lauren's own rules for CleanListen)
 KIND_RULES = {
-    "sex": "Explicit sex scenes: cut the explicit part of the scene. Kissing, romance, a couple "
-           "going to bed or waking up together, beds and sheets are fine - only explicit sexual "
-           "content is cut.",
+    "sex": "Explicit sex scenes: cut the explicit part of the scene. Judge it by what is "
+           "happening, not by where they are or whether they're dressed: a sex scene can happen "
+           "sitting up and fully clothed, and it includes oral sex and touching someone's private "
+           "parts (with a hand or mouth). Kissing, romance, two people only talking, sitting or "
+           "lying in bed, a couple going to bed or waking up together, beds and sheets are fine - "
+           "only sexual content is cut.",
     "ref": "Sexual references: cut sentences that talk about sex, describe sexual desire, or are "
-           "sexual jokes or innuendo, someone being sexy or aroused, one-night stands. A sentence "
+           "sexual jokes or innuendo, someone being sexy or aroused, one-night stands, talk of oral "
+           "sex or of touching someone's private parts. Cut only the sentences that are sexual "
+           "themselves, not the sentences around a joke; plainly mentioning underwear ('can you "
+           "see my underwear?') is fine. A sentence "
            "that only MENTIONS that someone slept with someone or made love (e.g. 'I should never "
            "have told him I'd slept with someone else') stays - those words are muted on their own "
            "(answer just_the_word). Ordinary romance, affection, dating, marriage and kissing are fine, "
@@ -92,16 +100,21 @@ KIND_RULES = {
                 "or denying God or losing their faith; and Providence spoken of as God ('Providence "
                 "only knows', 'trust in Providence'). Fine (keep): a brief mention that someone "
                 "prayed or a short simple prayer ('please, Jesus'), saying grace, thanking God, going "
-                "to church or a prayer service. In a song or hymn, cut only the lines that are about "
-                "it. This family cuts borderline religious talk - when unsure, choose remove.",
+                "to church or a prayer service; God's name said as an exclamation ('Thank God', "
+                "'Dear God', 'Oh, hallelujah', 'what in the name of God', 'go to hell': the word "
+                "lists mute just those words); and idioms ('a match made in heaven', 'fire and "
+                "brimstone', 'get to the church on time', 'penance' meaning a punishment). In a song "
+                "or hymn, cut only the lines that are about it. This family cuts borderline religious talk - when unsure, choose remove.",
     "relationship": "Same-sex and non-traditional relationships: cut sentences that show a "
                     "same-sex couple, romance or flirting (including a man flirting with a man), "
                     "throuples, polyamory, open marriages, swingers, polygamy. A man and woman "
-                    "together is fine.",
+                    "together is fine, and so is 'gay' meaning happy or cheerful (an old song, "
+                    "'gay apparel'): that's only ever a word, never a same-sex line.",
     "crude": "Crude humor: cut toilet and gross-out jokes (farting, pooping, burping, boogers, "
              "pranks like that). Someone being sick or using the bathroom plainly is fine.",
-    "bully": "Bullying: cut taunting, name-calling, mocking or picking on someone. An ordinary "
-             "argument, a villain's plan or a police interrogation is fine.",
+    "bully": "Bullying: cut taunting, name-calling, mocking or picking on someone, including a "
+             "villain's mocking song and an insult passed on ('she called you a ...'): the whole "
+             "sentence. An ordinary argument, a villain's plan or a police interrogation is fine.",
     "disrespect": "Disrespect: cut sentences where a child or teen is bratty or disrespectful to "
                   "a parent, teacher or other grown-up: talking back, sassing, mocking or "
                   "insulting them, refusing to do what they're told, openly disobeying, sneaking "
@@ -110,6 +123,14 @@ KIND_RULES = {
                   "something wrong, friendly teasing and a child asking why are fine. Still cut it "
                   "if they learn their lesson later, but say so in the reason (\"learns their "
                   "lesson: apologizes later\"), or say they get away with it.",
+    "kiss": "Kissing: cut sentences where two people kiss romantically or make out. A parent "
+            "kissing a child, or a greeting kiss on the cheek, is fine.",
+    "sleeping": "Sleeping around, affairs & living together: cut sentences where an unmarried "
+                "couple sleeps or lives together, someone sleeps around, cheats on a husband, wife "
+                "or partner, or has an affair. A married couple, and friends or family sharing a "
+                "home or a room, are fine.",
+    "substances": "Drinking, smoking & drugs: cut sentences where someone drinks alcohol, is "
+                  "drunk, smokes, vapes or uses drugs. Medicine taken for an illness is fine.",
     "flirt": "Flirting: cut sentences where someone flirts, hits on, winks at or makes romantic "
              "advances toward someone. A married couple being affectionate is fine.",
     "holiday": "Holidays: cut sentences about Christmas (Santa, Christmas trees, presents, carols), "
@@ -481,16 +502,46 @@ STRICT_RELIGION_RULE = (
     "Lord'); blessings ('God bless'); 'God willing', 'heaven knows', 'Amen', 'Hallelujah'; "
     "someone in heaven; statements of belief or doubt; anger at God; Providence spoken of as "
     "God. Only very generic mentions stay (keep): that someone prayed, went to church or a "
-    "service, said grace, without the words of the prayer or any talk about God. Swear-like "
+    "service, said grace, without the words of the prayer or any talk about God; and idioms ('a "
+    "match made in heaven', 'fire and brimstone', 'penance' meaning a punishment). Swear-like "
     "exclamations ('oh my God') are handled by the word filters, not this one. When unsure, "
     "choose remove.")
+
+
+PASSIONATE_KISS_RULE = (
+    "Passionate kissing: cut sentences with passionate romantic kissing or making out. A quick "
+    "or gentle kiss, a peck, and a parent kissing a child are fine.")
+# The religion boxes the family left OFF (Jason, 2026-10-30: religion in parts)
+RELIGION_OFF = {
+    "preach": "The family turned OFF preaching: keep people explaining, preaching, teaching or "
+              "debating beliefs, scripture, statements of belief or testimony, and Providence.",
+    "anger": "The family turned OFF anger at God: keep doubting or questioning God, and anyone "
+             "angry with, blaming, mocking or denying God or losing their faith.",
+}
+
+
+def religion_rule(f):
+    """The religion rule for the boxes ticked: preaching, anger at God, prayers & verses."""
+    parts = f.get("religion_parts")
+    if parts is None:            # from before the boxes
+        parts = ["preach", "anger"] + (["prayers"] if f.get("strict_religion") else [])
+    base = STRICT_RELIGION_RULE if "prayers" in parts else KIND_RULES["religion"]
+    return " ".join([base] + [RELIGION_OFF[p] for p in RELIGION_OFF if p not in parts])
+
+
+def _kind_rule(k, f):
+    if k == "religion":
+        return religion_rule(f)
+    if k == "kiss" and f.get("kiss") == "passionate":
+        return PASSIONATE_KISS_RULE
+    return KIND_RULES[k]
 
 
 def rules_text(st):
     f = st.get("filters") or {}
     kinds, cats = f.get("kinds", []), f.get("cats", [])
-    on = [STRICT_RELIGION_RULE if k == "religion" and f.get("strict_religion") else KIND_RULES[k]
-          for k in kinds if k in KIND_RULES] + [CAT_RULES[c] for c in cats if c in CAT_RULES]
+    on = [_kind_rule(k, f) for k in kinds if k in KIND_RULES] + \
+         [CAT_RULES[c] for c in cats if c in CAT_RULES]
     off = [KIND_NAMES[k] for k in KIND_RULES if k not in kinds] + \
           [CAT_RULES[c].split(":")[0] for c in CAT_RULES if c not in cats]
     t = "The family's filters that are ON (follow them exactly):\n" + "\n".join(f"- {x}" for x in on)
@@ -527,6 +578,10 @@ narrator didn't actually say it (misheard).
 - The text comes from speech recognition, so some words are misheard. Judge what the narrator \
 really said: a misheard swear word is still swearing; a normal word that was misheard as a swear \
 word is not (say so and set misheard to true).
+- A listed phrase that is really said counts even as a figure of speech: "Lord knows" or "God \
+help him" is remove when God's name is on. A word that only makes sense as something else \
+(a name, an ordinary word) is a mishearing, not a swear.
+- Any slur that is said goes in missed words, even if it isn't on a word list.
 - Sentences are numbered S1, S2, ... For missed passages give the first and last sentence numbers \
 covering only what needs cutting (whole sentences, as few as possible). For missed words give the \
 sentence number and the exact word or words as they appear in that sentence.
@@ -732,8 +787,10 @@ def apply_review(st, data, counts, asr=None):
             already = bool(first) and any(
                 m["part"] == it["part"] and it["s"] - 0.5 <= m["s"] <= it["e"] + 0.5
                 and first in E.norm(m.get("word_raw") or m.get("word", "")) for m in st["mutes"])
-            added = already or (any(_add_word(st, asr, si, words, cat, True, f"{N}: just the word", reason)
-                                    for si in range(a, b + 1)) if words else False)
+            listed = E.listed_word(words, (st.get("filters") or {}).get("cats") or list(CAT_RULES))
+            added = already or (listed and any(_add_word(st, asr, si, words, cat, True,
+                                                         f"{N}: just the word", reason)
+                                               for si in range(a, b + 1)) if words else False)
             if added or not sure:
                 it[key] = False if added else it.get(key, True)
                 it["ai_note"] = f"{N}: just the word" if added else f"{N} unsure"
@@ -833,7 +890,9 @@ def review(st, asr, progress=None, cancel=None):
             si = _snum(w.get("sentence"))
             if c is None or si is None:
                 continue
-            sure = w.get("confidence") == "high"
+            # only a word on the lists ticked is muted on its own (CleanView's listed_word);
+            # anything else ("Grafi" heard for a name) is offered unticked
+            sure = w.get("confidence") == "high" and E.listed_word(w.get("words", ""), cats)
             if _add_word(st, asr, si, w.get("words", ""), c, sure,
                          f"Found by {N}" if sure else f"{N} suggests", str(w.get("reason", ""))):
                 counts["found" if sure else "suggested"] += 1

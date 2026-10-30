@@ -397,3 +397,15 @@ def test_disrespect_is_known_to_every_reader():
     assert "disrespect" in E.AI_TYPES and "disrespect" in learn.KINDS
     assert "learn their lesson" in cc.KIND_RULES["disrespect"]
     assert E._ai_backed("disrespect", words("You can't make me!"))
+
+
+def test_sex_scenes_are_judged_by_what_happens():
+    # Lauren, 2026-10-30 (CleanView 1.18.3): clothed or sitting can still be a sex scene; oral and
+    # hand count; two people only talking in bed don't
+    import cleanlisten_claude as cc
+    import cleanread
+    for text in (E.AI_TYPES["sex"], cc.KIND_RULES["sex"]):
+        assert "oral sex" in text and "private parts" in text and "dressed" in text
+        assert "talking" in text
+    for text in (E.AI_TYPES["ref"], cc.KIND_RULES["ref"], cleanread.CLEAN_AI["ref"]):
+        assert "oral sex" in text and "private parts" in text

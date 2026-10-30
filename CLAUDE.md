@@ -199,6 +199,26 @@ plain words, learned from Lauren directly and from her exported reviews:
   not the boss of me", "you can't make me"; not "whatever" or "make me"); the AI helper and
   Claude catch the rest. Claude still cuts it if they learn their lesson later, and says so in
   the reason (or that they get away with it). Off by default, under Bullying.
+- **Religion in parts** (Jason, 2026-10-30; 1.10.0): under "Religious content", three boxes:
+  Preaching, Anger at God (both on) and Prayers & verses (the old "strict" box, off).
+  `E.RELIGION_PARTS` / `religion_def(parts)` (local AI), `cc.religion_rule(filters)` (Claude),
+  `filters["religion_parts"]`; analyze(`religion_parts=`), CleanRead `religion_parts(opts)`.
+  Old saved settings (`religion_strict`) map onto it.
+- **Reverent "Jesus"/"Christ" isn't a swear** (`reverent()`, `REVERENT_BEFORE/NEXT/IS`): "the love
+  of Christ", "know Jesus", "Jesus told us", "Christ is risen", "thank You, Jesus" stay; oaths
+  ("Jesus!", "Jesus, is that you?", "Oh my Jesus") are muted. CleanView has the same rule.
+- **CleanView 1.18.4's word lessons** (Jason's reports): "by Allah", "God/Lord help him…",
+  "sounds like bull", "PO'd" (capitals or dots only: "Po'd" is "Po would"). `E.listed_word(text,
+  cats)`: Claude only mutes a missed word (or "just the word") on its own if it's on a ticked
+  group's list; anything else is offered unticked. Same-sex isn't "gay" meaning cheerful;
+  bullying includes a villain's mocking song and a passed-on insult; sexual references are only
+  the sentences that are sexual themselves (not plain underwear talk).
+- **Same filters in CleanListen and CleanRead** (Lauren, 2026-10-30): CleanListen gained
+  sleeping around, drinking/smoking/drugs and kissing (keep / passionate / all; CleanRead's word
+  lists through `E.sleeping_hit` / `substances_hit` / `kiss_hit`, which import cleanread lazily);
+  CleanRead gained rude words and the religion parts. `tests/test_parity.py` reads both setup
+  pages and fails if their options differ. Neither app's small AI reads same-sex relationships
+  (it filed ordinary romance there).
 - **Off by default:** soft substitutes (gosh, heck…), bullying, disrespect, flirting, and the "For young
   kids" boxes (holidays, birthday candles, magic, dark magic, vampires & werewolves; CleanView
   ticks them for its kids' profiles, CleanListen has no profiles). The setup page must still
@@ -244,6 +264,16 @@ Claude's reasons, chat, plus the PC's `learned.json`). Lauren sends these in. To
 2. Merge: `python tools/merge_learned.py shared_learned.json "<file>"`, then drop bad
    "fine in this phrase" entries (`cleanlisten_learn._may_be_fine`).
 3. Adjust `KIND_RULES` / `CAT_RULES` / word lists if a pattern shows up, and release.
+
+**CleanRead refined** reports (`CleanRead refined - <book> <date>.json`, from CleanRead's "Send
+what you marked…") land in the same Drive folder ("CleanListen learned", synced at
+`G:\My Drive\CleanListen learned`). CleanRead's own marks stay on each PC, so clear wrong flags
+from them go into `shared_learned.json` → `"cleanread_fine"` ({kind: [[item_key, text]]}), read by
+`cleanread.shared_fine()`: found again they start unticked ("Kept by families before") and the AI
+helper sees them as "not a problem" examples. Only teach clear mistakes she unticked (a prayer
+flagged as religion, "pleasure to meet you" as a sexual reference), never her own choice to keep
+something that fits its filter (preaching in a Christian novel). First batch (2026-10-30): At
+Every Turn, Camp Club Girls, Love Songs Suck, The Boxcar Children (63 marks, built by hand).
 
 ## 8. Testing
 

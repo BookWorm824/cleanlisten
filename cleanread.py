@@ -764,14 +764,7 @@ SUBSTANCES = Matcher(
            r"smoking", r"stoned"],
     phrases=["got|getting|get high", "a|another|his|her drink"])
 
-CLEAN_AI = {
-    **E.AI_TYPES,
-    "kiss": "romantic kissing or making out between two people (a parent kissing a child, or a "
-            "greeting kiss on the cheek, is NOT this)",
-    "sleeping": "an unmarried couple sleeping together or living together, sleeping around, "
-                "cheating on a husband, wife or partner, or an affair",
-    "substances": "someone drinking alcohol, being drunk, smoking, vaping or using drugs",
-}
+CLEAN_AI = dict(E.AI_TYPES)     # the same definitions as CleanListen (kissing, drinking... too)
 
 
 # ---------------------------------------------------------------------------
@@ -1137,7 +1130,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40):
                 break
         return best >= 0.8
 
-    fine = load_learned()["fine"]
+    fine = all_fine()
     not_these = [(t, e[1]) for t in types for e in fine.get(t, [])[-4:] if e[1]][-12:]
     teach = ("\n\nThis family marked sentences like these as NOT a problem, so don't flag ones "
              "like them:\n" + "\n".join(f'- "{x}" (not "{t}")' for t, x in not_these)) if not_these else ""
@@ -1230,6 +1223,10 @@ def ai_second_opinion(text, definition):
 # ---------------------------------------------------------------------------
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 LEARNED = APP_DATA / "cleanread_learned.json"
+# What families marked fine in the reports they sent in, shipped with updates ("cleanread_fine" in
+# CleanListen's shared_learned.json): clear wrong flags only, never a family's own choice to keep
+# something that fits its filter. Your own marks come first.
+SHARED = HERE / "shared_learned.json"
 MAX_LEARNED = 400       # per kind
 
 
@@ -1277,12 +1274,31 @@ def learn_marks(marks):
 LEARNED_SHORTEST = 5    # shorter lines ("Shut up, Sam.") are too common to re-apply (as CleanListen)
 
 
-def fine_keys(d=None):
-    """What was marked fine, per filter. A mark only applies to what that same filter finds
-    again, so it never acts while its filter is off."""
+def shared_fine():
+    """The built-in marks: {kind: [[key, text], ...]} ({} if the file can't be read)."""
+    try:
+        d = json.loads(SHARED.read_text(encoding="utf8")).get("cleanread_fine", {})
+        return {k: [e for e in v if isinstance(e, list) and len(e) == 2] for k, v in d.items()}
+    except Exception:
+        return {}
+
+
+def all_fine(d=None):
+    """Your marks and the built-in ones, per filter (built-in first, so yours are the last)."""
+    d = d or load_learned()
+    out = {k: list(v) for k, v in shared_fine().items()}
+    for kind, lst in d["fine"].items():
+        keys = {e[0] for e in lst}
+        out[kind] = [e for e in out.get(kind, []) if e[0] not in keys] + list(lst)
+    return out
+
+
+def fine_keys(d=None, shared=True):
+    """What was marked fine, per filter (shared: the built-in marks too). A mark only applies
+    to what that same filter finds again, so it never acts while its filter is off."""
     d = d or load_learned()
     return {kind: {e[0] for e in lst if len(e[0].split()) >= LEARNED_SHORTEST}
-            for kind, lst in d["fine"].items()}
+            for kind, lst in (all_fine(d) if shared else d["fine"]).items()}
 
 
 def recount(c):
@@ -1680,11 +1696,22 @@ CLEAN_LABELS = {"sex": "Explicit scenes", "ref": "Sexual references", "gore": "G
                 **E.TOPIC_LABELS}
 
 
+def religion_parts(opts):
+    """The religion boxes ticked: preaching, anger at God, prayers & verses (none if religion is
+    off). Settings from before the boxes count as preaching and anger at God."""
+    if not opts.get("religion"):
+        return set()
+    return {p for p in E.RELIGION_PARTS
+            if opts.get("religion_" + p, p != "prayers" or opts.get("religion_strict", False))}
+
+
 def analyze(book, opts, progress=None, cancel=None):
     """opts: dict of the filter ticks. Returns {"cuts": [...], "mutes": [...]}."""
     say = progress or (lambda f, m: None)
-    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual") if opts.get(g)
+    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude") if opts.get(g)
             for c in E.GROUPS[g]]
+    # religion in parts, as in CleanListen (Jason): preaching, anger at God, prayers & verses
+    rparts = religion_parts(opts)
     if opts.get("relationships"):
         cats.append("orientation")
     say(0.02, "Finding language…")
@@ -1722,7 +1749,7 @@ def analyze(book, opts, progress=None, cancel=None):
     if opts.get("gore"):
         say(0.15, "Looking for gory descriptions…")
         add_passages("gore")
-    if opts.get("religion"):
+    if "preach" in rparts:
         say(0.2, "Looking for religious content…")
         add_passages("religion")
 
@@ -1730,7 +1757,10 @@ def analyze(book, opts, progress=None, cancel=None):
     kiss_mode = opts.get("kiss", "keep")
     sentence_filters = [
         ("ref", opts.get("refs"), _ref_hit),
-        ("religion", opts.get("religion"), E.blames_god),
+        ("religion", bool(rparts), lambda w: ("anger" in rparts and E.blames_god(w) or
+                                               "preach" in rparts and E.invokes_providence(w) or
+                                               "prayers" in rparts and E.strict_religion_hit(w) and
+                                               not (E.blames_god(w) or E.invokes_providence(w)))),
         ("relationship", opts.get("relationships"), lambda w: rel_hit(w, book.old_style)),
         ("crude", opts.get("crude"), E.crude_hit),
         ("bully", opts.get("bully"), E.bully_hit),
@@ -1759,14 +1789,14 @@ def analyze(book, opts, progress=None, cancel=None):
     if opts.get("ai"):
         kinds = {k: CLEAN_AI[k] for k, on in (
             ("ref", opts.get("refs")), ("sex", opts.get("sex")), ("gore", opts.get("gore")),
-            ("religion", opts.get("religion")), ("relationship", opts.get("relationships")),
+            ("religion", bool(rparts)),
             ("crude", opts.get("crude")), ("bully", opts.get("bully")),
             ("disrespect", opts.get("disrespect")), ("flirt", opts.get("flirt")),
             ("kiss", kiss_mode in ("passionate", "all")), ("sleeping", opts.get("sleeping")),
             ("substances", opts.get("substances")), *((t, opts.get(t)) for t in E.TOPICS)) if on}
-        if kiss_mode == "passionate":
-            kinds["kiss"] = ("passionate romantic kissing or making out (a quick or gentle kiss, or a "
-                             "parent kissing a child, is NOT this)")
+        # (same-sex relationships are left to the word lists, as in CleanListen: the small AI
+        # put 56 ordinary man-and-woman lines of one romance there)
+        kinds.update({k: t for k, t in E.ai_defs_for(rparts, kiss_mode).items() if k in kinds})
         try:
             ai_note = _ai_clean(book, cuts, mutes, kinds, taken, in_passage,
                                 lambda f, m: say(0.4 + 0.6 * f, m), cancel)
@@ -1779,17 +1809,19 @@ def analyze(book, opts, progress=None, cancel=None):
         c["id"] = n
         c.setdefault("cut", True)
     # what you kept (or marked "Not a problem") before starts unticked
-    fk = fine_keys()
+    fk, mine = fine_keys(), fine_keys(shared=False)
     known = 0
     for c in cuts:
         if c["key"] in fk.get(c["kind"], ()):
-            c["cut"], c["ai_note"] = False, "You kept this before"
+            c["cut"], c["ai_note"] = False, ("You kept this before" if c["key"] in mine.get(
+                c["kind"], ()) else "Kept by families before")
             known += 1
     for m in mutes:
         if m["key"] in fk.get("word", ()):
-            m["on"], m["note"] = False, "You kept this before"
+            m["on"], m["note"] = False, ("You kept this before" if m["key"] in mine.get(
+                "word", ()) else "Kept by families before")
             known += 1
-    learn_note = f"Left {known} thing(s) unticked that you kept before." if known else ""
+    learn_note = f"Left {known} thing(s) unticked that were kept before." if known else ""
     say(1.0, "Done")
     return {"cuts": cuts, "mutes": mutes, "ai_note": ai_note, "learn_note": learn_note,
             "title": book.title, "opts": opts}

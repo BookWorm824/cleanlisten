@@ -328,3 +328,23 @@ def test_retarded_stays_muted_when_claude_says_keep(book):
     assert st["mutes"][0]["on"] is True
     assert st["mutes"][0]["note"] == "Muted (Claude questioned it)"
     assert not E.may_untick_word({"cat": "moderate", "word_raw": "retard"})
+
+
+def test_a_word_off_the_ticked_lists_is_only_suggested(book, monkeypatch):
+    # CleanView 1.18.4: an AI muted "butts" with rude words off; and speech recognition mishears
+    # names. Only a word on a ticked list is muted on its own.
+    st, asr = book
+    answer = {"decisions": [], "missed_passages": [], "missed_words": [
+        {"sentence": "S1", "words": "quiet", "type": "swearing", "confidence": "high", "reason": "x"},
+        {"sentence": "S2", "words": "damn", "type": "mild language", "confidence": "high", "reason": "x"}]}
+    monkeypatch.setattr(cc, "status", lambda provider=None: "ok")
+    monkeypatch.setattr(cc, "run", lambda prompt, system, schema=None, **kw: {"data": answer})
+    cc.review(st, asr)
+    assert [(m["word_raw"], m["on"]) for m in st["mutes"]] == [("quiet", False), ("damn", True)]
+
+
+def test_just_the_word_needs_a_listed_word(book):
+    st, asr = book
+    st["scenes"].append(passage(asr, st["sentences"], 1, 0, 0))   # "It was a quiet morning."
+    decide(st, asr, d("P1", "just_the_word", words="quiet", word_type="swearing"))
+    assert st["scenes"][0]["cut"] is True and st["mutes"] == []

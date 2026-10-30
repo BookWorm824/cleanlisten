@@ -192,7 +192,8 @@ def _for_filters(lines, cut_for, on):
 
 
 # the passage filters a sentence can be remembered for ("added" etc. count for every filter)
-KINDS = {"ref", "sex", "gore", "religion", "relationship", "crude", "bully", "disrespect", "flirt", "holiday",
+KINDS = {"ref", "sex", "gore", "religion", "relationship", "crude", "bully", "disrespect", "flirt",
+         "kiss", "sleeping", "substances", "holiday",
          "birthday", "darkmagic", "magic", "vampires"}
 
 

@@ -43,14 +43,16 @@ WORD_OPTS = [("swearing", "Swearing  (f-word, s-word, b-word…)", True),
              ("mild", "Mild words  (damn, hell, crap, “screw you”)", True),
              ("deity", "God's name used as a swear", True),
              ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
-             ("sexual", "Sexual words  (sex, sexy, horny…)", True)]
+             ("sexual", "Sexual words  (sex, sexy, horny…)", True),
+             ("rude", "Rude words kids copy  (stupid, shut up…)", False)]
 CUT_OPTS = [("sex", "Sex scenes  (whole passages)", True),
             ("refs", "Sexual references", True),
             ("sleeping", "Sleeping around, affairs & living together", False),
             ("flirt", "Flirting", False),
             ("relationships", "Same-sex & non-traditional relationships", True),
             ("gore", "Gory descriptions", True),
-            ("religion", "Religious content  (preaching, anger at God)", True),
+            ("religion", "Religious content", True),
+            ("religion_parts", None, None),     # preaching, anger at God, prayers & verses (Jason)
             ("crude", "Crude humor  (toilet & gross-out jokes)", True),
             ("bully", "Bullying  (taunts, name-calling)", False),
             ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
@@ -306,6 +308,22 @@ class App(tk.Tk):
             ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=0, sticky="w",
                                                                padx=(0, 24), pady=2)
         for n, (key, label, on) in enumerate(CUT_OPTS):
+            if key == "religion_parts":       # only used while Religious content is ticked
+                row = tk.Frame(grid, bg=CARD)
+                row.grid(row=n + 1, column=1, sticky="w", padx=(22, 0))
+                boxes = []
+                for part, plabel in engine.E.RELIGION_LABELS.items():
+                    v = tk.BooleanVar(value=st.get("religion_" + part, st.get("religion_strict", False)
+                                                   if part == "prayers" else True))
+                    self.opts["religion_" + part] = v
+                    boxes.append(ttk.Checkbutton(row, text=plabel, variable=v))
+                    boxes[-1].pack(side="left", padx=(0, 8))
+                pv = self.opts["religion"]
+                show = lambda *_, bs=boxes, pv=pv: [b.state(["!disabled"] if pv.get() else ["disabled"])
+                                                    for b in bs]
+                pv.trace_add("write", show)
+                show()
+                continue
             v = tk.BooleanVar(value=st.get(key, on))
             self.opts[key] = v
             ttk.Checkbutton(grid, text=label, variable=v).grid(row=n + 1, column=1, sticky="w", pady=2)
@@ -408,7 +426,8 @@ class App(tk.Tk):
         opts = {k: v.get() for k, v in self.opts.items()}
         opts["kiss"] = KISS[self.kiss_box.current()][0]
         opts["ai"] = self.ai_var.get()
-        if not any(v for k, v in opts.items() if k not in ("kiss", "ai")) and opts["kiss"] == "keep":
+        if not any(v for k, v in opts.items() if k not in ("kiss", "ai") and not k.startswith(
+                "religion_")) and opts["kiss"] == "keep":
             messagebox.showinfo(APP, "Tick at least one thing to take out.")
             return
         self.clean_opts = opts
@@ -794,7 +813,8 @@ class App(tk.Tk):
                 ttk.Checkbutton(top, text=f"Cut this   ·   {c['where']}   ·   {size}",
                                 variable=v, command=self._update_summary).pack(side="left")
                 if c.get("ai_note"):
-                    soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests", "You kept this before")
+                    soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests", "You kept this before",
+                                           "Kept by families before")
                     tk.Label(top, text=c["ai_note"], bg="#FFF4D6" if soft else "#E3EFEC",
                              fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 9), padx=6).pack(side="right")
                 txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(c["text"]) // 95),

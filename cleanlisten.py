@@ -123,6 +123,7 @@ MINCED_PHRASES += [("son", "of", "a", w) for w in ("gun", "biscuit", "b")]
 MINCED_PHRASES += [("good", w) for w in ("grief", "golly", "gravy", "heaven", "heavens", "gracious")]
 MINCED_PHRASES += [("thank", w) for w in ("goodness", "heaven", "heavens")]
 MINCED_PHRASES += [(*o, "heavens", "to", w) for o in ((), ("oh",)) for w in ("betsy", "murgatroyd")]
+MINCED_PHRASES += [("in", w, "name") for w in ("heaven's", "heavens")]   # "what in heaven's name"
 MINCED_PHRASES += [("for", w, s_) for w in ("goodness", "goodness's", "heaven's", "heavens", "pete's",
                                             "petes", "pete", "cripes", "mercy's", "land's", "lands")
                    for s_ in ("sake", "sakes")]
@@ -160,9 +161,49 @@ DEITY_PHRASES = [
     ("lord", "help", "me"), ("god", "forbid"), ("swear", "to", "god"), ("in", "god's", "name"),
     ("in", "gods", "name"), ("for", "the", "love", "of", "god"), ("christ", "on", "a", "bike"),
     ("god", "in", "heaven"), ("so", "help", "me", "god"), ("holy", "lord"),
+    ("for", "the", "love", "of", "christ"), ("oh", "hallelujah"),    # not "the choir sang hallelujah"
+    # from CleanView's reports (Aladdin, The Blind Side, 2026-10-30; CleanView 1.18.4)
+    ("by", "allah"), ("allah", "forbid"), ("praise", "allah"), ("oh", "allah"),
+    *((g, "help", w) for g in ("god", "lord") for w in ("him", "her", "them", "you", "that", "this",
+                                                         "the")),
     # (not "thank the Lord": like "thank God", that's left to the strict religion filter)
 ]
 DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"oh?m[iy]god", r"goddamn.*"]
+# "Jesus" and "Christ" said with reverence aren't swearing ("the love of Christ", "to know Jesus",
+# "Jesus told us"; Jason, 2026-10-30: 34 in one Christian novel were muted as swears, and someone
+# who only wants the cursing out shouldn't lose them). An oath is said on its own ("Jesus!",
+# "Christ, that hurt"); the name after one of these words, or before one of these verbs, is
+# talk about Him. (The religion filter still decides about faith talk.)
+REVERENT_BEFORE = {
+    "of", "in", "to", "for", "about", "with", "through", "from", "by", "into", "unto", "toward",
+    "towards", "upon", "than", "like", "as", "before", "the", "my", "our", "his", "her", "their",
+    "lord", "jesus", "and", "please", "know", "knew", "knows", "known", "knowing", "accept",
+    "accepted", "accepts", "need", "needs", "needed", "serve", "served", "serves", "serving",
+    "follow", "followed", "follows", "following", "love", "loved", "loves", "loving", "praise",
+    "praised", "praising", "trust", "trusted", "trusts", "believe", "believed", "believes",
+    "found", "find", "finds", "meet", "met", "share", "shared", "sharing", "preach", "preached",
+    "preaching", "proclaim", "proclaimed", "bring", "brought", "tell", "told", "teach", "taught",
+    "worship", "worshipped", "worshiped", "glorify", "embraced", "embrace", "risen", "crucified"}
+REVERENT_NEXT = {
+    "told", "tells", "said", "says", "taught", "teaches", "loves", "loved", "died", "dies", "rose",
+    "sent", "sends", "heard", "hears", "healed", "heals", "saves", "saved", "wept", "promised",
+    "promises", "forgave", "forgives", "answered", "answers", "himself", "alone", "came", "comes",
+    "lives", "lived", "calls", "called"}
+REVERENT_IS = {"risen", "lord", "king", "god", "alive", "coming", "here", "with", "the", "my",
+               "our", "love", "real", "born", "in"}   # "Christ is risen", not "Jesus, is that you?"
+
+
+def reverent(words, i, j=None):
+    """True if the name at words[i:j] ("jesus", "christ", "jesus christ") is talk about Him,
+    not an oath."""
+    j = j or i + 1
+    prev, two = (words[i - 1] if i else ""), (words[i - 2] if i > 1 else "")
+    nxt = words[j] if j < len(words) else ""
+    if prev in ("my", "sweet", "dear") and two == "oh":
+        return False                   # "oh my Jesus"
+    if nxt in ("is", "was"):
+        return (words[j + 1] if j + 1 < len(words) else "") in REVERENT_IS
+    return prev in REVERENT_BEFORE or nxt in REVERENT_NEXT or (two, prev) == ("thank", "you")
 # Sexual words muted one at a time, wherever they come up (separate from
 # cutting whole explicit scenes). Words with innocent everyday meanings
 # (bed, naked, breast, screw) are deliberately left out.
@@ -198,7 +239,8 @@ SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this
 SCREW_PHRASES += [("up", "yours")] + [(*w.split(), "screwed") for w in (
     "i'm", "we're", "you're", "he's", "she's", "they're", "it's", "we are", "i am", "you are",
     "totally", "completely", "royally", "so", "really", "just",
-    "get", "gets", "got", "getting", "gotten")]
+    "get", "gets", "got", "getting", "gotten",
+    "be", "been", "is", "are", "was", "were")]        # "we would be screwed" (CleanView 1.18.5)
 SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "tight", "tightly", "to",
                      "the", "it", "that", "this", "back", "off", "up"}
 # "jerked off the road", "jacked off his feet": a place or thing follows, so it's literal
@@ -332,7 +374,7 @@ def fruit_slang(words):
 BULL_BEFORE = re.compile(r"(^| )(that's|thats|that is|that was|this is|this was|it's|it is|"
                          r"it was|all|such|total|complete|utter|absolute|pure|load of|bunch of|"
                          r"pile of|full of|cut the|cut out the|enough of the|enough with the|"
-                         r"no more)$")
+                         r"no more|sounds like|sounded like)$")
 BULL_SWEAR_NEXT = {"crap", "crapping", "shit", "shits", "shitting", "shitter"}
 BULL_NOT_NEXT = {"riding", "rider", "riders", "ride", "rides", "market", "markets", "terrier",
                  "terriers", "shark", "sharks", "frog", "frogs", "elephant", "elephants", "seal",
@@ -528,7 +570,9 @@ def unbleep(w):
 # Short forms of swears on the lists. "sob" is also a real word (to cry, a sob story), so
 # it only counts written as an abbreviation: capitals ("SOB") or dots ("S.O.B.").
 ABBREVIATIONS = [(re.compile(r"[Ss]\.[Oo]\.[Bb]\.?('?s)?|SOB('?S|'?s)?|S-O-B"), "sonofabitch"),
-                 (re.compile(r"[Dd][-.]?[Bb][Aa][Gg][Ss]?"), "douchebag")]
+                 (re.compile(r"[Dd][-.]?[Bb][Aa][Gg][Ss]?"), "douchebag"),
+                 # "PO'd" (pissed off); not "Po'd" (Po would, Kung Fu Panda). CleanView 1.18.4
+                 (re.compile(r"PO'e?d|[Pp]\.[Oo]\.'?e?d"), "pissed")]
 
 
 def unabbreviate(w):
@@ -589,6 +633,14 @@ def lead_in(words, i):
     return 0
 
 
+def listed_word(text, cats):
+    """True if the word or words (as written) are on the lists of the word groups ticked
+    (cats), so an AI may mute them on its own (CleanView's listed_word: an AI muted "butts" with
+    rude words off, and speech recognition mishears names). Anything else is only suggested."""
+    ws = [norm(w) for w in str(text).split() if norm(w)]
+    return bool(ws) and bool(find_language(ws, list(cats)))
+
+
 def find_language(words, cats, lead_in_too=False):
     """Return (i, j, category) spans of words[i:j] to mute. With lead_in_too, a swear's
     lead-in ("what the" hell) is part of its span."""
@@ -620,6 +672,8 @@ def _find_language(words, cats):
                         continue  # "the car jerked off the road"
                     if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
                         continue  # "it's screwed to the wall", "we're screwed up"
+                    if ph == ("jesus", "christ") and reverent(words, i, i + 2):
+                        continue  # "the gospel of Jesus Christ"
                     found = (ph, cat)
                     break
             if found:
@@ -648,8 +702,9 @@ def _find_language(words, cats):
                     break
                 if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) or
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
-                        w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"]):
-                    break     # "pussy cat", "Moby Dick", "summa cum laude", "deaf and dumb"
+                        w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
+                        w in ("jesus", "christ") and reverent(words, i)):
+                    break     # "pussy cat", "Moby Dick", "summa cum laude", "the love of Christ"
                 hits.append((i, i + 1, cat))
                 break
         else:
@@ -1478,29 +1533,38 @@ def span_times(asr, i, j):
 # lists miss, and gives a second opinion on what they flagged.
 # ---------------------------------------------------------------------------
 AI_TYPES = {
-    "ref": "a sexual reference, sexual joke or innuendo, or talk about sex (ordinary romance, "
+    "ref": "a sexual reference, sexual joke or innuendo, or talk about sex, including talk of oral "
+           "sex or of touching someone's private parts; only the sentences that are sexual "
+           "themselves, not the ones around a joke (plainly mentioning underwear, ordinary romance, "
            "affection and kissing, pregnancy or babies, 'sex' meaning men or women ('the fair "
            "sex'), a polite 'it's a pleasure', or a body part in a threat are NOT this)",
-    "sex": "part of an explicit sex scene",
+    # judged by what's happening, not by where they are or what they wear (Lauren, 2026-10-30:
+    # "sometimes a sex scene is just sitting and wearing clothes", and oral/hand pleasures)
+    "sex": "part of a sex scene, judged by what is happening, not by where they are or whether "
+           "they are dressed: it includes oral sex and touching someone's private parts (two "
+           "people only talking, sitting or lying in bed is NOT this)",
     "gore": "a graphic, gory description of injuries, wounds, dead bodies or violence (simply "
             "saying someone died, was shot or was found dead is NOT this)",
-    "religion": "someone explaining, preaching or debating religious beliefs of any faith "
-                "(Christian, Catholic, Buddhist, Hindu, Muslim, Jewish or other), Providence spoken of "
-                "as God, or someone being "
-                "angry with, blaming, hating or denying God, or losing their faith (brief mentions "
-                "like praying, saying grace, thanking God, believing in God or going to church are "
-                "NOT this)",
+    "religion": None,      # set below from RELIGION_PARTS (religion_def)
     "relationship": "a same-sex couple, romance, relationship or flirting (for example a man "
                     "flirting with or hitting on another man), or a non-traditional relationship "
-                    "such as a throuple, polyamory, an open marriage, swingers or polygamy",
+                    "such as a throuple, polyamory, an open marriage, swingers or polygamy "
+                    "('gay' meaning happy or cheerful, as in an old song or 'gay apparel', is NOT "
+                    "this)",
     "bully": "bullying or mean-spirited cruelty: taunting, name-calling, mocking or humiliating "
-             "someone, or picking on someone weaker (an ordinary argument, a villain's plot or a "
-             "police interrogation is NOT this)",
+             "someone, or picking on someone weaker, including a villain's mocking song and an "
+             "insult passed on ('she called you a ...') (an ordinary argument, a villain's plot or "
+             "a police interrogation is NOT this)",
     "disrespect": "a child or teen being bratty or disrespectful to a parent, teacher or other "
                   "grown-up: talking back, sassing, mocking or insulting them, refusing to do what "
                   "they're told, openly disobeying, sneaking out or lying to them (grown-ups "
                   "disagreeing with each other, a child politely saying no or standing up to "
                   "something wrong, friendly teasing, or a child asking why are NOT this)",
+    "kiss": "romantic kissing or making out between two people (a parent kissing a child, or a "
+            "greeting kiss on the cheek, is NOT this)",
+    "sleeping": "an unmarried couple sleeping together or living together, sleeping around, "
+                "cheating on a husband, wife or partner, or an affair",
+    "substances": "someone drinking alcohol, being drunk, smoking, vaping or using drugs",
     "flirt": "flirting: someone flirting with, hitting on, winking at, sweet-talking or making "
              "romantic advances toward someone (a married couple being affectionate, a simple "
              "compliment or ordinary friendliness is NOT this)",
@@ -1609,6 +1673,71 @@ def may_untick_word(m, words=None):
     return any(w in INNOCENT_WORDS for w in ws)
 
 
+# Religious content comes in parts, each its own box (Jason, 2026-10-30: "leave the category as
+# a whole that can be clicked off if wanted, but maybe some subcategories"; one Christian novel had
+# 69 religion flags, nearly all prayers). Preaching and anger at God are on by default; prayers &
+# verses is the old "strict" box.
+RELIGION_PARTS = {
+    "preach": "someone explaining, preaching, teaching or debating religious beliefs of any faith "
+              "(Christian, Catholic, Buddhist, Hindu, Muslim, Jewish or other), or Providence "
+              "spoken of as God",
+    "anger": "someone being angry with, blaming, hating or denying God, or losing their faith",
+    "prayers": "a prayer, a Bible verse or hymn, thanking or praising God, or other sincere talk "
+               "about God or faith",
+}
+RELIGION_LABELS = {"preach": "Preaching", "anger": "Anger at God", "prayers": "Prayers & verses"}
+
+
+def religion_def(parts=("preach", "anger")):
+    """The AI's definition of religious content for the parts ticked."""
+    on = [RELIGION_PARTS[p] for p in RELIGION_PARTS if p in parts]
+    t = "; or ".join(on) or "religious content"
+    if "prayers" not in parts:
+        t += (" (praying, a short prayer, saying grace, thanking God, a Bible verse read in passing, "
+              "believing in God or going to church are NOT this; nor is God's name said as an "
+              "exclamation, like 'Thank God', 'Dear God', 'Oh, hallelujah' or 'go to hell')")
+    t += (" (idioms like 'a match made in heaven', 'fire and brimstone', 'get to the church on time' "
+          "or 'penance' meaning a punishment are NOT this)")
+    if "preach" not in parts:
+        t += " (preaching or explaining beliefs is NOT this)"
+    if "anger" not in parts:
+        t += " (doubting, being angry with or denying God is NOT this)"
+    return t
+
+
+AI_TYPES["religion"] = religion_def()
+PASSIONATE_KISS = ("passionate romantic kissing or making out (a quick or gentle kiss, or a parent "
+                   "kissing a child, is NOT this)")
+
+
+def ai_defs_for(religion_parts=("preach", "anger"), kiss="all"):
+    """The AI's definitions that depend on the options: religion's parts, and kissing."""
+    out = {"religion": religion_def(religion_parts)}
+    if kiss == "passionate":
+        out["kiss"] = PASSIONATE_KISS
+    return out
+
+
+def _read():
+    """CleanRead's engine (it ships with CleanListen): its word lists for sleeping around,
+    drinking, smoking & drugs and kissing are used for audiobooks too, so both apps match."""
+    import cleanread
+    return cleanread
+
+
+def sleeping_hit(words):
+    return bool(_read().SLEEPING(words))
+
+
+def substances_hit(words):
+    return bool(_read().SUBSTANCES(words))
+
+
+def kiss_hit(words, mode="all"):
+    """mode: "passionate" (only passionate kissing) or "all" (any romantic kiss)."""
+    return bool(_read().kiss_hit(words, mode))
+
+
 def _ai_backed(kind, words):
     """Does a passage the AI on this PC flagged contain anything the word lists recognise
     for that kind? (Its unbacked finds are mostly false alarms, so they start unticked.)"""
@@ -1627,6 +1756,12 @@ def _ai_backed(kind, words):
             return disrespect_hit(words)
         if kind == "flirt":
             return flirt_hit(words)
+        if kind == "sleeping":
+            return sleeping_hit(words)
+        if kind == "substances":
+            return substances_hit(words)
+        if kind == "kiss":
+            return kiss_hit(words, "all")
         if kind in TOPICS:
             return topic_hit(kind, words)
     except Exception:
@@ -1646,7 +1781,7 @@ def _learned_examples(title=""):
 
 
 def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cancel=None,
-              chunk=40, overlap=6, mutes=None, cats=(), parts=None, title=""):
+              chunk=40, overlap=6, mutes=None, cats=(), parts=None, title="", defs_for=None):
     """Checks every filter both ways: adds what the word lists missed (passages
     and single words) and unticks what they flagged wrongly, with a note."""
     ai = _ai_module()
@@ -1668,7 +1803,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     # ---- 1. AI reads the book and QUOTES what it flags (no line numbers: a
     # small model often gets numbers wrong and flags the sentence next door)
     types = list(kinds) + (["language"] if lang else [])
-    defs = "\n".join(f'- "{t}": {AI_TYPES[t]}' for t in kinds)
+    T = {**AI_TYPES, **(defs_for or {})}     # religion and kissing as the boxes say
+    defs = "\n".join(f'- "{t}": {T[t]}' for t in kinds)
     if lang:
         defs += ('\n- "language": a word that is ' + "; or ".join(LANGUAGE_DEFS[c] for c in lang)
                  + ' (put the exact word in "word")')
@@ -1757,7 +1893,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         if cancel and cancel():
             raise KeyboardInterrupt
         say(n / max(len(todo), 1), "AI is double-checking what it found…")
-        conf = verify(f"Does the marked sentence clearly contain {AI_TYPES[kind]}?", i)
+        conf = verify(f"Does the marked sentence clearly contain {T[kind]}?", i)
         if conf:
             found.setdefault(kind, {})[i] = conf
 
@@ -1770,7 +1906,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         say(n / max(len(checks), 1), "AI is double-checking what was flagged…")
         try:
             res = ai.chat("Here is a passage from an audiobook:\n\n" + sc["text"][:4000] +
-                          "\n\nDoes it contain " + AI_TYPES[sc["kind"]] +
+                          "\n\nDoes it contain " + T[sc["kind"]] +
                           '? Answer in JSON: {"fits": true} or {"fits": false}.', schema=yes_no,
                           timeout=120)
             if res.get("fits") is False:
@@ -1965,7 +2101,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_crude=False, use_ai=False,
             threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False,
             find_disrespect=False,
-            strict_religion=False, find_topics=(), title=""):
+            strict_religion=False, find_topics=(), title="", find_sleeping=False,
+            find_substances=False, kiss="keep", religion_parts=None):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json). find_topics: any of TOPICS (holidays, birthday candles, magic,
     dark magic) to cut."""
@@ -2209,18 +2346,28 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 continue  # already inside a scene being cut
             scenes.append({"kind": "ref", "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
+    # which kinds of religious content (Jason, 2026-10-30): preaching, anger at God, and prayers
+    # & verses (the old "strict" box); without religion_parts it's preaching and anger, plus
+    # prayers when strict_religion
+    rparts = set(religion_parts if religion_parts is not None else
+                 ("preach", "anger") + (("prayers",) if strict_religion else ()))
+    rparts &= set(RELIGION_PARTS)
+    find_religion = find_religion and bool(rparts)
     if find_religion:
         say(0.99, "Looking for religious content\u2026")
-        rel = find_passages(religion_score, RELIGION_C, RELIGION_WINDOW_SCORE, "religion")
+        rel = (find_passages(religion_score, RELIGION_C, RELIGION_WINDOW_SCORE, "religion")
+               if "preach" in rparts else [])
         # single sentences that blame or hate God, deny God, or speak of Providence as God
         # (strict: any sincere religious mention, "thank God", a verse, a prayer)
         k = 0
         while k < len(asr):
             a_, b_ = to_sentences(k, k)
             ws = asr_n[a_:b_ + 1]
-            strict = strict_religion and strict_religion_hit(ws) and not (blames_god(ws) or
-                                                                           invokes_providence(ws))
-            if strict or blames_god(ws) or invokes_providence(ws):
+            anger = "anger" in rparts and blames_god(ws)
+            prov = "preach" in rparts and invokes_providence(ws)
+            strict = "prayers" in rparts and strict_religion_hit(ws) and not (blames_god(ws) or
+                                                                              invokes_providence(ws))
+            if strict or anger or prov:
                 s_, e_ = span_times(asr, a_, b_)
                 part = asr[a_]["part"]
                 inside = any(x["part"] == part and x["s"] - 1 <= s_ and e_ <= x["e"] + 1 for x in rel)
@@ -2258,6 +2405,12 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                                (find_disrespect, disrespect_hit, "disrespect",
                                 "Looking for disrespect…"),
                                (find_flirt, flirt_hit, "flirt", "Looking for flirting…"),
+                               (find_sleeping, sleeping_hit, "sleeping",
+                                "Looking for sleeping around…"),
+                               (find_substances, substances_hit, "substances",
+                                "Looking for drinking, smoking & drugs…"),
+                               (kiss in ("passionate", "all"), lambda w: kiss_hit(w, kiss), "kiss",
+                                "Looking for kissing…"),
                                *((t in find_topics, lambda w, t=t: topic_hit(t, w), t,
                                   f"Looking for {TOPIC_LABELS[t].lower()}…") for t in TOPICS)):
         if not on:
@@ -2283,8 +2436,10 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                              ("religion", find_religion), ("relationship", find_relationships),
                              ("crude", find_crude), ("bully", find_bully),
                              ("disrespect", find_disrespect),
-                             ("flirt", find_flirt),
+                             ("flirt", find_flirt), ("sleeping", find_sleeping),
+                             ("substances", find_substances), ("kiss", kiss in ("passionate", "all")),
                              *((t, t in find_topics) for t in TOPICS)) if on]
+    ai_defs = ai_defs_for(rparts, kiss)
     ai_job = None
     if use_ai and use_claude:
         # both look (Lauren, 2026-10-29), at the same time: the AI on this PC reads its own copy
@@ -2296,14 +2451,14 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         ai_scenes, ai_mutes = [c for _, c in pairs[0]], [c for _, c in pairs[1]]
         ai_job = in_background(lambda: ai_assist(
             asr, ai_scenes, kinds, to_sentences, span_times, cancel=cancel, mutes=ai_mutes,
-            cats=cats, parts=parts, title=title))
+            cats=cats, parts=parts, title=title, defs_for=ai_defs))
     elif use_ai:
         try:
             for sc in scenes:
                 sc.setdefault("cut", True)
             ai_assist(asr, scenes, kinds, to_sentences, span_times,
                       progress=lambda f, m: say(0.99, m), cancel=cancel,
-                      mutes=mutes, cats=cats, parts=parts, title=title)
+                      mutes=mutes, cats=cats, parts=parts, title=title, defs_for=ai_defs)
             n_sure = (sum(1 for x in scenes if x.get("ai") and x.get("cut")) +
                       sum(1 for m in mutes if m.get("src") == "ai" and m.get("on", True)))
             n_sugg = (sum(1 for x in scenes if x.get("ai") and not x.get("cut")) +
@@ -2335,7 +2490,9 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
           "ai_note": ai_note, "sentences": sents, "title": title,
-          "filters": {"cats": cats, "kinds": kinds, "strict_religion": bool(find_religion and strict_religion)}}
+          "filters": {"cats": cats, "kinds": kinds,
+                      "strict_religion": bool(find_religion and "prayers" in rparts),
+                      "religion_parts": sorted(rparts) if find_religion else [], "kiss": kiss}}
     try:   # what CleanListen has learned from your past choices (and Claude's, and the shared file)
         import cleanlisten_learn as learn
         import cleanlisten_claude as cc
@@ -2681,6 +2838,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                      "ref": "sexual reference", "religion": "religious content",
                      "relationship": "relationship content",
                      "crude": "crude humor", "bully": "bullying", "disrespect": "disrespect",
+                     "sleeping": "sleeping around", "substances": "drinking, smoking & drugs",
+                     "kiss": "kissing",
                      "flirt": "flirting",
                      **{t: TOPIC_LABELS[t].lower() for t in TOPICS}}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
