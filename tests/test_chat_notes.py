@@ -76,3 +76,26 @@ def test_the_chat_schema_works_for_chatgpt_too():
     item = gpt.strict(cc.CHAT_SCHEMA)["properties"]["remember"]["items"]
     assert item["required"] == ["note", "for"] and item["additionalProperties"] is False
     assert "you CAN learn" in cc.SYSTEM_CHAT
+
+
+def test_the_chat_keeps_a_lesson_whenever_it_is_corrected():
+    # CleanView 1.18.2: "they're just sitting in bed talking" unticked the scene but taught nothing
+    assert "whenever they correct a call" in cc.SYSTEM_CHAT
+    assert "Don't add a rule when they only ask about one item" not in cc.SYSTEM_CHAT
+    cc.SYSTEM_CHAT.format(rules="", kinds="", cats="")      # still a valid template
+
+
+def test_leaving_and_coming_back_counts_each_choice_once(learned):
+    # "Back to start" learns your ticks, and saving later learns them again
+    st = {"scenes": [{"kind": "gore", "cut": True, "text": "The wound bled all over the floor."}],
+          "mutes": [{"word": "hell", "ctx": "what the", "on": True}]}
+    L.record(st)
+    L.record(st)
+    d = L.load()
+    assert d["kinds"]["gore"] == {"cut": 1, "kept": 0}
+    assert list(d["words"].values()) == [{"muted": 1, "kept": 0}]
+    st["scenes"][0]["cut"], st["mutes"][0]["on"] = False, False     # she changed her mind
+    L.record(st)
+    d = L.load()
+    assert d["kinds"]["gore"] == {"cut": 0, "kept": 1}
+    assert list(d["words"].values()) == [{"muted": 0, "kept": 1}]

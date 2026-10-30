@@ -889,13 +889,16 @@ a passage and mute only a word in it
 For changes they didn't ask for, only include ones you're sure about. Say in your answer what \
 you changed.
 
-When they explain how something should be judged from now on, not just here ("it's Aladdin, the \
-Genie's magic is fine", "fighting is fine in this series", "never mute 'gosh'"), put a short rule \
-in plain words a later check can follow in "remember", with "for": "this" (this book) or \
-"everything" (every book they clean). CleanListen keeps it and every later check follows it, so \
-you CAN learn: never tell them you can't remember things or change how CleanListen checks. Make \
-the change on this list too. Don't add a rule when they only ask about one item; otherwise leave \
-"remember" empty."""
+In "remember", put the lesson whenever they correct a call or explain why something is or isn't \
+a problem ("they're just sitting in bed talking", "it's Aladdin, the Genie's magic is fine", \
+"fighting is fine in this series", "never mute 'gosh'"). Write it as a short rule in plain words \
+that a later check can follow on other passages and words like it, not just this one ("A couple \
+only sitting or lying in bed talking, dressed, is not a sex scene"), with "for": "this" (this \
+book) or "everything" (every book they clean; use it for rules about how things are judged in \
+general). CleanListen keeps it, and every later check follows it, so you CAN learn: never tell \
+them you can't remember things or change how CleanListen checks. Make the change on this list \
+too, and say in your answer what you'll remember. Only a plain "keep this one" with no reason \
+needs no rule; otherwise leave "remember" empty when they didn't correct or explain anything."""
 
 CHAT_SCHEMA = {"type": "object", "properties": {
     "answer": {"type": "string"},

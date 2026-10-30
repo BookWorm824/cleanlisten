@@ -126,6 +126,11 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    `learn.add_note` in `learned.json` "notes" (this book by title, or every book; 40 at most).
    `learn.told()` puts them first in every prompt: the AI helper (`_learned_examples`), the final
    check (`examples_text`) and every chat message. The chat shows "✓ CleanListen will remember…".
+   Since CleanView 1.18.2 it keeps a lesson whenever it's corrected or told why ("they're just
+   sitting in bed talking"), not only for "from now on". "Back to start" also learns the ticks
+   (`_learn_choices`); `learn.record` counts each choice once (`_learned_as` on the item, kept in
+   analysis.json), however often she leaves and comes back. The review page shows the book's name
+   on top (CleanRead too). Every yes/no box plays `chime()` first (they're silent on Windows).
 9. **Render**: per file, ffmpeg `volume=0:enable='between(t,a,b)+…'` for mutes and
    `aselect='not(…)',asetpts` for cuts, from a filter file (`-/filter:a`, fallbacks
    `-filter_script:a`, inline `-filter:a`), written to `~saving~ name` then swapped in. Output in a

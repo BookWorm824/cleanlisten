@@ -138,8 +138,24 @@ def phrase(m):
     return " ".join(ctx + [_word(m)])
 
 
+def _count(table, name, it, now, yes, no):
+    """Count one choice (True/False). Choices are learned when you leave the review ("Back to
+    start", Jason) and again when you save it, so a choice already counted only moves if you
+    changed it since (it["_learned_as"]; CleanView's _count)."""
+    prev = it.get("_learned_as")
+    if prev == now:
+        return
+    counts = table.setdefault(name, {yes: 0, no: 0})
+    if prev is not None:
+        counts[yes if prev else no] = max(0, counts[yes if prev else no] - 1)
+    if now is not None:
+        counts[yes if now else no] += 1
+    it["_learned_as"] = now
+
+
 def record(st):
-    """Store what you chose on the review screen (st has the final ticks)."""
+    """Store what you chose on the review screen (st has the final ticks). Safe to call more
+    than once on the same review: sentences are remembered once, counts move only on a change."""
     d = load()
     for sc in st.get("scenes", []):
         on = sc.get("cut", True)
@@ -147,14 +163,12 @@ def record(st):
             _remember(d["cut"] if on else d["kept"], s, d["kept"] if on else d["cut"])
             if on and sc.get("kind") and sc.get("kind") != "added":
                 d["cut_for"][norm(s)] = sc["kind"]    # cut for this filter (see _for_filters)
-        k = d["kinds"].setdefault(sc.get("kind", "?"), {"cut": 0, "kept": 0})
-        k["cut" if on else "kept"] += 1
+        _count(d["kinds"], sc.get("kind", "?"), sc, bool(on), "cut", "kept")
     for m in st.get("mutes", []):
         w = _word(m)
         if not w:
             continue
-        s = d["words"].setdefault(w, {"muted": 0, "kept": 0})
-        s["muted" if m.get("on", True) else "kept"] += 1
+        _count(d["words"], w, m, bool(m.get("on", True)), "muted", "kept")
         # words the lists don't know (added by you, Claude/ChatGPT or the AI): remember them
         # with the words around them, so they're muted again when that sentence comes back
         if m.get("on", True) and m.get("src") in ("claude", "ai") or m.get("by_you") and m.get("on", True):

@@ -14,6 +14,17 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cleanread as engine  # noqa: E402
 
+
+def chime():
+    """The Windows "information" sound, so a question is heard like the other boxes
+    (a yes/no box is silent on Windows; Jason missed the "Send it in now?" one)."""
+    try:
+        import winsound
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    except Exception:
+        pass
+
+
 APP = "CleanRead"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 SETTINGS = APP_DATA / "cleanread_settings.json"
@@ -141,7 +152,7 @@ class App(tk.Tk):
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
         s.configure("TCombobox", padding=4)
 
-    def _new_page(self, title, subtitle=""):
+    def _new_page(self, title, subtitle="", name=""):
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.unbind_all(seq)
         if self.page:
@@ -150,6 +161,9 @@ class App(tk.Tk):
         self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
         self.footer = tk.Frame(self.page, bg=BG)
         self.footer.pack(side="bottom", fill="x", pady=(12, 0))
+        if name:                # which book this is (Jason: "you don't know what you've cleaned")
+            tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
+                     wraplength=760, justify="left").pack(anchor="w", pady=(0, 2))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold"),
                  wraplength=760, justify="left").pack(anchor="w")
         if subtitle:
@@ -696,9 +710,9 @@ class App(tk.Tk):
             import cleanlisten_learn as learn
         except Exception:
             learn = None
-        if learn and learn.send_url() and messagebox.askyesno(
+        if learn and learn.send_url() and (chime() or messagebox.askyesno(
                 APP, "Send it in now?\n\nIt has the sentences and words CleanRead found and what you "
-                "marked, so CleanRead can get better. Not the whole book."):
+                "marked, so CleanRead can get better. Not the whole book.")):
             def go():
                 try:
                     learn.send(path, "refined")
@@ -730,7 +744,7 @@ class App(tk.Tk):
         sub = ("Nothing to remove was found in this book." if not cuts and not mutes else
                "Everything ticked below will be taken out. Untick anything you want to keep: "
                "CleanRead remembers it next time.")
-        p = self._new_page("Review before saving", sub)
+        p = self._new_page("Review before saving", sub, name=a.get("title", ""))
         for note in (a.get("ai_note"), a.get("learn_note")):
             if note:
                 tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,

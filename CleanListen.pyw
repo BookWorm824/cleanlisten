@@ -21,6 +21,16 @@ RESUME = APP_DATA / "resume.json"     # your review, kept across an update or cl
 LEFT = APP_DATA / "left_review.json"  # a review you went "Back to start" from, to pick up again
 
 
+def chime():
+    """The Windows "information" sound, so a question is heard like the other boxes
+    (a yes/no box is silent on Windows; Jason missed the "Send it in now?" one)."""
+    try:
+        import winsound
+        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+    except Exception:
+        pass
+
+
 def app_version():
     try:
         return json.loads((HERE / "version.json").read_text())["version"]
@@ -275,7 +285,7 @@ class App(tk.Tk):
                 img.put(c, (x, y))
         return img
 
-    def _new_page(self, title, subtitle=""):
+    def _new_page(self, title, subtitle="", name=""):
         self._stop_playing()
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.unbind_all(seq)
@@ -287,6 +297,9 @@ class App(tk.Tk):
         # even when the window is short.
         self.footer = tk.Frame(self.page, bg=BG)
         self.footer.pack(side="bottom", fill="x", pady=(8, 0))
+        if name:                # which book this is (Jason: "you don't know what you've cleaned")
+            tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
+                     wraplength=560, justify="left").pack(anchor="w", pady=(0, 2))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold")).pack(anchor="w")
         self.page_name = "other"
         # "Check for updates" on every screen: updates and comes straight back to where you were
@@ -630,6 +643,7 @@ class App(tk.Tk):
         want to see what's in a book). The review is kept: "Pick up where I left off" on the
         start page opens it again, ticks and all."""
         self._save_resume(note="Picked up where you left off.", path=LEFT)
+        self._learn_choices()            # checking without saving still teaches it (Jason)
         if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
             self.chat_win.destroy()
         self.reset()
@@ -1209,6 +1223,7 @@ class App(tk.Tk):
             cc = self._cc()
             state = getattr(self, "claude_state", None) or (cc.status() if cc else "broken")
             if state != "ok":
+                chime()
                 if not messagebox.askyesno("CleanListen", f"{self._ai_name()} isn't set up or signed "
                                            "in yet, so the final check can't run.\n\nStart without "
                                            "it? (You can still run it from the review screen later.)"):
@@ -1404,7 +1419,7 @@ class App(tk.Tk):
         else:
             sub = ("Everything ticked below will be removed. Untick anything you want to keep. "
                    "▶ Play lets you hear it first.")
-        p = self._new_page("Review before saving", sub)
+        p = self._new_page("Review before saving", sub, name=a.get("title", ""))
         self.page_name = "review"
         note = getattr(self, "resume_note", None)
         if note:
@@ -1960,13 +1975,18 @@ class App(tk.Tk):
         a = self.analysis
         cuts = [sc for sc in a["scenes"] if sc.get("cut", True)]
         mutes = [m for m in a["mutes"] if m.get("on", True)]
-        self._save_analysis()
-        try:   # learn from what you chose
+        self._learn_choices()
+        self.save(cuts, mutes)
+
+    def _learn_choices(self):
+        """Learn from what you chose (each choice counted once, however often you leave the
+        review and come back), and keep the marks that say so with the review."""
+        try:
             import cleanlisten_learn as learn
-            learn.record(a)
+            learn.record(self.analysis)
         except Exception:
             pass
-        self.save(cuts, mutes)
+        self._save_analysis()
 
     def save(self, cuts, mutes):
         self._saving = True
@@ -2038,9 +2058,9 @@ class App(tk.Tk):
         """Offer to send an exported file in. If there's no inbox yet, she says no, or
         sending fails, show where it was saved and how to send it by hand."""
         import cleanlisten_learn as learn
-        if learn.send_url() and messagebox.askyesno(
+        if learn.send_url() and (chime() or messagebox.askyesno(
                 "CleanListen", "Send it in now?\n\nIt has the sentences and words you and the "
-                "AI cut, muted or kept, and their notes. No audio."):
+                "AI cut, muted or kept, and their notes. No audio.")):
             def go():
                 try:
                     learn.send(path, kind)
