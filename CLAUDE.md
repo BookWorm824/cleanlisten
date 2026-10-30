@@ -52,7 +52,8 @@ Python 3.12 on the user's PC (private venv). Dependencies: `sherpa-onnx`, `numpy
   `save_error.txt`, `last_error.txt`
 - `learned.json` (what this PC learned), `claude_findings\*.json` + `claude_findings.csv`
 - `settings.json` (`claude_model`, `reviewer` = claude|chatgpt), `resume.json` (reopen onto the
-  same review after an update or after closing the window)
+  same review after an update or after closing the window), `left_review.json` (a review left
+  with "◀ Back to start"; the start page offers "Pick up where I left off" for 14 days)
 
 Claude Code / Codex / Antigravity CLI are installed per-user by the app's "Set up / sign in"
 button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` /
@@ -118,6 +119,13 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    `view`); "Jump to" links per group; per-item "Ask Claude about this…" (highlight text,
    type a request, list updates in place with Undo); "Ask Claude…" chat window (changes apply
    live); "Search all text…" to cut/mute by hand; exports and the Claude model under "More".
+   "◀ Back to start" leaves without saving (Jason, CleanView 1.18.1: a parent may only want to
+   see what's in a book); the review is kept to pick up again.
+   **The chat can learn** (Jason, CleanView 1.18.1): when told how to judge something from now on
+   ("it's Aladdin, the magic is fine"), it returns `remember` (`CHAT_SCHEMA`), kept by
+   `learn.add_note` in `learned.json` "notes" (this book by title, or every book; 40 at most).
+   `learn.told()` puts them first in every prompt: the AI helper (`_learned_examples`), the final
+   check (`examples_text`) and every chat message. The chat shows "✓ CleanListen will remember…".
 9. **Render**: per file, ffmpeg `volume=0:enable='between(t,a,b)+…'` for mutes and
    `aselect='not(…)',asetpts` for cuts, from a filter file (`-/filter:a`, fallbacks
    `-filter_script:a`, inline `-filter:a`), written to `~saving~ name` then swapped in. Output in a

@@ -18,6 +18,7 @@ import cleanlisten as engine  # noqa: E402
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 HERE = Path(__file__).resolve().parent
 RESUME = APP_DATA / "resume.json"     # your review, kept across an update or closing the window
+LEFT = APP_DATA / "left_review.json"  # a review you went "Back to start" from, to pick up again
 
 
 def app_version():
@@ -355,6 +356,15 @@ class App(tk.Tk):
         if upd:
             tk.Label(p, text="\u2713 " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
                      padx=10, pady=6, anchor="w").pack(fill="x", pady=(0, 8))
+        left = self._left_review()
+        if left:
+            bar = tk.Frame(p, bg="#E3EFEC")
+            bar.pack(fill="x", pady=(0, 6))
+            tk.Label(bar, text="Your review of \u201c" + (left.get("title") or "a book") +
+                     "\u201d is kept.", bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), padx=10,
+                     anchor="w").pack(side="left")
+            ttk.Button(bar, text="Pick up where I left off", style="Plain.TButton",
+                       command=self._pick_up).pack(side="right", padx=4, pady=2)
         try:
             ver = json.loads((Path(__file__).resolve().parent / "version.json").read_text())["version"]
             self.title(f"CleanListen {ver}")
@@ -557,7 +567,7 @@ class App(tk.Tk):
                 return
             self.destroy()
 
-    def _save_resume(self, note=""):
+    def _save_resume(self, note="", path=RESUME):
         """Remember where you are (the review with all its ticks, or the book you picked)."""
         try:
             data = {"time": __import__("time").time(), "note": note, "audio": self.audio,
@@ -572,8 +582,10 @@ class App(tk.Tk):
                 data["page"] = "setup"
             else:
                 return
+            data["title"] = (self.analysis or {}).get("title") or (book_title(self.audio)
+                                                                    if self.audio else "")
             APP_DATA.mkdir(parents=True, exist_ok=True)
-            RESUME.write_text(json.dumps(data, indent=1), encoding="utf8")
+            path.write_text(json.dumps(data, indent=1), encoding="utf8")
         except Exception:
             pass
 
@@ -612,6 +624,34 @@ class App(tk.Tk):
             if data.get("note"):
                 os.environ["CLEANLISTEN_UPDATED"] = data["note"]
             self.show_setup()
+
+    def _back_to_start(self):
+        """Leave the review without saving an audiobook (Jason, 2026-10-30: a parent may only
+        want to see what's in a book). The review is kept: "Pick up where I left off" on the
+        start page opens it again, ticks and all."""
+        self._save_resume(note="Picked up where you left off.", path=LEFT)
+        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
+            self.chat_win.destroy()
+        self.reset()
+
+    def _left_review(self):
+        """The review you went back to the start from, if it can still be opened."""
+        import time as _t
+        try:
+            data = json.loads(LEFT.read_text(encoding="utf8"))
+            if (data.get("page") == "review" and _t.time() - data.get("time", 0) <= 14 * 86400
+                    and (Path(data["workdir"]) / "analysis.json").exists()):
+                return data
+        except Exception:
+            pass
+        return None
+
+    def _pick_up(self):
+        try:
+            os.replace(LEFT, RESUME)
+        except OSError:
+            return
+        self._restore()
 
     def _on_close(self):
         if self.page_name == "review":
@@ -881,17 +921,17 @@ class App(tk.Tk):
 
             def work():
                 try:
-                    ans, changes = chat.ask(msg)
-                    self.q.put(("card_reply", item, ans, changes))
+                    ans, changes, kept = chat.ask(msg)
+                    self.q.put(("card_reply", item, ans, changes, kept))
                 except Exception as ex:
-                    self.q.put(("card_reply", item, f"Sorry, that didn't work: {ex}", []))
+                    self.q.put(("card_reply", item, f"Sorry, that didn't work: {ex}", [], []))
             threading.Thread(target=work, daemon=True).start()
         btn = ttk.Button(row, text="Send", style="Plain.TButton", command=send)
         btn.pack(side="left", padx=(6, 0))
         entry.bind("<Return>", send)
         entry.focus_set()
 
-    def _card_reply(self, item, ans, changes):
+    def _card_reply(self, item, ans, changes, kept=()):
         import copy
         self._sync_ticks()
         a = self.analysis
@@ -905,6 +945,7 @@ class App(tk.Tk):
         item["chat_answer"] = text
         self._chat_history().append(("them", text))
         self._chat_say("them", text)
+        self._will_remember(kept)
         self._save_analysis()
         self.show_review(True, focus=item)
 
@@ -917,6 +958,14 @@ class App(tk.Tk):
         self._chat_history().append(("info", "Undid the last change."))
         self._save_analysis()
         self.show_review(True)
+
+    def _will_remember(self, kept):
+        """Say what the chat will keep in mind for later checks (Jason, 2026-10-30)."""
+        for note, everywhere in kept or ():
+            text = ("\u2713 CleanListen will remember" +
+                    (" for every book" if everywhere else " for this book") + ": " + note)
+            self._chat_history().append(("info", text))
+            self._chat_say("info", text)
 
     def _chat_history(self):
         a = self.analysis if self.analysis is not None else {}
@@ -948,18 +997,19 @@ class App(tk.Tk):
 
         def work():
             try:
-                ans, changes = self.chat.ask(q)
-                self.q.put(("chat_reply", ans, changes))
+                ans, changes, kept = self.chat.ask(q)
+                self.q.put(("chat_reply", ans, changes, kept))
             except Exception as ex:
-                self.q.put(("chat_reply", f"Sorry, that didn't work: {ex}", []))
+                self.q.put(("chat_reply", f"Sorry, that didn't work: {ex}", [], []))
         threading.Thread(target=work, daemon=True).start()
 
-    def _chat_reply(self, ans, changes):
+    def _chat_reply(self, ans, changes, kept=()):
         if not getattr(self, "chat_win", None) or not self.chat_win.winfo_exists():
             return
         self.chat_send.configure(state="normal")
         self._chat_say("them", ans or "(no answer)")
         self._chat_history().append(("them", ans or ""))
+        self._will_remember(kept)
         for c in self.chat_changes.winfo_children():
             c.destroy()
         if not changes:
@@ -1222,7 +1272,7 @@ class App(tk.Tk):
                 find_disrespect=getattr(self, "find_disrespect", False),
                 use_claude=getattr(self, "use_claude", False),
                 strict_religion=getattr(self, "strict_religion", False),
-                find_topics=getattr(self, "find_topics", ()),
+                find_topics=getattr(self, "find_topics", ()), title=book_title(self.audio),
                 progress=lambda f, m: self.q.put(("progress", f, m)),
                 log=lambda m: self.q.put(("log", m)),
                 cancel=lambda: self.cancel_flag)
@@ -1278,7 +1328,7 @@ class App(tk.Tk):
                 elif kind == "card_reply":
                     self._card_reply(*msg[1:])
                 elif kind == "chat_reply":
-                    self._chat_reply(msg[1], msg[2])
+                    self._chat_reply(*msg[1:])
                 elif kind == "cancelled":
                     self.show_setup()
                 elif kind == "error":
@@ -1458,9 +1508,12 @@ class App(tk.Tk):
                    command=self._save_from_review).pack(side="right")
         ttk.Button(row, text="Change filters & re-check", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
+        # a way out without saving (Jason): the review is kept to pick up again
+        ttk.Button(row, text="\u25c0 Back to start", style="Plain.TButton",
+                   command=self._back_to_start).pack(side="left")
         # send it in now, without saving the audiobook first (the ticks as they are now count)
         ttk.Button(row, text="Send what we refined…", style="Plain.TButton",
-                   command=self._send_report_now).pack(side="left")
+                   command=self._send_report_now).pack(side="left", padx=(8, 0))
         body = self._scroll_area(p)
         multi = len(a["parts"]) > 1
         where = lambda x: (f"Part {x['part'] + 1} · " if multi else "") + engine.fmt_t(x["s"])

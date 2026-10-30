@@ -783,7 +783,7 @@ def review(st, asr, progress=None, cancel=None):
         m.setdefault("id", n)
     try:
         import cleanlisten_learn as learn
-        examples = learn.examples_text()
+        examples = learn.examples_text(st.get("title", ""))
     except Exception:
         learn, examples = None, ""
     f = st.get("filters") or {}
@@ -887,7 +887,15 @@ a passage and mute only a word in it
 - {{"action": "add_passage", "from": "S300", "to": "S302", "type": one of {kinds}, "reason": "..."}}
 - {{"action": "add_word", "sentence": "S410", "words": "exact words", "type": one of {cats}, "reason": "..."}}
 For changes they didn't ask for, only include ones you're sure about. Say in your answer what \
-you changed."""
+you changed.
+
+When they explain how something should be judged from now on, not just here ("it's Aladdin, the \
+Genie's magic is fine", "fighting is fine in this series", "never mute 'gosh'"), put a short rule \
+in plain words a later check can follow in "remember", with "for": "this" (this book) or \
+"everything" (every book they clean). CleanListen keeps it and every later check follows it, so \
+you CAN learn: never tell them you can't remember things or change how CleanListen checks. Make \
+the change on this list too. Don't add a rule when they only ask about one item; otherwise leave \
+"remember" empty."""
 
 CHAT_SCHEMA = {"type": "object", "properties": {
     "answer": {"type": "string"},
@@ -896,8 +904,11 @@ CHAT_SCHEMA = {"type": "object", "properties": {
                                               "just_the_word"]},
         "id": {"type": "string"}, "from": {"type": "string"}, "to": {"type": "string"},
         "sentence": {"type": "string"}, "words": {"type": "string"}, "type": {"type": "string"},
-        "reason": {"type": "string"}}, "required": ["action"]}}},
-    "required": ["answer", "changes"]}
+        "reason": {"type": "string"}}, "required": ["action"]}},
+    "remember": {"type": "array", "items": {"type": "object", "properties": {
+        "note": {"type": "string"}, "for": {"type": "string", "enum": ["this", "everything"]}},
+        "required": ["note", "for"]}}},
+    "required": ["answer", "changes", "remember"]}
 
 
 class Chat:
@@ -929,17 +940,32 @@ class Chat:
         (self.dir / "findings.txt").write_text("\n".join(head + [""] + out), encoding="utf-8")
 
     def ask(self, question):
+        """Returns (answer, changes, remembered): remembered is [(note, for every book?)], the
+        rules they asked it to keep for later checks (already saved)."""
         self._write_findings()
         f = self.st.get("filters") or {}
         system = SYSTEM_CHAT.format(rules=rules_text(self.st),
                                     kinds=", ".join(f.get("kinds", [])) or "(none on)",
                                     cats=", ".join(f.get("cats", [])) or "(none on)")
-        res = run(question + "\n\n(findings.txt has just been updated.)", system, schema=CHAT_SCHEMA,
+        try:
+            import cleanlisten_learn as learn
+            told = learn.told(self.st.get("title", ""))
+        except Exception:
+            learn, told = None, ""
+        res = run(question + ("\n\n" + told if told else "") +
+                  "\n\n(findings.txt has just been updated.)", system, schema=CHAT_SCHEMA,
                   resume=self.session, persist=True, tools="Read,Grep,Glob", cwd=self.dir,
                   timeout=900)
         self.session = res.get("session_id") or self.session
         data = res["data"]
-        return str(data.get("answer", "")).strip(), [c for c in data.get("changes", []) if isinstance(c, dict)]
+        remembered = []
+        for r in data.get("remember") or []:
+            note = " ".join(str(r.get("note", "")).split()) if isinstance(r, dict) else ""
+            everywhere = isinstance(r, dict) and r.get("for") == "everything"
+            if note and learn and learn.add_note(note, self.st.get("title", ""), everywhere):
+                remembered.append((note, everywhere))
+        return (str(data.get("answer", "")).strip(),
+                [c for c in data.get("changes", []) if isinstance(c, dict)], remembered)
 
     def _snip(self, text, n=12):
         words = E._masked_text(str(text).split()).split()

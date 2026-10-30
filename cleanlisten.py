@@ -1634,18 +1634,19 @@ def _ai_backed(kind, words):
     return False
 
 
-def _learned_examples():
-    """Past choices (yours, then Claude's) for the AI on this PC to follow."""
+def _learned_examples(title=""):
+    """What they told the chat to keep in mind, and past choices (yours, then Claude's), for
+    the AI on this PC to follow."""
     try:
         import cleanlisten_learn as learn
-        t = learn.examples_text().strip()
+        t = learn.examples_text(title).strip()
         return (t + "\n\n") if t else ""
     except Exception:
         return ""
 
 
 def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cancel=None,
-              chunk=40, overlap=6, mutes=None, cats=(), parts=None):
+              chunk=40, overlap=6, mutes=None, cats=(), parts=None, title=""):
     """Checks every filter both ways: adds what the word lists missed (passages
     and single words) and unticks what they flagged wrongly, with a note."""
     ai = _ai_module()
@@ -1704,7 +1705,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         say(n / max(len(starts), 1), f"AI is reading the book · {100 * n // max(len(starts), 1)}%")
         part = sents[a:a + chunk]
         listing = "\n".join(f"- {t}" for _, _, t in part)
-        prompt = _learned_examples() + ("You help a family decide which sentences of an audiobook to cut. Here are "
+        prompt = _learned_examples(title) + ("You help a family decide which sentences of an audiobook to cut. Here are "
                   "sentences in order:\n\n" + listing + "\n\nFind sentences that CLEARLY contain "
                   "one of these:\n" + defs + "\n\nBe strict. Ordinary conversation, affection, "
                   "kissing, worry, danger, crime and death are NOT flagged unless they clearly fit "
@@ -1964,7 +1965,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_crude=False, use_ai=False,
             threads=None, cancel=None, find_bully=False, find_flirt=False, use_claude=False,
             find_disrespect=False,
-            strict_religion=False, find_topics=()):
+            strict_religion=False, find_topics=(), title=""):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json). find_topics: any of TOPICS (holidays, birthday candles, magic,
     dark magic) to cut."""
@@ -2295,14 +2296,14 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         ai_scenes, ai_mutes = [c for _, c in pairs[0]], [c for _, c in pairs[1]]
         ai_job = in_background(lambda: ai_assist(
             asr, ai_scenes, kinds, to_sentences, span_times, cancel=cancel, mutes=ai_mutes,
-            cats=cats, parts=parts))
+            cats=cats, parts=parts, title=title))
     elif use_ai:
         try:
             for sc in scenes:
                 sc.setdefault("cut", True)
             ai_assist(asr, scenes, kinds, to_sentences, span_times,
                       progress=lambda f, m: say(0.99, m), cancel=cancel,
-                      mutes=mutes, cats=cats, parts=parts)
+                      mutes=mutes, cats=cats, parts=parts, title=title)
             n_sure = (sum(1 for x in scenes if x.get("ai") and x.get("cut")) +
                       sum(1 for m in mutes if m.get("src") == "ai" and m.get("on", True)))
             n_sugg = (sum(1 for x in scenes if x.get("ai") and not x.get("cut")) +
@@ -2333,7 +2334,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
 
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
-          "ai_note": ai_note, "sentences": sents,
+          "ai_note": ai_note, "sentences": sents, "title": title,
           "filters": {"cats": cats, "kinds": kinds, "strict_religion": bool(find_religion and strict_religion)}}
     try:   # what CleanListen has learned from your past choices (and Claude's, and the shared file)
         import cleanlisten_learn as learn

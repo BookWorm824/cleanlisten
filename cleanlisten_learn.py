@@ -92,7 +92,8 @@ def load():
     except Exception:
         d = {}
     for k, v in (("cut", []), ("kept", []), ("kinds", {}), ("words", {}), ("word_mutes", []),
-                 ("claude_cut", []), ("claude_kept", []), ("claude_ok_words", []), ("cut_for", {})):
+                 ("claude_cut", []), ("claude_kept", []), ("claude_ok_words", []), ("cut_for", {}),
+                 ("notes", [])):
         d.setdefault(k, v)
     return d
 
@@ -240,6 +241,44 @@ def apply(st, asr, add_passage, add_word=None):
     return notes
 
 
+MAX_NOTES = 40
+
+
+def add_note(text, title="", everywhere=False):
+    """Something they told the chat to keep in mind from now on ("it's Aladdin, the Genie's
+    magic is fine"; Jason, 2026-10-30: the chat said it couldn't learn). Kept for this book
+    (title) or for every book. Returns True if it's new."""
+    text = " ".join(str(text).split())[:300]
+    if not text:
+        return False
+    t = "" if everywhere else norm(title or "")
+    d = load()
+    if any(n["text"].lower() == text.lower() and n.get("title", "") == t for n in d["notes"]):
+        return False
+    d["notes"].append({"text": text, "title": t, "added": date.today().isoformat()})
+    d["notes"] = d["notes"][-MAX_NOTES:]
+    save(d)
+    return True
+
+
+def notes(title=""):
+    """The notes for this book: for every book, then for this one."""
+    t, out = norm(title or ""), []
+    for n in load()["notes"]:
+        if (not n.get("title") or n["title"] == t) and n["text"] not in out:
+            out.append(n["text"])
+    return out
+
+
+def told(title=""):
+    """The notes, ready to go at the top of an AI's instructions ("" if there are none)."""
+    ns = notes(title)
+    if not ns:
+        return ""
+    return ("They have told CleanListen to keep this in mind (follow it; it outweighs the "
+            "examples):\n" + "\n".join(f"- {t}" for t in ns[:MAX_NOTES]))
+
+
 def examples(n=12):
     """Some past choices for the AI readers: yours first, then Claude's, then shared."""
     d = load()
@@ -253,11 +292,12 @@ def examples(n=12):
     return out
 
 
-def examples_text():
+def examples_text(title=""):
     ex = examples()
+    t = ("\n\n" + told(title)) if notes(title) else ""
     if not ex["cut"] and not ex["kept"]:
-        return ""
-    t = "\n\nThis family's past choices (follow the same judgment):"
+        return t
+    t += "\n\nThis family's past choices (follow the same judgment):"
     if ex["cut"]:
         t += "\nThey CUT sentences like:\n" + "\n".join(f'- "{s}"' for s in ex["cut"])
     if ex["kept"]:
