@@ -9,8 +9,12 @@ This file explains how it works, the family's rules, how releases ship, and what
 
 Same repo, separate apps: **CleanRead** (ebooks, `cleanread.py` / `CleanRead.pyw`, built in
 another chat) imports this engine. **CleanView** (movies/TV) has moved to its own repo
-`BookWorm824/cleanview` with its own engine copy (`cvcore.py`); the old CleanView files here
-still ship to CleanListen installs but aren't developed here.
+`BookWorm824/cleanview` with its own engine copy (`cvcore.py`) and its own install. The old
+copy that shipped here is gone (1.9.6): CleanListen used to make a "CleanView" icon for it with
+the same name as the real one's, and on one PC it won, so Jason got the October version.
+`CleanView.pyw` here is now only a hand-over: an old icon still opens it, and it starts the
+real CleanView (`shortcuts.open_cleanview`), repoints the icon (`fix_cleanview_shortcut`), or
+says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRead use it.
 
 ---
 
@@ -25,8 +29,8 @@ still ship to CleanListen installs but aren't developed here.
 | `cleanlisten_gemini.py` | Gemini through Google's **Antigravity CLI** (`agy -p --output-format json --json-schema --sandbox`). Google replaced Gemini CLI with it for personal and Google One accounts on 2026-06-18. Built from Google's docs and tested with a faked `agy` only (`tests/test_gemini.py`); not yet tried on a real account. Requests over ~24k characters go in a file agy reads. Sign-in check is `agy models`. |
 | `cleanlisten_learn.py` | Learning from the family's choices; exports ("Send what CleanListen learned", "Export what we refined"); findings spreadsheet. `send()` posts an export to the owner's inbox (the Google Apps Script shared with CleanView, `tools/cleanview_inbox.gs` in the CleanView repo) when `SEND_URL` is set (`CLEANLISTEN_INBOX` overrides it, for tests); while it's empty, or if sending fails, the app falls back to "saved in…, attach it in your chat with Claude". |
 | `shared_learned.json` | Built-in knowledge every copy starts with (merged from exports — see §7). |
-| `launcher.pyw` | Desktop shortcut target: checks GitHub for a newer `version.json`, downloads the listed files, swaps them in, starts the app (`view` → CleanView, `read` → CleanRead). |
-| `shortcuts.py` | Creates the CleanView / CleanRead desktop icons. |
+| `launcher.pyw` | Desktop shortcut target: checks GitHub for a newer `version.json`, downloads the listed files, swaps them in, starts the app (`read` → CleanRead; `view` → the CleanView hand-over). |
+| `shortcuts.py` | Creates the CleanRead desktop icon; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
 | `version.json` | Version + **the list of files the launcher downloads**. Anything not listed never reaches users. |
 | `installer/` | First-time install (PowerShell): Python venv, sherpa-onnx, ffmpeg, speech model, shortcut. |

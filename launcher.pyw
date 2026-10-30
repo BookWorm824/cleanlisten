@@ -1,6 +1,7 @@
 """CleanListen launcher: checks GitHub for a newer version, updates the
-program files if there is one, then opens the app (CleanListen, CleanView
-when started with "view", or CleanRead when started with "read"). If the check fails (offline, GitHub down) the app
+program files if there is one, then opens the app (CleanListen, or CleanRead
+when started with "read"; "view" opens CleanView.pyw, which hands over to the real CleanView,
+its own program now). If the check fails (offline, GitHub down) the app
 simply opens as-is."""
 import json
 import os
