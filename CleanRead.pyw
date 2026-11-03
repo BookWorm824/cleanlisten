@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cleanread as engine  # noqa: E402
 import filters as F  # noqa: E402  (the filters, shared with CleanListen)
+import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanListen)
 
 
 def chime():
@@ -102,6 +103,8 @@ class App(tk.Tk):
         self._style()
         self.page = None
         self.show_setup()
+        self.watch = freezes.Watch(self, 'CleanRead', APP_DATA, 'cleanread_')
+        self.watch.start()
         self.after(100, self._poll)
 
     # ---------- look ----------
@@ -130,7 +133,14 @@ class App(tk.Tk):
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
         s.configure("TCombobox", padding=4)
 
+    def destroy(self):
+        if getattr(self, "watch", None):     # stops the freeze watcher; the crash log is closed
+            self.watch.stop()
+        super().destroy()
+
     def _new_page(self, title, subtitle="", name=""):
+        if getattr(self, "watch", None):
+            self.watch.doing["page"] = title
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.unbind_all(seq)
         if self.page:
@@ -451,44 +461,50 @@ class App(tk.Tk):
             self.q.put(("error", str(ex), traceback.format_exc()))
 
     def _poll(self):
+        """From now on freezes.drain runs the queue: a flood of messages can't keep the window
+        busy, and one bad message can't stop it updating (Jason, 2026-11-03)."""
+        freezes.drain(self, self.q, self._handle, self._poll_error, self.watch)
+
+    def _poll_error(self, details):
         try:
-            while True:
-                msg = self.q.get_nowait()
-                kind = msg[0]
-                if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
-                    self.pb["value"] = int(msg[1] * 1000)
-                    self.status.config(text=msg[2])
-                elif kind == "named" and getattr(self, "name_lbl", None) and self.name_lbl.winfo_exists():
-                    self.name_lbl.config(text=msg[1])
-                elif kind == "chat_reply":
-                    self._chat_reply(*msg[1:])
-                elif kind == "scanned":
-                    self.report = msg[1]
-                    self.show_report()
-                elif kind == "analyzed":
-                    self.analysis = msg[1]
-                    self.show_review()
-                elif kind == "written":
-                    self.show_done(msg[1])
-                elif kind == "cancelled":
-                    self.show_setup()
-                elif kind == "sent":
-                    if msg[2] is None:
-                        messagebox.showinfo(APP, "Sent. Thank you!")
-                    else:
-                        self._saved_by_hand(msg[1], "Couldn't send it just now.\n\n")
-                elif kind == "error":
-                    if msg[2]:
-                        try:
-                            APP_DATA.mkdir(parents=True, exist_ok=True)
-                            (APP_DATA / "cleanread_last_error.txt").write_text(msg[2], encoding="utf8")
-                        except OSError:
-                            pass
-                    messagebox.showerror(f"{APP} ran into a problem", msg[1])
-                    self.show_setup()
-        except queue.Empty:
+            APP_DATA.mkdir(parents=True, exist_ok=True)
+            (APP_DATA / "cleanread_last_error.txt").write_text(details, encoding="utf8")
+        except OSError:
             pass
-        self.after(150, self._poll)
+
+    def _handle(self, msg):
+        kind = msg[0]
+        if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
+            self.pb["value"] = int(msg[1] * 1000)
+            self.status.config(text=msg[2])
+        elif kind == "named" and getattr(self, "name_lbl", None) and self.name_lbl.winfo_exists():
+            self.name_lbl.config(text=msg[1])
+        elif kind == "chat_reply":
+            self._chat_reply(*msg[1:])
+        elif kind == "scanned":
+            self.report = msg[1]
+            self.show_report()
+        elif kind == "analyzed":
+            self.analysis = msg[1]
+            self.show_review()
+        elif kind == "written":
+            self.show_done(msg[1])
+        elif kind == "cancelled":
+            self.show_setup()
+        elif kind == "sent":
+            if msg[2] is None:
+                messagebox.showinfo(APP, "Sent. Thank you!")
+            else:
+                self._saved_by_hand(msg[1], "Couldn't send it just now.\n\n")
+        elif kind == "error":
+            if msg[2]:
+                try:
+                    APP_DATA.mkdir(parents=True, exist_ok=True)
+                    (APP_DATA / "cleanread_last_error.txt").write_text(msg[2], encoding="utf8")
+                except OSError:
+                    pass
+            messagebox.showerror(f"{APP} ran into a problem", msg[1])
+            self.show_setup()
 
     # ---------- page 2a: the content report ----------
     def show_report(self):

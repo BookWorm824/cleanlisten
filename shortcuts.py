@@ -17,9 +17,11 @@ NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
 
 def _pythonw():
-    exe = Path(sys.executable)
-    w = exe.with_name("pythonw.exe")
-    return w if w.exists() else exe
+    # the venv's own pythonw.exe, also when running as CleanListen.exe (launcher.pyw's own name)
+    for w in (Path(sys.prefix) / "Scripts" / "pythonw.exe", Path(sys.executable).with_name("pythonw.exe")):
+        if w.exists():
+            return w
+    return Path(sys.executable)
 
 
 def _q(p):  # PowerShell single-quoted string

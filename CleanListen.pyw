@@ -15,6 +15,7 @@ from tkinter import filedialog, messagebox, ttk
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cleanlisten as engine  # noqa: E402
 import filters as F  # noqa: E402  (the filters, shared with CleanRead)
+import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanRead)
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 HERE = Path(__file__).resolve().parent
@@ -203,6 +204,8 @@ class App(tk.Tk):
         self.page = None
         self.page_name = None
         self.show_setup()
+        self.watch = freezes.Watch(self, 'CleanListen', APP_DATA, '')
+        self.watch.start()
         self.after(100, self._poll)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._restore()
@@ -292,7 +295,14 @@ class App(tk.Tk):
                 img.put(c, (x, y))
         return img
 
+    def destroy(self):
+        if getattr(self, "watch", None):     # stops the freeze watcher; the crash log is closed
+            self.watch.stop()
+        super().destroy()
+
     def _new_page(self, title, subtitle="", name=""):
+        if getattr(self, "watch", None):
+            self.watch.doing["page"] = title
         self._stop_playing()
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.unbind_all(seq)
@@ -1253,56 +1263,62 @@ class App(tk.Tk):
             self.q.put(("error", str(ex), traceback.format_exc()))
 
     def _poll(self):
+        """From now on freezes.drain runs the queue: a flood of messages can't keep the window
+        busy, and one bad message can't stop it updating (Jason, 2026-11-03)."""
+        freezes.drain(self, self.q, self._handle, self._poll_error, self.watch)
+
+    def _poll_error(self, details):
         try:
-            while True:
-                msg = self.q.get_nowait()
-                kind = msg[0]
-                if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
-                    self.pb["value"] = int(msg[1] * 1000)
-                    self.status.config(text=msg[2])
-                elif kind == "analyzed":
-                    self.analysis = msg[1]
-                    self.analysis["title"] = book_title(self.audio) if self.audio else ""
-                    self.show_review()
-                elif kind == "rendered":
-                    self._saving = False
-                    self.show_done(msg[1])
-                elif kind in ("update_none", "update_fail", "update_progress", "updated"):
-                    self._update_msg(kind, msg[1])
-                elif kind == "claude_status":
-                    self._show_claude_status(*msg[1:])
-                elif kind == "sent":
-                    self._sent(msg[1], msg[2])
-                elif kind == "claude_done":
-                    self._save_analysis()
-                    self.show_review()
-                elif kind == "claude_fail":
-                    messagebox.showerror("Claude check", msg[1])
-                    self.show_review()
-                elif kind == "play":
-                    self._play_ready(*msg[1:])
-                elif kind == "play_fail":
-                    if getattr(self, "_playing", None) is msg[1]:
-                        self._stop_playing()
-                        messagebox.showerror("CleanListen", msg[2])
-                elif kind == "card_reply":
-                    self._card_reply(*msg[1:])
-                elif kind == "chat_reply":
-                    self._chat_reply(*msg[1:])
-                elif kind == "cancelled":
-                    self.show_setup()
-                elif kind == "error":
-                    (self.workdir / "last_error.txt").parent.mkdir(parents=True, exist_ok=True)
-                    (self.workdir / "last_error.txt").write_text(msg[2], encoding="utf8")
-                    messagebox.showerror("CleanListen ran into a problem", msg[1])
-                    if getattr(self, "_saving", False) and self.analysis:
-                        self._saving = False
-                        self.show_review()       # keep your review; just press Save again
-                    else:
-                        self.show_setup()
-        except queue.Empty:
+            APP_DATA.mkdir(parents=True, exist_ok=True)
+            (APP_DATA / "last_error.txt").write_text(details, encoding="utf8")
+        except OSError:
             pass
-        self.after(150, self._poll)
+
+    def _handle(self, msg):
+        kind = msg[0]
+        if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
+            self.pb["value"] = int(msg[1] * 1000)
+            self.status.config(text=msg[2])
+        elif kind == "analyzed":
+            self.analysis = msg[1]
+            self.analysis["title"] = book_title(self.audio) if self.audio else ""
+            self.show_review()
+        elif kind == "rendered":
+            self._saving = False
+            self.show_done(msg[1])
+        elif kind in ("update_none", "update_fail", "update_progress", "updated"):
+            self._update_msg(kind, msg[1])
+        elif kind == "claude_status":
+            self._show_claude_status(*msg[1:])
+        elif kind == "sent":
+            self._sent(msg[1], msg[2])
+        elif kind == "claude_done":
+            self._save_analysis()
+            self.show_review()
+        elif kind == "claude_fail":
+            messagebox.showerror("Claude check", msg[1])
+            self.show_review()
+        elif kind == "play":
+            self._play_ready(*msg[1:])
+        elif kind == "play_fail":
+            if getattr(self, "_playing", None) is msg[1]:
+                self._stop_playing()
+                messagebox.showerror("CleanListen", msg[2])
+        elif kind == "card_reply":
+            self._card_reply(*msg[1:])
+        elif kind == "chat_reply":
+            self._chat_reply(*msg[1:])
+        elif kind == "cancelled":
+            self.show_setup()
+        elif kind == "error":
+            (self.workdir / "last_error.txt").parent.mkdir(parents=True, exist_ok=True)
+            (self.workdir / "last_error.txt").write_text(msg[2], encoding="utf8")
+            messagebox.showerror("CleanListen ran into a problem", msg[1])
+            if getattr(self, "_saving", False) and self.analysis:
+                self._saving = False
+                self.show_review()       # keep your review; just press Save again
+            else:
+                self.show_setup()
 
     # ---------- page 3: review everything before saving ----------
     def _y_in_list(self, w):
