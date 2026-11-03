@@ -1159,6 +1159,80 @@ def _sentence_runs(book, hit):
     return runs
 
 
+# In a long sentence, cut only the part with the problem (Jason, 2026-11-03: "some sentences
+# are longer"): "He came home, poured himself a whiskey, and sat down to read the paper." loses
+# just "poured himself a whiskey". Kinds about what a sentence means (a joke, innuendo, an
+# affair, anger at God) still take the whole sentence, as in CleanView.
+PART_KINDS = {"kiss", "kiss_ss", "flirt", "nudity", "implied", "immodest", "violence", "graphic",
+              "disturbing", "smoking", "drinking", "drugs", "gestures", "bully", "disrespect",
+              "holiday", "birthday", "magic", "darkmagic", "vampires"}
+PART_MIN_WORDS = 14      # shorter sentences are cut whole
+PART_KEEP_WORDS = 5      # and so is one where less than this would be left
+CLAUSE_RE = re.compile(r"[,;:](?=\s)|\s[—–-]{1,2}\s|—")
+
+
+def sentence_part(book, si, hit):
+    """(a, b) in the paragraph: the clauses of sentence si that set off hit(words), when the
+    rest of the sentence can stay; None to cut the whole sentence."""
+    q, a, b, w0, w1 = book.sents[si]
+    if w1 - w0 < PART_MIN_WORDS:
+        return None
+    t = book.paras[q].text
+    cuts = [a] + [a + m.end() for m in CLAUSE_RE.finditer(t[a:b])] + [b]
+    pieces = [(x, y) for x, y in zip(cuts, cuts[1:]) if t[x:y].strip()]
+
+    def words_in(x, y):
+        return [book.wn[k] for k in range(w0, w1) if book.words[k][1] >= x and book.words[k][2] <= y]
+    # a piece of only a word or two ("Tom," / "she said,") goes with the one before it
+    merged = []
+    for x, y in pieces:
+        if merged and len(words_in(x, y)) < 3:
+            merged[-1] = (merged[-1][0], y)
+        else:
+            merged.append((x, y))
+    if len(merged) > 1 and len(words_in(*merged[0])) < 3:
+        merged[1] = (merged[0][0], merged[1][1])
+        del merged[0]
+    if len(merged) < 2:
+        return None
+    hits = [n for n, (x, y) in enumerate(merged) if hit(words_in(x, y))]
+    if not hits:
+        return None          # only the whole sentence shows it: cut it all
+    x, y = merged[hits[0]][0], merged[hits[-1]][1]
+    if len(words_in(a, b)) - len(words_in(x, y)) < PART_KEEP_WORDS:
+        return None
+    if y == b:               # the last part: keep the sentence's own full stop
+        end = re.search(r"[.!?…]+[\"'”’)\]]*$", t[x:y])
+        if end:
+            y = x + end.start()
+        # and take the comma before it with it ("He sat down, and drank." -> "He sat down.")
+        while x > a and t[x - 1].isspace():
+            x -= 1
+        if x > a and t[x - 1] in ",;:":
+            x -= 1
+    elif x == a:             # the first part: "and they stood there..." -> "They stood there..."
+        m = re.match(r"\s*(?:and|but|so|then|or)\b", t[y:b], re.I)
+        if m:
+            y += m.end()
+    while y > x and t[y - 1].isspace():
+        y -= 1
+    while x < y and t[x].isspace():
+        x += 1
+    return (x, y) if y > x else None
+
+
+def _part_cut(book, kind, si, part):
+    q = book.sents[si][0]
+    x, y = part
+    _, a, b, _, _ = book.sents[si]
+    t = book.paras[q].text
+    raw = " ".join(t[x:y].split())
+    return {"kind": kind, "sents": [si], "part": [x, y], "para": q, "where": book.where(q),
+            "starts": x == a,       # what's left starts the sentence, so it gets a capital
+            "text": book.masked(q, x, y), "before": book.masked(q, a, x), "after": book.masked(q, y, b),
+            "raw": raw, "key": item_key(raw)}
+
+
 # ---------------------------------------------------------------------------
 # AI helper (optional): the same local AI CleanListen uses
 # ---------------------------------------------------------------------------
@@ -1171,7 +1245,7 @@ def _ai():
                            "update, then try again.") from ex
 
 
-def ai_find(book, defs, progress=None, cancel=None, chunk=40):
+def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
     """The AI reads numbered sentences and names the ones that fit a type, quoting the words
     that show it (a find whose words aren't in that sentence is dropped); then each find is
     double-checked one at a time. Returns {(sentence index, type): 'high'|'medium'}.
@@ -1208,6 +1282,8 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40):
     not_these = [(t, e[1]) for t in types for e in fine.get(t, [])[-4:] if e[1]][-12:]
     teach = ("\n\nThis family marked sentences like these as NOT a problem, so don't flag ones "
              "like them:\n" + "\n".join(f'- "{x}" (not "{t}")' for t, x in not_these)) if not_these else ""
+    if notes:               # what they told the chat (Jason, 2026-11-03)
+        teach = "\n\n" + notes + teach
     cands = set()
     starts = list(range(0, S, chunk - 3))
     t0 = time.time()
@@ -1266,6 +1342,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40):
             res = ai.chat("Below is a short excerpt from a book. The sentence between >>> and <<< is "
                           "the one being checked; the others are only context.\n\n" + ex +
                           f"\n\nQuestion: Does the marked sentence clearly contain {defs[kind]}? " + seen +
+                          ("\n" + notes if notes else "") +
                           "\nJudge only the marked sentence. Be strict: when in doubt, answer false.\n"
                           'Answer in JSON: {"fits": true or false, "confidence": "high", "medium" or "low"}',
                           schema=sure_schema, timeout=120)
@@ -1276,12 +1353,13 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40):
     return found
 
 
-def ai_second_opinion(text, definition):
+def ai_second_opinion(text, definition, notes=""):
     """True / False / None (couldn't tell)."""
     ai = _ai()
     try:
         res = ai.chat("Here is a passage from a book:\n\n" + text[:4000] + "\n\nDoes it contain " +
-                      definition + '? Answer in JSON: {"fits": true} or {"fits": false}.',
+                      definition + "?" + ("\n" + notes if notes else "") +
+                      ' Answer in JSON: {"fits": true} or {"fits": false}.',
                       schema={"type": "object", "properties": {"fits": {"type": "boolean"}},
                               "required": ["fits"]}, timeout=120)
         return res.get("fits")
@@ -1811,19 +1889,7 @@ def analyze(book, opts, progress=None, cancel=None):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
-        b = book.words[j - 1][2]
-        t = book.paras[q].text
-        word = t[a:b]
-        lo = t.rfind(" ", 0, max(0, a - 50)) + 1 if a > 50 else 0
-        e = t.find(" ", b + 40)
-        hi = e if e != -1 else len(t)
-        doubt = book.doubtful_word(i, j, cat)
-        mutes.append({"para": q, "a": a, "b": b, "cat": cat, "where": book.where(q),
-                      "word": mask_words(word), "word_raw": word,
-                      "ctx": book.masked(q, lo, a), "ctx_after": book.masked(q, b, hi),
-                      "ctx_raw": " ".join(t[lo:a].split()), "ctx_after_raw": " ".join(t[b:hi].split()),
-                      "key": word_key(t[lo:a], word, t[b:hi]),
-                      "on": not doubt, **({"note": doubt} if doubt else {})})
+        mutes.append(_mute(book, q, a, book.words[j - 1][2], cat, book.doubtful_word(i, j, cat)))
 
     cuts = []
 
@@ -1879,7 +1945,8 @@ def analyze(book, opts, progress=None, cancel=None):
             if not run_:
                 continue
             taken.update(run_)
-            cuts.append(_sent_cut(book, kind, run_))
+            part = sentence_part(book, run_[0], hit) if kind in PART_KINDS and len(run_) == 1 else None
+            cuts.append(_part_cut(book, kind, run_[0], part) if part else _sent_cut(book, kind, run_))
 
     ai_note = ""
     if opts.get("ai"):
@@ -1896,7 +1963,7 @@ def analyze(book, opts, progress=None, cancel=None):
         kinds.update({k: t for k, t in E.ai_defs_for(rparts, kiss_mode, kiss_ss).items() if k in kinds})
         try:
             ai_note = _ai_clean(book, cuts, mutes, kinds, taken, in_passage,
-                                lambda f, m: say(0.4 + 0.6 * f, m), cancel)
+                                lambda f, m: say(0.4 + 0.6 * f, m), cancel, told(book.title))
         except KeyboardInterrupt:
             raise
         except Exception as ex:
@@ -1905,6 +1972,8 @@ def analyze(book, opts, progress=None, cancel=None):
     for n, c in enumerate(cuts, 1):
         c["id"] = n
         c.setdefault("cut", True)
+    for n, m in enumerate(mutes, 1):
+        m["id"] = n
     # what you kept (or marked "Not a problem") before starts unticked
     fk, mine = fine_keys(), fine_keys(shared=False)
     known = 0
@@ -1924,6 +1993,20 @@ def analyze(book, opts, progress=None, cancel=None):
             "title": book.title, "opts": opts}
 
 
+def _mute(book, q, a, b, cat, doubt=""):
+    t = book.paras[q].text
+    word = t[a:b]
+    lo = t.rfind(" ", 0, max(0, a - 50)) + 1 if a > 50 else 0
+    e = t.find(" ", b + 40)
+    hi = e if e != -1 else len(t)
+    return {"para": q, "a": a, "b": b, "cat": cat, "where": book.where(q),
+            "word": mask_words(word), "word_raw": word,
+            "ctx": book.masked(q, lo, a), "ctx_after": book.masked(q, b, hi),
+            "ctx_raw": " ".join(t[lo:a].split()), "ctx_after_raw": " ".join(t[b:hi].split()),
+            "key": word_key(t[lo:a], word, t[b:hi]),
+            "on": not doubt, **({"note": doubt} if doubt else {})}
+
+
 def _sent_cut(book, kind, run_):
     q = book.sents[run_[0]][0]
     raw = " ".join(" ".join(book.sent_text(si).split()) for si in run_)
@@ -1936,9 +2019,10 @@ AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick",
              "queers", "screw", "gay", "gays", "damned", "christ", "jesus", "lord", "god"}
 
 
-def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel):
+def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""):
     ai = _ai()
-    found = ai_find(book, kinds, progress=lambda f, m: say(0.7 * f, m), cancel=cancel) if kinds else {}
+    found = ai_find(book, kinds, progress=lambda f, m: say(0.7 * f, m), cancel=cancel,
+                    notes=notes) if kinds else {}
     added = sugg = off = 0
     # verified finds become sentence cuts (very sure = ticked, somewhat sure = unticked)
     by_kind = {}
@@ -1971,7 +2055,8 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel):
         if cancel and cancel():
             raise KeyboardInterrupt
         say(0.7 + 0.15 * n / max(1, len(checks)), "AI is double-checking what was flagged…")
-        fits = ai_second_opinion(c["text"], kinds[c["kind"]])
+        fits = ai_second_opinion(" ".join(x for x in (c.get("before"), c["text"], c.get("after"))
+                                          if x), kinds[c["kind"]], notes)
         if fits is False:
             c["cut"] = False
             c["ai_note"] = "AI thinks this one is fine"
@@ -2006,6 +2091,260 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel):
             pass
     return (f"AI helper added {added} it's sure about, suggested {sugg} more for you to decide "
             f"(left unticked), and unticked {off} it thinks were flagged by mistake.")
+
+
+# ---------------------------------------------------------------------------
+# Ask Claude (or ChatGPT / Gemini, as chosen in CleanListen) about the cuts, as in CleanListen
+# and CleanView. Jason, 2026-11-03: "most of the sentences it cuts are fine, but it thinks they
+# aren't" - so you can tell it, it changes the list right away, and it keeps the lesson
+# (CleanListen's notes: for this book or every book) for the AI helper and later chats.
+# ---------------------------------------------------------------------------
+def _learn():
+    try:
+        import cleanlisten_learn as learn
+        return learn
+    except Exception:
+        return None
+
+
+def told(title=""):
+    """What they've told the chat to keep in mind, for the AI's instructions ("" if nothing)."""
+    learn = _learn()
+    try:
+        return learn.told(title) if learn else ""
+    except Exception:
+        return ""
+
+
+def kinds_on(opts):
+    """The kinds of cut the filters ask for, in the names Claude's rules use."""
+    opts = _upgrade(opts)
+    rparts = religion_parts(opts)
+    kiss, kiss_ss = opts.get("kiss", "keep"), opts.get("kiss_ss", "keep")
+    return [k for k, on in (
+        ("ref", opts.get("refs")), ("sex", opts.get("sex")), ("graphic", opts.get("graphic")),
+        ("gore", opts.get("gore")), ("religion", bool(rparts)),
+        ("relationship", opts.get("relationships")), ("crude", opts.get("crude")),
+        ("bully", opts.get("bully")), ("disrespect", opts.get("disrespect")),
+        ("flirt", opts.get("flirt")), ("kiss", kiss in ("passionate", "all")),
+        ("kiss_ss", kiss_ss in ("passionate", "all")),
+        *((k, opts.get(k)) for k in E.MORE_KINDS), *((t, opts.get(t)) for t in E.TOPICS)) if on]
+
+
+def chat_filters(opts):
+    """The ticks in the form CleanListen's Claude rules (rules_text) read."""
+    opts = _upgrade(opts)
+    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude") if opts.get(g)
+            for c in E.GROUPS[g]] + (["orientation"] if opts.get("samesexwords") else [])
+    return {"kinds": kinds_on(opts), "cats": cats, "religion_parts": religion_parts(opts),
+            "kiss": opts.get("kiss", "keep"), "kiss_ss": opts.get("kiss_ss", "keep")}
+
+
+CHAT_SYSTEM = """You help a family fine-tune what CleanRead takes out of an e-book before they \
+read it. In your working folder are two files:
+- book.txt: the whole book as numbered sentences (S1, S2, ...).
+- findings.txt: everything CleanRead plans to cut (C = a cut: whole passages, sentences, or just \
+part of a sentence) or mark out (W = a single word or phrase), with whether each is ticked, \
+plus any notes. It is rewritten before every message, so read it again each time.
+
+Use Read and Grep on those files to look at everything in context - don't judge from one line. \
+When asked to check something, check every finding of that kind, not just one.
+
+{rules}
+
+Most sentences in a book are fine. A sentence is only cut when it really shows what a filter \
+above is about - mentioning a related word isn't enough (a glass of wine at dinner is drinking; \
+"she raised her glass" in a toast after a wedding is not a problem unless drinking is on; a \
+story about a fight is violence, the word "fight" in "fight back tears" is not).
+
+Answer in plain, friendly English, short and to the point (the family is not technical). Never \
+mention IDs like C12, W40 or S300 in your answer - the family can't see them; quote a few words \
+of the sentence instead. Don't spell out swear words (write s***). If your answer means the list \
+should change, put each change in "changes" - they are made RIGHT AWAY on the family's list \
+(they can undo them), so when they ask for a change, make it:
+- {{"action": "untick", "id": "C12"}} or {{"action": "tick", "id": "W40"}} for existing findings
+- {{"action": "part", "id": "C12", "words": "exact words"}} to cut only those words of a \
+sentence cut and keep the rest of the sentence (use it when only one part of a long sentence is \
+the problem; the words must be copied exactly from the sentence)
+- {{"action": "just_the_word", "id": "C12", "words": "exact words", "type": one of {cats}}} to \
+keep the sentence and mark out only a swear word or rude word in it
+- {{"action": "add", "from": "S300", "to": "S302", "type": one of {kinds}, "reason": "..."}} \
+to cut sentences that were missed
+For changes they didn't ask for, only include ones you're sure about. Say in your answer what \
+you changed.
+
+In "remember", put the lesson whenever they correct a call or explain why something is or isn't \
+a problem ("drinking wine with dinner is fine", "it's a fantasy book, the magic is fine", "a \
+kiss goodnight is fine"). Write it as a short rule in plain words that a later check can follow \
+on other sentences like it, not just this one, with "for": "this" (this book) or "everything" \
+(every book they clean; use it for rules about how things are judged in general). CleanRead \
+keeps it, and the AI helper and later chats follow it, so you CAN learn: never tell them you \
+can't remember things. Make the change on this list too, and say in your answer what you'll \
+remember. Only a plain "keep this one" with no reason needs no rule; otherwise leave \
+"remember" empty when they didn't correct or explain anything."""
+
+CHAT_SCHEMA = {"type": "object", "properties": {
+    "answer": {"type": "string"},
+    "changes": {"type": "array", "items": {"type": "object", "properties": {
+        "action": {"type": "string", "enum": ["untick", "tick", "part", "just_the_word", "add"]},
+        "id": {"type": "string"}, "from": {"type": "string"}, "to": {"type": "string"},
+        "words": {"type": "string"}, "type": {"type": "string"}, "reason": {"type": "string"}},
+        "required": ["action"]}},
+    "remember": {"type": "array", "items": {"type": "object", "properties": {
+        "note": {"type": "string"}, "for": {"type": "string", "enum": ["this", "everything"]}},
+        "required": ["note", "for"]}}},
+    "required": ["answer", "changes", "remember"]}
+
+
+def _find_words(text, words):
+    """(a, b) of words in text, ignoring case, spacing and curly quotes; None if not there."""
+    want = [w for w in re.findall(r"[\w']+", str(words).lower().replace("’", "'"))]
+    if not want:
+        return None
+    toks = [(m.start(), m.end(), m.group(0).lower().replace("’", "'"))
+            for m in re.finditer(r"[\w'’]+", text)]
+    for k in range(len(toks) - len(want) + 1):
+        if [t[2] for t in toks[k:k + len(want)]] == want:
+            return toks[k][0], toks[k + len(want) - 1][1]
+    return None
+
+
+class Chat:
+    def __init__(self, book, an, folder):
+        self.book, self.an = book, an
+        self.dir = Path(folder)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.session = None
+        for n, m in enumerate(an["mutes"], 1):
+            m.setdefault("id", n)
+        (self.dir / "book.txt").write_text(
+            "\n".join(f"S{si + 1}: " + " ".join(book.sent_text(si).split()) for si in range(len(book.sents))),
+            encoding="utf-8")
+
+    def _sent_of(self, q, a):
+        for si in self.book.para_sents[q]:
+            if self.book.sents[si][1] <= a < self.book.sents[si][2] + 1:
+                return si
+        return self.book.para_sents[q][0] if len(self.book.para_sents[q]) else 0
+
+    def _where(self, c):
+        if c.get("paras"):
+            ss = [si for q in c["paras"] for si in self.book.para_sents[q]]
+        else:
+            ss = c["sents"]
+        return f"S{ss[0] + 1}" + (f"-S{ss[-1] + 1}" if ss and ss[-1] != ss[0] else "") if ss else ""
+
+    def _write_findings(self):
+        out = []
+        for c in self.an["cuts"]:
+            what = "part of a sentence" if c.get("part") else "passage" if c.get("paras") else "sentences"
+            out.append(f"C{c['id']} [{'ticked' if c.get('cut', True) else 'unticked'}] "
+                       f"{c['kind']} · {what} {self._where(c)}: \"{c.get('raw') or c['text']}\""
+                       + (f" · note: {c['ai_note']}" if c.get("ai_note") else ""))
+        for m in self.an["mutes"]:
+            si = self._sent_of(m["para"], m["a"])
+            out.append(f"W{m['id']} [{'ticked' if m.get('on', True) else 'unticked'}] {m['cat']} · "
+                       f"S{si + 1}: \"{m['word_raw']}\" in \"…{m['ctx_raw']} [[{m['word_raw']}]] "
+                       f"{m['ctx_after_raw']}…\"" + (f" · note: {m['note']}" if m.get("note") else ""))
+        (self.dir / "findings.txt").write_text("\n".join(out) or "(nothing found)", encoding="utf-8")
+
+    def ask(self, question):
+        """Returns (answer, changes, remembered): remembered is [(note, for every book?)], already saved."""
+        import cleanlisten_claude as cc
+        cc.use(cc.saved_provider())
+        self._write_findings()
+        f = chat_filters(self.an.get("opts") or {})
+        system = CHAT_SYSTEM.format(rules=cc.rules_text({"filters": f}),
+                                    kinds=", ".join(f["kinds"]) or "(none on)",
+                                    cats=", ".join(f["cats"]) or "(none on)")
+        title = self.an.get("title", "")
+        t = told(title)
+        res = cc.run(question + ("\n\n" + t if t else "") + "\n\n(findings.txt has just been updated.)",
+                     system, schema=CHAT_SCHEMA, resume=self.session, persist=True,
+                     tools="Read,Grep,Glob", cwd=self.dir, timeout=900)
+        self.session = res.get("session_id") or self.session
+        data = res["data"]
+        learn, remembered = _learn(), []
+        for r in data.get("remember") or []:
+            note = " ".join(str(r.get("note", "")).split()) if isinstance(r, dict) else ""
+            everywhere = isinstance(r, dict) and r.get("for") == "everything"
+            try:
+                if note and learn and learn.add_note(note, title, everywhere):
+                    remembered.append((note, everywhere))
+            except Exception:
+                pass
+        return (str(data.get("answer", "")).strip(),
+                [c for c in data.get("changes", []) if isinstance(c, dict)], remembered)
+
+    def _item(self, fid):
+        fid = str(fid or "").strip().upper()
+        try:
+            n = int(fid[1:])
+        except ValueError:
+            return None, None
+        pool = self.an["cuts"] if fid[:1] == "C" else self.an["mutes"] if fid[:1] == "W" else []
+        return fid[:1], next((x for x in pool if x.get("id") == n), None)
+
+    def _snip(self, text, n=10):
+        w = str(text).split()
+        return "“" + " ".join(w[:n]) + ("…" if len(w) > n else "") + "”"
+
+    def apply(self, changes):
+        """Make the changes on the list. Returns what was done, in plain words."""
+        book, done = self.book, []
+        for ch in changes:
+            act = ch.get("action")
+            kind, it = self._item(ch.get("id"))
+            if act in ("untick", "tick") and it is not None:
+                on = act == "tick"
+                if kind == "C":
+                    it["cut"] = on
+                    it["ai_note"] = "Ticked by chat" if on else "Kept by chat"
+                    done.append(("cut " if on else "keep ") + self._snip(it["text"]))
+                else:
+                    it["on"] = on
+                    it["note"] = "Ticked by chat" if on else "Kept by chat"
+                    done.append(("mark out " if on else "keep the word ") + f"“{it['word']}”")
+            elif act == "part" and kind == "C" and it is not None and not it.get("paras"):
+                si = it["sents"][0]
+                q, a, b, _, _ = book.sents[si]
+                hit = _find_words(book.paras[q].text[a:b], ch.get("words", ""))
+                if hit and (hit[1] - hit[0]) < (b - a):
+                    nid, k = it["id"], it["kind"]
+                    it.clear()
+                    it.update(_part_cut(book, k, si, (a + hit[0], a + hit[1])))
+                    it.update(id=nid, cut=True, ai_note="Only this part, by chat")
+                    done.append("cut only " + self._snip(it["text"]))
+            elif act == "just_the_word" and kind == "C" and it is not None:
+                cat = ch.get("type") if ch.get("type") in E.ALL_CATS else "rude"
+                si = it["sents"][0] if it.get("sents") else book.para_sents[it["para"]][0]
+                q, a, b, _, _ = book.sents[si]
+                hit = _find_words(book.paras[q].text[a:b], ch.get("words", ""))
+                if hit:
+                    it["cut"], it["ai_note"] = False, "Kept by chat"
+                    m = _mute(book, q, a + hit[0], a + hit[1], cat)
+                    m.update(id=max([x.get("id", 0) for x in self.an["mutes"]] + [0]) + 1, note="Added by chat")
+                    self.an["mutes"].append(m)
+                    done.append(f"keep {self._snip(it['text'])} but mark out “{m['word']}”")
+            elif act == "add":
+                k = ch.get("type")
+                try:
+                    s0, s1 = sorted((int(str(ch.get("from"))[1:]) - 1, int(str(ch.get("to") or ch.get("from"))[1:]) - 1))
+                except ValueError:
+                    continue
+                if k not in CLEAN_LABELS or not 0 <= s0 <= s1 < len(book.sents) or s1 - s0 > 30:
+                    continue
+                busy = {si for c in self.an["cuts"] if c.get("cut", True) for si in c.get("sents", ())}
+                run_ = [si for si in range(s0, s1 + 1) if si not in busy]
+                if not run_:
+                    continue
+                c = _sent_cut(book, k, run_)
+                c.update(id=max([x.get("id", 0) for x in self.an["cuts"]] + [0]) + 1, cut=True,
+                         ai_note="Added by chat")
+                self.an["cuts"].append(c)
+                done.append("cut " + self._snip(c["text"]))
+        self.an["cuts"].sort(key=lambda c: (c["para"], c.get("sents", [0])[0]))
+        return done
 
 
 # ----- writing the clean copy -----
@@ -2084,9 +2423,12 @@ def write_clean(book, cuts, mutes, out_path, style="dash", marker=True, progress
     word_repl = STYLES.get(style, STYLES["dash"])
     cut_paras = set()
     sent_cut = set()
+    parts = []
     for c in cuts:
         if c.get("paras"):
             cut_paras.update(c["paras"])
+        elif c.get("part"):
+            parts.append(c)
         else:
             sent_cut.update(c["sents"])
     for q, rng in enumerate(book.para_sents):
@@ -2106,6 +2448,23 @@ def write_clean(book, cuts, mutes, out_path, style="dash", marker=True, progress
                 t = book.paras[q].text
                 text_edits.setdefault(q, []).append(_cut_edit(t, book.sents[run[0]][1], book.sents[run[-1]][2], marker))
                 run = []
+    n_parts = 0
+    for c in parts:
+        q, (x, y) = c["para"], c["part"]
+        if q in cut_paras or c["sents"][0] in sent_cut or any(
+                not (y <= a or x >= b) for a, b, _ in text_edits.get(q, [])):
+            continue
+        t = book.paras[q].text
+        e = _cut_edit(t, x, y, marker)
+        k = y
+        while k < len(t) and t[k].isspace():
+            k += 1
+        if c.get("starts") and k < len(t) and t[k].islower() and not _quote_fix(t, x, y)[0]:
+            e = (x, k + 1, (MARK + " " if marker else "") + t[k].upper())
+        elif e[2].startswith(MARK) and e[0] > 0 and not t[e[0] - 1].isspace():
+            e = (e[0], e[1], " " + e[2])        # "He sat down […]." not "down[…]."
+        text_edits.setdefault(q, []).append(e)
+        n_parts += 1
     n_mutes = 0
     for m in mutes:
         q = m["para"]
@@ -2187,7 +2546,7 @@ def write_clean(book, cuts, mutes, out_path, style="dash", marker=True, progress
     tmp.replace(out_path)
     say(1.0, "Saved")
     return {"out": str(out_path), "mutes": n_mutes, "cut_paras": len(cut_paras),
-            "cut_sents": len(sent_cut), "cuts": len(cuts)}
+            "cut_sents": len(sent_cut), "cut_parts": n_parts, "cuts": len(cuts)}
 
 
 def _retitle_opf(data):

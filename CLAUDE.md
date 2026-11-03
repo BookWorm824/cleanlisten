@@ -234,6 +234,14 @@ plain words, learned from Lauren directly and from her exported reviews:
   those in books"): both apps' AI helper looks for them, but its finds are only ticked when the
   word lists see it too (`_ai_backed` / CleanRead `rel_hit`); otherwise "AI suggests", unticked.
   It once ticked 56 ordinary man-and-woman lines of one romance (Love Songs Suck).
+- **CleanRead cuts less, and you can tell Claude** (Jason, 2026-11-03): in a sentence of 14+
+  words, a list hit of a `PART_KINDS` kind (drinking, smoking, violence, kissing... not jokes,
+  innuendo, affairs or religion) cuts only the clauses that show it (`sentence_part`, split at
+  , ; : and dashes; cut dicts get `"part": [a, b]` in the paragraph, "before"/"after" for the
+  review). The review page has "Ask Claude…" (`cleanread.Chat`, through `cleanlisten_claude.run`,
+  same provider as CleanListen): untick/tick, "part", "just_the_word", "add", and "remember"
+  notes kept in CleanListen's learned notes (`cleanlisten_learn.add_note`), which the AI helper
+  (`ai_find`, `ai_second_opinion`) and later chats follow. The working page shows the book's name.
 - **Off by default:** soft substitutes (gosh, heck…), bullying, disrespect, flirting, and the "For young
   kids" boxes (holidays, birthday candles, magic, dark magic, vampires & werewolves; CleanView
   ticks them for its kids' profiles, CleanListen has no profiles). The setup page must still

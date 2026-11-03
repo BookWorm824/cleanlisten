@@ -139,9 +139,11 @@ class App(tk.Tk):
         self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
         self.footer = tk.Frame(self.page, bg=BG)
         self.footer.pack(side="bottom", fill="x", pady=(12, 0))
+        self.name_lbl = None
         if name:                # which book this is (Jason: "you don't know what you've cleaned")
-            tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
-                     wraplength=760, justify="left").pack(anchor="w", pady=(0, 2))
+            self.name_lbl = tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
+                                     wraplength=760, justify="left")
+            self.name_lbl.pack(anchor="w", pady=(0, 2))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold"),
                  wraplength=760, justify="left").pack(anchor="w")
         if subtitle:
@@ -207,6 +209,8 @@ class App(tk.Tk):
 
     # ---------- page 1: choose a book and what to do ----------
     def show_setup(self):
+        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
+            self.chat_win.destroy()
         p = self._new_page(APP, "Check what's in a book before your kids read it, or make a clean "
                                 "copy with the language and content you don't want taken out.")
         upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
@@ -367,8 +371,13 @@ class App(tk.Tk):
                                                  if opts["ai"] else ""))
         threading.Thread(target=self._analyze_thread, args=(opts,), daemon=True).start()
 
+    def _book_name(self):
+        if self.book is not None and str(self.book.path) == str(Path(self.book_path or "")):
+            return self.book.title
+        return Path(self.book_path).stem if self.book_path else ""
+
     def show_working(self, title, sub=""):
-        p = self._new_page(title, sub)
+        p = self._new_page(title, sub, name=self._book_name())
         box = tk.Frame(p, bg=BG)
         box.pack(fill="x", pady=40)
         self.pb = ttk.Progressbar(box, style="Green.Horizontal.TProgressbar", maximum=1000, length=640)
@@ -387,6 +396,7 @@ class App(tk.Tk):
         if self.book is None or str(self.book.path) != str(Path(self.book_path)):
             self.q.put(("progress", 0.01, "Opening the book…"))
             self.book = engine.Book(self.book_path)
+            self.q.put(("named", self.book.title))
         return self.book
 
     def _prog(self, f, m):
@@ -448,6 +458,10 @@ class App(tk.Tk):
                 if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
                     self.pb["value"] = int(msg[1] * 1000)
                     self.status.config(text=msg[2])
+                elif kind == "named" and getattr(self, "name_lbl", None) and self.name_lbl.winfo_exists():
+                    self.name_lbl.config(text=msg[1])
+                elif kind == "chat_reply":
+                    self._chat_reply(*msg[1:])
                 elif kind == "scanned":
                     self.report = msg[1]
                     self.show_report()
@@ -685,8 +699,9 @@ class App(tk.Tk):
         self.show_setup()
 
     # ---------- page 2b: review before saving ----------
-    def show_review(self):
+    def show_review(self, keep_place=False):
         a = self.analysis
+        place = self._canvas.yview()[0] if keep_place and getattr(self, "_canvas", None) else 0
         cuts, mutes = a["cuts"], a["mutes"]
         sub = ("Nothing to remove was found in this book." if not cuts and not mutes else
                "Everything ticked below will be taken out. Untick anything you want to keep: "
@@ -702,6 +717,9 @@ class App(tk.Tk):
                    command=self.show_setup).pack(side="right", padx=(0, 10))
         ttk.Button(self.footer, text="Send what you marked…", style="Plain.TButton",
                    command=self._send_from_review).pack(side="right", padx=(0, 10))
+        if cuts or mutes:
+            ttk.Button(self.footer, text=f"Ask {self._ai_name()}…", style="Plain.TButton",
+                       command=self.open_chat).pack(side="right", padx=(0, 10))
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=MUTED, font=(FONT, 10))
         self.summary_lbl.pack(side="left")
         body = self._scroll_area(p)
@@ -722,6 +740,10 @@ class App(tk.Tk):
                  "kiss_ss", "flirt", "relationship", "violence", "graphic", "gore", "disturbing",
                  "religion", "crude", "bully", "disrespect", "smoking", "drinking", "drugs", "gestures",
                  "holiday", "birthday", "magic", "darkmagic", "vampires"]
+        for c in cuts:          # what was found, so what you change yourself is remembered
+            c.setdefault("cut0", c.get("cut", True))
+        for m in mutes:
+            m.setdefault("on0", m.get("on", True))
         for kind in order:
             items = [c for c in cuts if c["kind"] == kind]
             if not items:
@@ -736,6 +758,7 @@ class App(tk.Tk):
                 self.cut_vars.append((v, c))
                 group.append((v, c))
                 size = (f"{len(c['paras'])} paragraph{'s' if len(c['paras']) != 1 else ''}" if c.get("paras")
+                        else "part of a sentence" if c.get("part")
                         else f"{len(c['sents'])} sentence{'s' if len(c['sents']) != 1 else ''}")
                 top = tk.Frame(card, bg=CARD)
                 top.pack(fill="x")
@@ -743,13 +766,24 @@ class App(tk.Tk):
                                 variable=v, command=self._update_summary).pack(side="left")
                 if c.get("ai_note"):
                     soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests", "You kept this before",
-                                           "Kept by families before")
+                                           "Kept by families before", "Kept by chat")
                     tk.Label(top, text=c["ai_note"], bg="#FFF4D6" if soft else "#E3EFEC",
                              fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 9), padx=6).pack(side="right")
-                txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + len(c["text"]) // 95),
+                shown = len(c["text"]) + len(c.get("before", "")) + len(c.get("after", ""))
+                txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + shown // 95),
                               font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat", padx=8, pady=6,
                               borderwidth=0)
-                txt.insert("1.0", c["text"])
+                if c.get("part"):       # the rest of the sentence stays: grey, the cut part in red
+                    txt.tag_configure("keep", foreground=MUTED)
+                    txt.tag_configure("cut", background="#F3E3DF", foreground="#8A3B2E")
+                    def gap(s):         # no space before a comma or full stop
+                        return "" if not s or s[0] in ",.;:!?…”’)" else " "
+                    before, after = c.get("before", ""), c.get("after", "")
+                    txt.insert("1.0", before + (gap(c["text"]) if before else ""), "keep")
+                    txt.insert("end", c["text"], "cut")
+                    txt.insert("end", gap(after) + after, "keep")
+                else:
+                    txt.insert("1.0", c["text"])
                 txt.configure(state="disabled")
                 txt.pack(fill="x", pady=(6, 0))
 
@@ -801,6 +835,9 @@ class App(tk.Tk):
                 fill()
                 line.pack(side="left", fill="x", expand=True)
         self._update_summary()
+        if place:
+            self.update_idletasks()
+            self._canvas.yview_moveto(place)
 
     def _update_summary(self):
         nc = sum(v.get() for v, _ in getattr(self, "cut_vars", []))
@@ -819,11 +856,11 @@ class App(tk.Tk):
         # what you ticked or unticked yourself is remembered for next time
         marks = []
         for v, c in self.cut_vars:
-            if v.get() != c.get("cut", True):
+            if v.get() != c.get("cut0", c.get("cut", True)):
                 marks.append((c["kind"], c.get("key"), c.get("raw") or c["text"], not v.get()))
             c["cut"] = v.get()
         for v, m in self.mute_vars:
-            if v.get() != m.get("on", True):
+            if v.get() != m.get("on0", m.get("on", True)):
                 marks.append(("word", m.get("key"), f"{m['ctx_raw']} {m['word_raw']} {m['ctx_after_raw']}",
                               not v.get()))
             m["on"] = v.get()
@@ -834,12 +871,165 @@ class App(tk.Tk):
         self.cancel_btn.destroy()
         threading.Thread(target=self._write_thread, args=(cuts, mutes), daemon=True).start()
 
+    # ---------- ask Claude about the cuts (Jason, 2026-11-03: "like the view one") ----------
+    def _ai_name(self):
+        try:
+            import cleanlisten_claude as cc
+            return cc.name(cc.saved_provider())
+        except Exception:
+            return "Claude"
+
+    def _sync_ticks(self):
+        for v, c in getattr(self, "cut_vars", []):
+            c["cut"] = v.get()
+        for v, m in getattr(self, "mute_vars", []):
+            m["on"] = v.get()
+
+    def open_chat(self):
+        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
+            self.chat_win.lift()
+            return
+        try:
+            import cleanlisten_claude as cc
+        except Exception:
+            messagebox.showerror(APP, "The Claude files are missing. Open CleanListen once so it can "
+                                 "update, then try again.")
+            return
+        cc.use(cc.saved_provider())
+        N = cc.name()
+        if cc.status() != "ok":
+            messagebox.showinfo(APP, f"{N} isn't set up on this computer yet.\n\nOpen CleanListen and "
+                                f"press “Sign in to {N}” once, then come back here.")
+            return
+        self._sync_ticks()
+        if getattr(self, "chat", None) is None or self.chat.an is not self.analysis:
+            self.chat = engine.Chat(self.book, self.analysis, APP_DATA / "cleanread_chat")
+        w = tk.Toplevel(self)
+        self.chat_win = w
+        w.title(f"Ask {N} about this book")
+        w.configure(bg=BG)
+        try:
+            w.iconbitmap(str(HERE / "cleanread.ico"))
+        except Exception:
+            pass
+        scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        w.geometry(f"{int(600 * scale)}x{int(620 * scale)}")
+        tk.Label(w, text=f"Ask {N}", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(w, text=f"{N} reads the whole book and everything CleanRead plans to take out. Tell it "
+                 "what's fine and what isn't (“drinking at dinner is fine”, “just cut the part "
+                 "about the gun”). It changes your list right away, and it remembers what you tell it "
+                 "for next time.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=int(560 * scale),
+                 justify="left").pack(anchor="w", padx=16)
+        bottom = tk.Frame(w, bg=BG)
+        bottom.pack(side="bottom", fill="x", padx=16, pady=(6, 12))
+        quick = tk.Frame(bottom, bg=BG)
+        quick.pack(fill="x", pady=(0, 6))
+        self.chat_undo = ttk.Button(quick, text="Undo the last change", style="Plain.TButton",
+                                    command=self._undo_chat)
+        self.chat_log = tk.Text(w, wrap="word", font=(FONT, 10), bg=CARD, fg=INK, relief="flat",
+                                padx=10, pady=8, height=10, width=20)
+        self.chat_log.tag_configure("me", foreground=ACCENT_DK, font=(FONT, 10, "bold"))
+        self.chat_log.tag_configure("them", foreground=INK)
+        self.chat_log.tag_configure("info", foreground=MUTED, font=(FONT, 9, "italic"))
+        self.chat_log.pack(fill="both", expand=True, padx=16, pady=8)
+        self.chat_log.configure(state="disabled")
+        row = tk.Frame(bottom, bg=BG)
+        row.pack(fill="x")
+        self.chat_entry = tk.Text(row, height=3, wrap="word", font=(FONT, 10), width=20,
+                                  relief="flat", highlightthickness=1, highlightbackground=LINE)
+        self.chat_entry.pack(side="left", fill="x", expand=True)
+        self.chat_send = ttk.Button(row, text="Send", style="Go.TButton", command=lambda: self._chat_send())
+        self.chat_send.pack(side="left", padx=(8, 0))
+        self.chat_entry.bind("<Return>", lambda e: (self._chat_send(), "break")[1])
+        for label, q in (("Anything cut that's fine?", "Look over every cut and word in context. Is "
+                          "anything ticked that isn't really a problem under my filters? Untick those."),
+                         ("Did it miss anything?", "Read through the whole book. Did CleanRead miss "
+                          "anything my filters should take out?")):
+            ttk.Button(quick, text=label, style="Plain.TButton",
+                       command=lambda q=q: self._chat_send(q)).pack(side="left", padx=(0, 8))
+        for who, text in self.analysis.get("chat_history", []):
+            self._chat_say(who, text)
+        self._chat_say("info", f"Tip: {N} looks over the whole book every time you ask, so answers "
+                               "can take a minute or two.")
+        self.chat_entry.focus_set()
+
+    def _chat_say(self, who, text):
+        if not getattr(self, "chat_log", None) or not self.chat_log.winfo_exists():
+            return
+        self.chat_log.configure(state="normal")
+        prefix = {"me": "You: ", "them": self._ai_name() + ": ", "info": ""}[who]
+        self.chat_log.insert("end", prefix + text.strip() + "\n\n", who)
+        self.chat_log.configure(state="disabled")
+        self.chat_log.see("end")
+
+    def _chat_send(self, text=None):
+        if str(self.chat_send.cget("state")) == "disabled":
+            return
+        q = (text or self.chat_entry.get("1.0", "end")).strip()
+        if not q:
+            return
+        self.chat_entry.delete("1.0", "end")
+        self._chat_say("me", q)
+        self.analysis.setdefault("chat_history", []).append(("me", q))
+        self._chat_say("info", f"{self._ai_name()} is reading the book…")
+        self.chat_send.configure(state="disabled")
+        self._sync_ticks()
+        chat = self.chat
+
+        def work():
+            try:
+                self.q.put(("chat_reply",) + chat.ask(q))
+            except Exception as ex:
+                self.q.put(("chat_reply", f"Sorry, that didn't work: {ex}", [], []))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _chat_reply(self, ans, changes, kept):
+        import copy
+        a = self.analysis
+        a.setdefault("chat_history", []).append(("them", ans or ""))
+        done = []
+        if changes and a is self.chat.an:
+            self._sync_ticks()
+            snap = (copy.deepcopy(a["cuts"]), copy.deepcopy(a["mutes"]))
+            done = self.chat.apply(changes)
+            if done:
+                self._undo = snap
+        lines = [ans or "(no answer)"]
+        if done:
+            lines.append("Changed on your list: " + "; ".join(done) + ".")
+        for note, everywhere in kept or ():
+            lines.append("✓ CleanRead will remember" + (" for every book" if everywhere else
+                                                               " for this book") + ": " + note)
+        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
+            self.chat_send.configure(state="normal")
+            self._chat_say("them", lines[0])
+            for ln in lines[1:]:
+                self._chat_say("info", ln)
+            if done:
+                self.chat_undo.pack(side="right")
+        for ln in lines[1:]:
+            a["chat_history"].append(("info", ln))
+        if done and getattr(self, "summary_lbl", None) and self.summary_lbl.winfo_exists():
+            self.show_review(keep_place=True)
+
+    def _undo_chat(self):
+        snap = getattr(self, "_undo", None)
+        if not snap:
+            return
+        self.analysis["cuts"][:], self.analysis["mutes"][:] = snap
+        self._undo = None
+        self.chat_undo.pack_forget()
+        self._chat_say("info", "Undid the last change.")
+        if getattr(self, "summary_lbl", None) and self.summary_lbl.winfo_exists():
+            self.show_review(keep_place=True)
+
     # ---------- page 3: done ----------
     def show_done(self, res):
         p = self._new_page("All done!", "Your clean copy is ready. The original book wasn't changed.")
         stats = tk.Frame(p, bg=BG)
         stats.pack(fill="x", pady=20)
-        for big, small in [(str(res["mutes"]), "words marked out"), (str(res["cut_sents"]), "sentences cut"),
+        for big, small in [(str(res["mutes"]), "words marked out"),
+                           (str(res["cut_sents"] + res.get("cut_parts", 0)), "sentences cut or shortened"),
                            (str(res["cut_paras"]), "paragraphs cut")]:
             box = tk.Frame(stats, bg=CARD, padx=24, pady=14, highlightbackground=LINE, highlightthickness=1)
             box.pack(side="left", padx=(0, 12))
@@ -865,6 +1055,7 @@ class App(tk.Tk):
                        lambda: self.send_marks(an, "clean")).pack(anchor="w", pady=(18, 0))
 
     def reset(self):
+        self.chat = None
         self.book_path, self.book, self.outdir, self.report, self.analysis = None, None, None, None, None
         self.show_setup()
 

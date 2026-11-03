@@ -127,7 +127,7 @@ def test_the_ai_looks_for_same_sex_content_but_only_ticks_what_the_lists_see(boo
     # ticked 56 ordinary man-and-woman lines of one romance
     found = {}
 
-    def fake_find(bk, kinds, progress=None, cancel=None):
+    def fake_find(bk, kinds, progress=None, cancel=None, **kw):
         found["kinds"] = set(kinds)
         return {(i, "relationship"): "high" for i, s in enumerate(bk.sents)
                 if "barn" in bk.sent_text(i) or "brother" in bk.sent_text(i)}
