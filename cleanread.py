@@ -439,8 +439,14 @@ class Book:
         return self.chapters[self.paras[q].chapter] if self.chapters else ""
 
     def where(self, q):
+        """Where it is, in plain words (Jason, 2026-11-03: "What do the percents mean?" - and
+        some books name their chapters with just a number, so "45 · 16%" meant nothing)."""
         pct = int(100 * q / max(1, len(self.paras)))
-        return f"{self.chapter_of_para(q)} · {pct}%"
+        place = f"{pct}% of the way through the book"
+        ch = " ".join(self.chapter_of_para(q).split())
+        if not ch:
+            return place[:1].upper() + place[1:]
+        return (ch if ch[:1].isalpha() else f"In “{ch}”") + " · " + place
 
     def has_bad(self, q, a, b):
         return any(not (y <= a or x >= b) for x, y in self.bad.get(q, []))
@@ -1619,7 +1625,8 @@ def scan(book, use_ai=False, progress=None, cancel=None):
 
     if use_ai:
         try:
-            found = ai_find(book, SCAN_AI, progress=lambda f, m: say(0.5 + 0.5 * f, m), cancel=cancel)
+            found = ai_find(book, SCAN_AI, progress=lambda f, m: say(0.5 + 0.5 * f, m), cancel=cancel,
+                            notes=told(book.title))
             added = 0
             for (si, kind), conf in sorted(found.items()):
                 items = res["cats"][kind]["items"]
@@ -2254,14 +2261,10 @@ class Chat:
         import cleanlisten_claude as cc
         cc.use(cc.saved_provider())
         self._write_findings()
-        f = chat_filters(self.an.get("opts") or {})
-        system = CHAT_SYSTEM.format(rules=cc.rules_text({"filters": f}),
-                                    kinds=", ".join(f["kinds"]) or "(none on)",
-                                    cats=", ".join(f["cats"]) or "(none on)")
         title = self.an.get("title", "")
         t = told(title)
         res = cc.run(question + ("\n\n" + t if t else "") + "\n\n(findings.txt has just been updated.)",
-                     system, schema=CHAT_SCHEMA, resume=self.session, persist=True,
+                     self._system(cc), schema=self.SCHEMA, resume=self.session, persist=True,
                      tools="Read,Grep,Glob", cwd=self.dir, timeout=900)
         self.session = res.get("session_id") or self.session
         data = res["data"]
@@ -2276,6 +2279,14 @@ class Chat:
                 pass
         return (str(data.get("answer", "")).strip(),
                 [c for c in data.get("changes", []) if isinstance(c, dict)], remembered)
+
+    SCHEMA = CHAT_SCHEMA
+
+    def _system(self, cc):
+        f = chat_filters(self.an.get("opts") or {})
+        return CHAT_SYSTEM.format(rules=cc.rules_text({"filters": f}),
+                                  kinds=", ".join(f["kinds"]) or "(none on)",
+                                  cats=", ".join(f["cats"]) or "(none on)")
 
     def _item(self, fid):
         fid = str(fid or "").strip().upper()
@@ -2345,6 +2356,98 @@ class Chat:
                 self.an["cuts"].append(c)
                 done.append("cut " + self._snip(c["text"]))
         self.an["cuts"].sort(key=lambda c: (c["para"], c.get("sents", [0])[0]))
+        return done
+
+
+# Ask Claude on the book-check page (Jason, 2026-11-03: "I can't mark anything. No where to
+# click or tell Claude"): it reads the book and the findings, marks what they say isn't a
+# problem (learned like a "Not a problem" click), and keeps their lessons, as the clean chat does.
+CHECK_SYSTEM = """You help a family check what's in a book before their child reads it. In your \
+working folder are two files:
+- book.txt: the whole book as numbered sentences (S1, S2, ...).
+- findings.txt: what CleanRead's content check found, by kind (F = one finding), and whether the \
+family has marked it "not a problem". It is rewritten before every message, so read it again \
+each time.
+
+Use Read and Grep on those files to look at everything in context - don't judge from one line. \
+When they talk about a kind of finding ("the magic ones", "the witches"), check every finding of \
+that kind, not just one.
+
+Answer in plain, friendly English, short and to the point (the family is not technical). Never \
+mention IDs like F12 or S300 - quote a few words of the sentence instead. Don't spell out swear \
+words (write s***). When they say something isn't a problem, or ask you to find what isn't, put \
+each change in "changes" - they are made RIGHT AWAY (they can undo them):
+- {"action": "fine", "id": "F12"} marks a finding "not a problem" (it's left out of the report)
+- {"action": "not_fine", "id": "F12"} puts one back
+For changes they didn't ask for, only include ones you're sure about. Say in your answer what \
+you changed.
+
+In "remember", put the lesson whenever they correct a call or explain why something is or isn't \
+a problem ("a dream about flying isn't magic", "angels in a Christian story are fine"). Write it \
+as a short rule in plain words that a later check can follow on other sentences like it, with \
+"for": "this" (this book) or "everything" (every book). CleanRead keeps it, and later checks \
+follow it, so you CAN learn: never tell them you can't remember things. Only a plain "this one's \
+fine" with no reason needs no rule."""
+
+CHECK_SCHEMA = {"type": "object", "properties": {
+    "answer": {"type": "string"},
+    "changes": {"type": "array", "items": {"type": "object", "properties": {
+        "action": {"type": "string", "enum": ["fine", "not_fine"]}, "id": {"type": "string"}},
+        "required": ["action", "id"]}},
+    "remember": CHAT_SCHEMA["properties"]["remember"]},
+    "required": ["answer", "changes", "remember"]}
+
+
+class CheckChat(Chat):
+    """The chat on the book-check page: findings are the report's examples (F1, F2, ...)."""
+
+    def __init__(self, book, report, folder):
+        self.book, self.an = book, report
+        self.dir = Path(folder)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.session = None
+        self.items = []          # (kind for learning, label, item): F1 is the first
+        for kind, c in report["cats"].items():
+            for it in c["items"]:
+                self.items.append((kind, c["label"], it))
+        for cat, c in report["lang"].items():
+            for it in c["items"]:
+                self.items.append(("word", c["label"], it))
+        (self.dir / "book.txt").write_text(
+            "\n".join(f"S{si + 1}: " + " ".join(book.sent_text(si).split()) for si in range(len(book.sents))),
+            encoding="utf-8")
+
+    @staticmethod
+    def _raw(it):
+        if "word_raw" in it:
+            return f"{it['before_raw']} {it['word_raw']} {it['after_raw']}"
+        return it.get("raw") or it["text"]
+
+    def _write_findings(self):
+        out = [f"F{n} [{'not a problem' if it.get('fine') else 'found'}] {label} · {it.get('where', '')}: "
+               f"\"{' '.join(self._raw(it).split())}\"" for n, (_, label, it) in enumerate(self.items, 1)]
+        (self.dir / "findings.txt").write_text("\n".join(out) or "(nothing found)", encoding="utf-8")
+
+    def _system(self, cc):
+        return CHECK_SYSTEM
+
+    SCHEMA = CHECK_SCHEMA
+
+    def apply(self, changes):
+        done, marks = [], []
+        for ch in changes:
+            try:
+                kind, label, it = self.items[int(str(ch.get("id", ""))[1:]) - 1]
+            except (ValueError, IndexError):
+                continue
+            fine = ch.get("action") == "fine"
+            if bool(it.get("fine")) == fine:
+                continue
+            it["fine"] = fine
+            marks.append((kind, it.get("key"), self._raw(it), fine))
+            done.append(("not a problem: " if fine else "put back: ") + self._snip(self._raw(it)))
+        if marks:
+            learn_marks(marks)        # remembered next time, like a "Not a problem" click
         return done
 
 

@@ -129,6 +129,9 @@ class App(tk.Tk):
         s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
                     borderwidth=1, font=(FONT, 10), **edge)
         s.map("Plain.TButton", background=[("active", "#E0D9CF")])
+        s.configure("Small.TButton", background="#ECE7E0", foreground=INK, padding=(8, 1),
+                    borderwidth=1, font=(FONT, 9), **edge)
+        s.map("Small.TButton", background=[("active", "#E0D9CF")])
         s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
                     background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
         s.configure("TCombobox", padding=4)
@@ -507,8 +510,9 @@ class App(tk.Tk):
             self.show_setup()
 
     # ---------- page 2a: the content report ----------
-    def show_report(self):
+    def show_report(self, keep_place=False):
         r = self.report
+        place = self._canvas.yview()[0] if keep_place and getattr(self, "_canvas", None) else 0
         bits = [r.get("author") or "", f"{r['words']:,} words"]
         if r.get("grade"):
             bits.append(f"about a grade {r['grade']} reading level")
@@ -525,13 +529,21 @@ class App(tk.Tk):
                    command=self.reset).pack(side="left")
         ttk.Button(self.footer, text="Send what you marked…", style="Plain.TButton",
                    command=lambda: self.send_marks(r, "check")).pack(side="left", padx=(10, 0))
+        if r["cats"] or any(c["items"] for c in r["lang"].values()):
+            ttk.Button(self.footer, text=f"Ask {self._ai_name()}…", style="Plain.TButton",
+                       command=lambda: self.open_chat("check")).pack(side="left", padx=(10, 0))
         body = self._scroll_area(p)
         tip = tk.Frame(body, bg="#E3EFEC", padx=12, pady=8)
         tip.pack(fill="x", pady=(0, 8))
-        tk.Label(tip, text="Something here isn't a problem? Click “Not a problem” next to it. It's left "
-                 "out of the report, and CleanRead remembers it next time. When you're done, click "
-                 "“Send what you marked” so CleanRead can get better.", bg="#E3EFEC", fg=ACCENT_DK,
-                 font=(FONT, 10), wraplength=720, justify="left").pack(anchor="w")
+        # Jason, 2026-11-03: "It says send what you marked. But I can't mark anything" - say
+        # where the button is
+        tk.Label(tip, text="Something here isn't a problem? Click “Show examples” under it, then the "
+                 "“Not a problem” button beside a sentence (or “None of these are a problem”). Or "
+                 f"press “Ask {self._ai_name()}…” at the bottom and tell it in your own words. What "
+                 "you mark is left out of the report, and CleanRead remembers it next time. When "
+                 "you're done, click “Send what you marked” so CleanRead can get better.",
+                 bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), wraplength=720,
+                 justify="left").pack(anchor="w")
         tk.Label(body, text="The full report (with every sentence, printable) is saved as:\n"
                  + os.path.normpath(r["report_path"]), bg=BG, fg=MUTED, font=(FONT, 9),
                  justify="left", wraplength=740).pack(anchor="w", pady=(0, 8))
@@ -566,6 +578,9 @@ class App(tk.Tk):
                  "that flag it, and a flagged sentence may be harmless in context — that's why the "
                  "sentences are shown.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
                  justify="left").pack(anchor="w", pady=(18, 0))
+        if place:
+            self.update_idletasks()
+            self._canvas.yview_moveto(place)
 
     def _report_row(self, parent, c):
         outer = tk.Frame(parent, bg=LINE)
@@ -592,7 +607,7 @@ class App(tk.Tk):
             count.config(text=str(c["count"]) + (f"  (+{fine} not a problem)" if fine else ""))
             chs = c.get("chapters_list") or []
             where = ", ".join(chs[:8]) + (f" and {len(chs) - 8} more" if len(chs) > 8 else "")
-            where_lbl.config(text="Where: " + where if where else "")
+            where_lbl.config(text="Found in: " + where if where else "")
 
         show_counts()
         c["_changed"] = lambda: (show_counts(), self._report_changed(self.report))
@@ -613,6 +628,24 @@ class App(tk.Tk):
 
     def _fill_examples(self, holder, c, start=0):
         items = c["items"]
+        if start == 0:
+            c["_shows"] = []
+            if len(items) > 1:
+                def all_fine():
+                    on = not all(it.get("fine") for it in items)
+                    marks = []
+                    for it in items:
+                        if bool(it.get("fine")) != on:
+                            it["fine"] = on
+                            marks.append((c["kind"], it.get("key"), self._item_raw(c, it), on))
+                    engine.learn_marks(marks)
+                    for show in c["_shows"]:
+                        show()
+                    every.config(text=self._all_fine_text(items))
+                    c["_changed"]()
+                every = ttk.Button(holder, text=self._all_fine_text(items), style="Small.TButton",
+                                   command=all_fine)
+                every.pack(anchor="w", pady=(2, 2))
         for it in items[start:start + 12]:
             self._example(holder, c, it)
         left = len(items) - start - 12
@@ -621,20 +654,31 @@ class App(tk.Tk):
             more.bind("<Button-1>", lambda e: (more.destroy(), self._fill_examples(holder, c, start + 12)))
             more.pack(anchor="w", pady=(8, 0))
 
+    @staticmethod
+    def _all_fine_text(items):
+        return ("\u2713 None of these are a problem  ·  Undo" if all(it.get("fine") for it in items)
+                else "None of these are a problem")
+
+    @staticmethod
+    def _item_raw(c, it):
+        if c.get("lang"):
+            return f"{it['before_raw']} {it['word_raw']} {it['after_raw']}"
+        return it.get("raw") or it["text"]
+
     def _example(self, holder, c, it):
         head = tk.Frame(holder, bg=CARD)
-        head.pack(fill="x", pady=(6, 0))
+        head.pack(fill="x", pady=(8, 0))
+        # a real button on the left, where it's seen (Jason couldn't find the old link at the right)
+        mark = ttk.Button(head, text="", style="Small.TButton", command=lambda: flip())
+        mark.pack(side="left")
         tk.Label(head, text=it["where"] + (f"   · {it['ai']}" if it.get("ai") else ""),
-                 bg=CARD, fg=MUTED, font=(FONT, 8)).pack(side="left")
-        mark = self._link(head, "", lambda: flip(), bg=CARD)
-        mark.pack(side="right")
+                 bg=CARD, fg=MUTED, font=(FONT, 8)).pack(side="left", padx=(8, 0))
+        raw = self._item_raw(c, it)
         if c.get("lang"):
             text = f"…{it['before']} {it['word']} {it['after']}…"
             hl = [(len(it["before"]) + 2, len(it["before"]) + 2 + len(it["word"]))]
-            raw = f"{it['before_raw']} {it['word_raw']} {it['after_raw']}"
         else:
             text, hl = it["text"], it.get("hl") or []
-            raw = it.get("raw") or it["text"]
         t = tk.Text(holder, wrap="word", width=20, height=1, font=(FONT, 10), bg="#FBFAF8", fg=INK,
                     relief="flat", padx=8, pady=4, borderwidth=0, highlightthickness=0)
         t.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
@@ -647,8 +691,9 @@ class App(tk.Tk):
 
         def show():
             fine = it.get("fine")
-            mark.config(text="✓ Not a problem  ·  Undo" if fine else "Not a problem",
-                        fg=MUTED if fine else ACCENT)
+            if not mark.winfo_exists():
+                return
+            mark.config(text="✓ Not a problem  ·  Undo" if fine else "Not a problem")
             t.configure(fg="#A49E96" if fine else INK)
             t.tag_configure("w", background="#EEEAE4" if fine else "#F3E3DF",
                             foreground="#A49E96" if fine else "#8A3B2E")
@@ -659,6 +704,7 @@ class App(tk.Tk):
             show()
             c["_changed"]()
 
+        c.setdefault("_shows", []).append(show)
         show()
 
     def _report_changed(self, r):
@@ -901,7 +947,8 @@ class App(tk.Tk):
         for v, m in getattr(self, "mute_vars", []):
             m["on"] = v.get()
 
-    def open_chat(self):
+    def open_chat(self, mode="clean"):
+        """mode "clean": the review page's cuts; "check": the book-check page's findings."""
         if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
             self.chat_win.lift()
             return
@@ -918,8 +965,16 @@ class App(tk.Tk):
                                 f"press “Sign in to {N}” once, then come back here.")
             return
         self._sync_ticks()
-        if getattr(self, "chat", None) is None or self.chat.an is not self.analysis:
-            self.chat = engine.Chat(self.book, self.analysis, APP_DATA / "cleanread_chat")
+        data = self.report if mode == "check" else self.analysis
+        if getattr(self, "chat", None) is None or self.chat.an is not data:
+            try:
+                if self.book is None:
+                    self.book = engine.Book(self.book_path)
+                self.chat = (engine.CheckChat if mode == "check" else engine.Chat)(
+                    self.book, data, APP_DATA / "cleanread_chat")
+            except Exception as ex:
+                messagebox.showerror(APP, f"Couldn't open the chat ({ex}).")
+                return
         w = tk.Toplevel(self)
         self.chat_win = w
         w.title(f"Ask {N} about this book")
@@ -931,11 +986,15 @@ class App(tk.Tk):
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         w.geometry(f"{int(600 * scale)}x{int(620 * scale)}")
         tk.Label(w, text=f"Ask {N}", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
-        tk.Label(w, text=f"{N} reads the whole book and everything CleanRead plans to take out. Tell it "
-                 "what's fine and what isn't (“drinking at dinner is fine”, “just cut the part "
-                 "about the gun”). It changes your list right away, and it remembers what you tell it "
-                 "for next time.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=int(560 * scale),
-                 justify="left").pack(anchor="w", padx=16)
+        tk.Label(w, text=(f"{N} reads the whole book and everything CleanRead found. Tell it what "
+                          "isn't a problem (“the flying is a dream, not magic”, “angels are fine”). It "
+                          "marks those right away, and it remembers what you tell it for next time."
+                          if mode == "check" else
+                          f"{N} reads the whole book and everything CleanRead plans to take out. Tell it "
+                          "what's fine and what isn't (“drinking at dinner is fine”, “just cut the part "
+                          "about the gun”). It changes your list right away, and it remembers what you "
+                          "tell it for next time."), bg=BG, fg=MUTED, font=(FONT, 9),
+                 wraplength=int(560 * scale), justify="left").pack(anchor="w", padx=16)
         bottom = tk.Frame(w, bg=BG)
         bottom.pack(side="bottom", fill="x", padx=16, pady=(6, 12))
         quick = tk.Frame(bottom, bg=BG)
@@ -957,13 +1016,16 @@ class App(tk.Tk):
         self.chat_send = ttk.Button(row, text="Send", style="Go.TButton", command=lambda: self._chat_send())
         self.chat_send.pack(side="left", padx=(8, 0))
         self.chat_entry.bind("<Return>", lambda e: (self._chat_send(), "break")[1])
-        for label, q in (("Anything cut that's fine?", "Look over every cut and word in context. Is "
-                          "anything ticked that isn't really a problem under my filters? Untick those."),
-                         ("Did it miss anything?", "Read through the whole book. Did CleanRead miss "
-                          "anything my filters should take out?")):
+        quick_asks = ((("What isn't really a problem?", "Look over every finding in context. Which "
+                        "ones aren't really a problem? Mark those not a problem."),) if mode == "check" else
+                      (("Anything cut that's fine?", "Look over every cut and word in context. Is "
+                        "anything ticked that isn't really a problem under my filters? Untick those."),
+                       ("Did it miss anything?", "Read through the whole book. Did CleanRead miss "
+                        "anything my filters should take out?")))
+        for label, q in quick_asks:
             ttk.Button(quick, text=label, style="Plain.TButton",
                        command=lambda q=q: self._chat_send(q)).pack(side="left", padx=(0, 8))
-        for who, text in self.analysis.get("chat_history", []):
+        for who, text in data.get("chat_history", []):
             self._chat_say(who, text)
         self._chat_say("info", f"Tip: {N} looks over the whole book every time you ask, so answers "
                                "can take a minute or two.")
@@ -986,7 +1048,7 @@ class App(tk.Tk):
             return
         self.chat_entry.delete("1.0", "end")
         self._chat_say("me", q)
-        self.analysis.setdefault("chat_history", []).append(("me", q))
+        self.chat.an.setdefault("chat_history", []).append(("me", q))
         self._chat_say("info", f"{self._ai_name()} is reading the book…")
         self.chat_send.configure(state="disabled")
         self._sync_ticks()
@@ -1001,12 +1063,14 @@ class App(tk.Tk):
 
     def _chat_reply(self, ans, changes, kept):
         import copy
-        a = self.analysis
+        a = self.chat.an
         a.setdefault("chat_history", []).append(("them", ans or ""))
         done = []
-        if changes and a is self.chat.an:
+        check = isinstance(self.chat, engine.CheckChat)
+        if changes and (a is self.report if check else a is self.analysis):
             self._sync_ticks()
-            snap = (copy.deepcopy(a["cuts"]), copy.deepcopy(a["mutes"]))
+            snap = ([(it, it.get("fine")) for _, _, it in self.chat.items] if check else
+                    (copy.deepcopy(a["cuts"]), copy.deepcopy(a["mutes"])))
             done = self.chat.apply(changes)
             if done:
                 self._undo = snap
@@ -1025,19 +1089,36 @@ class App(tk.Tk):
                 self.chat_undo.pack(side="right")
         for ln in lines[1:]:
             a["chat_history"].append(("info", ln))
-        if done and getattr(self, "summary_lbl", None) and self.summary_lbl.winfo_exists():
+        if done:
+            self._chat_redraw()
+
+    def _chat_redraw(self):
+        """Show the chat's changes on the page it's about."""
+        if isinstance(self.chat, engine.CheckChat):
+            if self.report is self.chat.an and getattr(self, "_canvas", None) and self._canvas.winfo_exists():
+                self._report_changed(self.report)
+                self.show_report(keep_place=True)
+        elif getattr(self, "summary_lbl", None) and self.summary_lbl.winfo_exists():
             self.show_review(keep_place=True)
 
     def _undo_chat(self):
         snap = getattr(self, "_undo", None)
         if not snap:
             return
-        self.analysis["cuts"][:], self.analysis["mutes"][:] = snap
+        if isinstance(self.chat, engine.CheckChat):
+            marks = []
+            for it, fine in snap:
+                if bool(it.get("fine")) != bool(fine):
+                    it["fine"] = fine
+                    kind = next(k for k, _, x in self.chat.items if x is it)
+                    marks.append((kind, it.get("key"), self.chat._raw(it), bool(fine)))
+            engine.learn_marks(marks)
+        else:
+            self.analysis["cuts"][:], self.analysis["mutes"][:] = snap
         self._undo = None
         self.chat_undo.pack_forget()
         self._chat_say("info", "Undid the last change.")
-        if getattr(self, "summary_lbl", None) and self.summary_lbl.winfo_exists():
-            self.show_review(keep_place=True)
+        self._chat_redraw()
 
     # ---------- page 3: done ----------
     def show_done(self, res):

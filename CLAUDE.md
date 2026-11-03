@@ -243,6 +243,13 @@ plain words, learned from Lauren directly and from her exported reviews:
   same provider as CleanListen): untick/tick, "part", "just_the_word", "add", and "remember"
   notes kept in CleanListen's learned notes (`cleanlisten_learn.add_note`), which the AI helper
   (`ai_find`, `ai_second_opinion`) and later chats follow. The working page shows the book's name.
+- **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
+  tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
+  these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`
+  (fine / not_fine on F-numbered findings, learned like a click, plus remembered notes, which the
+  check's AI helper also follows). Places read "Chapter Two · 44% of the way through the book"
+  (`Book.where`; a chapter named only "45" shows as In “45”). CleanListen's lists say "at 0:12:34".
+  Any instruction naming a button must match a button that is on that page.
 - **Off by default:** soft substitutes (gosh, heck…), bullying, disrespect, flirting, and the "For young
   kids" boxes (holidays, birthday candles, magic, dark magic, vampires & werewolves; CleanView
   ticks them for its kids' profiles, CleanListen has no profiles). The setup page must still

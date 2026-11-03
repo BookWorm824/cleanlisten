@@ -1052,7 +1052,7 @@ class App(tk.Tk):
         if heard:
             self.heard_lbl.config(text="✓ This book has already been listened to, so the "
                                   "listening step is skipped — it goes straight to checking. "
-                                  "Change the ticks below if you like, then press Re-check.")
+                                  "Change the ticks below if you like, then press “Re-check this book”.")
             self.heard_lbl.pack(fill="x", pady=(0, 6), before=self.b1_outer)
             self.start_btn.config(text="Re-check this book")
         else:
@@ -1493,7 +1493,8 @@ class App(tk.Tk):
                    command=self._send_report_now).pack(side="left", padx=(8, 0))
         body = self._scroll_area(p)
         multi = len(a["parts"]) > 1
-        where = lambda x: (f"Part {x['part'] + 1} · " if multi else "") + engine.fmt_t(x["s"])
+        # "at 0:12:34" (how far into the book), so it isn't read as a clock (Jason, 2026-11-03)
+        where = lambda x: (f"Part {x['part'] + 1}, " if multi else "") + "at " + engine.fmt_t(x["s"])
 
         def section(title, short, count, var_list):
             head = tk.Frame(body, bg=BG)
@@ -1590,7 +1591,7 @@ class App(tk.Tk):
                 v = tk.BooleanVar(value=m.get("on", True))
                 self.mute_vars.append((v, m))
                 ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
-                tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=16 if multi else 8,
+                tk.Label(row, text=where(m), bg=rbg, fg=MUTED, font=(FONT, 9), width=18 if multi else 10,
                          anchor="w").pack(side="left")
                 tk.Label(row, text=CAT_LABELS.get(m.get("cat"), m.get("cat") or ""), bg=rbg, fg=MUTED,
                          font=(FONT, 8), width=12, anchor="w").pack(side="left")
