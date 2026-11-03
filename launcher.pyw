@@ -241,6 +241,19 @@ def as_own_exe(arg=""):
         return False
 
 
+def start_again(note):
+    """After an update, start the launcher just downloaded (without checking again), so what's
+    new in it works now: the first start after 1.13.0 still showed "Python" in Task Manager,
+    because this, the old launcher, opened the app itself (Jason, 2026-11-03)."""
+    import subprocess
+    env = dict(os.environ, CLEANLISTEN_UPDATED=note, CLEANLISTEN_UPDATE_DONE="1")
+    try:
+        subprocess.Popen([sys.executable, str(HERE / "launcher.pyw")] + sys.argv[1:], cwd=str(HERE), env=env)
+        return True
+    except OSError:
+        return False
+
+
 def update():
     local = json.loads((HERE / "version.json").read_text())
     with urllib.request.urlopen(RAW + "version.json", timeout=4) as r:
@@ -266,7 +279,7 @@ def update():
     return remote["version"]
 
 
-if __name__ == "__main__":
+def main():
     note = None
     arg = sys.argv[1] if len(sys.argv) > 1 else ""
     try:
@@ -276,9 +289,13 @@ if __name__ == "__main__":
         pass
     name = {"view": "CleanView", "read": "CleanRead"}.get(arg, "CleanListen")
     try:
-        new = update()
+        # CLEANLISTEN_UPDATE_DONE: started again right after an update (start_again, or
+        # CleanListen's "Check for updates")
+        new = None if os.environ.pop("CLEANLISTEN_UPDATE_DONE", None) else update()
         if new:
             note = f"{name} was updated to version {new}."
+            if start_again(note):
+                sys.exit(0)
     except Exception as ex:  # never block the app over an update problem
         try:
             (HERE / "update_error.txt").write_text(str(ex), encoding="utf8")
@@ -291,3 +308,7 @@ if __name__ == "__main__":
         app = "CleanListen.pyw"
     sys.argv = [str(HERE / app)]
     runpy.run_path(str(HERE / app), run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()

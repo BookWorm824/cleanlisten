@@ -544,9 +544,10 @@ class App(tk.Tk):
         elif kind == "updated":
             self._save_resume(note=f"CleanListen was updated to version {val}. Everything is just "
                                    "as you left it.")
-            env = dict(os.environ, CLEANLISTEN_UPDATED=f"CleanListen was updated to version {val}.")
-            try:
-                subprocess.Popen([sys.executable, str(HERE / "CleanListen.pyw")], cwd=str(HERE), env=env)
+            env = dict(os.environ, CLEANLISTEN_UPDATED=f"CleanListen was updated to version {val}.",
+                       CLEANLISTEN_UPDATE_DONE="1")
+            try:   # through the new launcher, so what's new in it works now (its own name, say)
+                subprocess.Popen([sys.executable, str(HERE / "launcher.pyw")], cwd=str(HERE), env=env)
             except Exception as ex:
                 messagebox.showinfo("CleanListen", f"Updated to {val}. Close CleanListen and open it "
                                     f"again to finish ({ex}).")
