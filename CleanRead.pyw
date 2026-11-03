@@ -539,7 +539,7 @@ class App(tk.Tk):
         # where the button is
         tk.Label(tip, text="Something here isn't a problem? Click “Show examples” under it, then the "
                  "“Not a problem” button beside a sentence (or “None of these are a problem”). Or "
-                 f"press “Ask {self._ai_name()}…” at the bottom and tell it in your own words. What "
+                 f"press “Ask {self._ai_name()}” beside it (or at the bottom) and tell it in your own words. What "
                  "you mark is left out of the report, and CleanRead remembers it next time. When "
                  "you're done, click “Send what you marked” so CleanRead can get better.",
                  bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), wraplength=720,
@@ -613,8 +613,12 @@ class App(tk.Tk):
         c["_changed"] = lambda: (show_counts(), self._report_changed(self.report))
         holder = tk.Frame(card, bg=CARD)
         state = {"open": False}
-        link = self._link(card, "Show examples", lambda: toggle(), bg=CARD)
-        link.pack(anchor="w", pady=(4, 0))
+        links = tk.Frame(card, bg=CARD)
+        links.pack(anchor="w", pady=(4, 0))
+        link = self._link(links, "Show examples", lambda: toggle(), bg=CARD)
+        link.pack(side="left")
+        self._link(links, f"Ask {self._ai_name()} about these", bg=CARD,
+                   cmd=lambda: self.open_chat("check", ("heading", c))).pack(side="left", padx=(16, 0))
 
         def toggle():
             state["open"] = not state["open"]
@@ -671,6 +675,8 @@ class App(tk.Tk):
         # a real button on the left, where it's seen (Jason couldn't find the old link at the right)
         mark = ttk.Button(head, text="", style="Small.TButton", command=lambda: flip())
         mark.pack(side="left")
+        self._link(head, f"Ask {self._ai_name()}", bg=CARD,
+                   cmd=lambda: self.open_chat("check", ("finding", c, it))).pack(side="left", padx=(8, 0))
         tk.Label(head, text=it["where"] + (f"   · {it['ai']}" if it.get("ai") else ""),
                  bg=CARD, fg=MUTED, font=(FONT, 8)).pack(side="left", padx=(8, 0))
         raw = self._item_raw(c, it)
@@ -826,6 +832,8 @@ class App(tk.Tk):
                 top.pack(fill="x")
                 ttk.Checkbutton(top, text=f"Cut this   ·   {c['where']}   ·   {size}",
                                 variable=v, command=self._update_summary).pack(side="left")
+                self._link(top, f"Ask {self._ai_name()}", bg=CARD,
+                           cmd=lambda c=c: self.open_chat("clean", ("cut", c))).pack(side="right", padx=(8, 0))
                 if c.get("ai_note"):
                     soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests", "You kept this before",
                                            "Kept by families before", "Kept by chat")
@@ -861,8 +869,12 @@ class App(tk.Tk):
                 v = tk.BooleanVar(value=m.get("on", True))
                 self.mute_vars.append((v, m))
                 ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
-                tk.Label(row, text=m["where"], bg=rbg, fg=MUTED, font=(FONT, 9), width=22,
-                         anchor="w").pack(side="left")
+                # wraps: "Chapter One · 10% of the way through the book" was cut off at 22 letters
+                tk.Label(row, text=m["where"], bg=rbg, fg=MUTED, font=(FONT, 9), width=24,
+                         wraplength=170, justify="left", anchor="w").pack(side="left")
+                ask = self._link(row, "Ask", bg=rbg, cmd=lambda m=m: self.open_chat("clean", ("word", m)))
+                ask.config(padx=4)
+                ask.pack(side="right")
                 show = tk.Label(row, text="Show", bg=rbg, fg=ACCENT, font=(FONT, 9, "underline"),
                                 cursor="hand2", padx=6)
                 show.pack(side="right")
@@ -947,10 +959,13 @@ class App(tk.Tk):
         for v, m in getattr(self, "mute_vars", []):
             m["on"] = v.get()
 
-    def open_chat(self, mode="clean"):
-        """mode "clean": the review page's cuts; "check": the book-check page's findings."""
+    def open_chat(self, mode="clean", about=None):
+        """mode "clean": the review page's cuts; "check": the book-check page's findings.
+        about: one item the next message is about (the "Ask Claude" link beside it)."""
         if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
             self.chat_win.lift()
+            if about:
+                self._ask_about(about)
             return
         try:
             import cleanlisten_claude as cc
@@ -1030,6 +1045,37 @@ class App(tk.Tk):
         self._chat_say("info", f"Tip: {N} looks over the whole book every time you ask, so answers "
                                "can take a minute or two.")
         self.chat_entry.focus_set()
+        if about:
+            self._ask_about(about)
+
+    def _ask_about(self, about):
+        """The next message is about this one (Jason: "ask claude under each line"): the chat is
+        told which it is, so they only type the question."""
+        kind, *rest = about
+        if kind == "finding":
+            c, it = rest
+            n = next((k for k, (_, _, x) in enumerate(self.chat.items, 1) if x is it), None)
+            raw = " ".join(self.chat._raw(it).split())
+            shown, said = (raw, f"this finding on my list (F{n}), under “{c['label']}”, {it.get('where', '')}: "
+                                f"\"{raw}\"")
+        elif kind == "heading":
+            c = rest[0]
+            ns = [f"F{k}" for k, (_, _, x) in enumerate(self.chat.items, 1) if any(x is y for y in c["items"])]
+            shown, said = (f"everything under “{c['label']}”",
+                           f"everything under “{c['label']}” on my list ({', '.join(ns)})")
+        elif kind == "cut":
+            c = rest[0]
+            raw = " ".join((c.get("raw") or c["text"]).split())
+            shown, said = raw, f"this cut on my list (C{c['id']}), {c['where']}: \"{raw}\""
+        else:
+            m = rest[0]
+            shown = f"…{m['ctx_raw']} {m['word_raw']} {m['ctx_after_raw']}…"
+            said = f"this marked-out word on my list (W{m['id']}): \"{m['word_raw']}\" in \"{shown}\""
+        words = engine.E._masked_text(shown.split()).split()      # swear words starred
+        self._chat_about = said
+        self._chat_say("info", "Your next message is about: “" + " ".join(words[:16]) +
+                       ("…" if len(words) > 16 else "") + "” — type your question below.")
+        self.chat_entry.focus_set()
 
     def _chat_say(self, who, text):
         if not getattr(self, "chat_log", None) or not self.chat_log.winfo_exists():
@@ -1053,6 +1099,9 @@ class App(tk.Tk):
         self.chat_send.configure(state="disabled")
         self._sync_ticks()
         chat = self.chat
+        about, self._chat_about = getattr(self, "_chat_about", None), None
+        if about:
+            q = f"About {about}\n\n{q}\n\n(Make any change on my list for that one as I ask.)"
 
         def work():
             try:
