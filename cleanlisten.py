@@ -201,6 +201,8 @@ def reverent(words, i, j=None):
     nxt = words[j] if j < len(words) else ""
     if prev in ("my", "sweet", "dear") and two == "oh":
         return False                   # "oh my Jesus"
+    if prev == "by" and two in ("swear", "swears", "swore", "sworn", "swearing"):
+        return False                   # "I swear by Jesus" (CleanView 1.18.10)
     if nxt in ("is", "was"):
         return (words[j + 1] if j + 1 < len(words) else "") in REVERENT_IS
     return prev in REVERENT_BEFORE or nxt in REVERENT_NEXT or (two, prev) == ("thank", "you")
@@ -304,7 +306,14 @@ def body_slang(words, i):
         return True
     if p1 in POSS and (p2 in BUST or (p2 in OFF_VERBS and n1 == "off")):
         return True
+    if w == "balls" and TOOK_BALLS.search(" ".join(words[max(0, i - 7):i + 1])):
+        return True                            # "that took some balls" (CleanView 1.18.10)
     return w == "balls" and (p1 in ("brass", "blue") or (n1, at(i + 2)) == ("of", "steel"))
+
+
+# "it/that took some balls"; "he took some balls to the park" isn't slang
+TOOK_BALLS = re.compile(r"\b(it|that|this|which)( (will|would|must|might|has|had|have))? (take|takes|"
+                        r"took|taken|taking)( (some|real|a lot of|big|huge|serious|guts and))? balls$")
 
 
 # Fruit and vegetables for body parts ("check out those melons", "pop her cherry", "kneed him in
@@ -419,6 +428,7 @@ PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # de
            "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
 # "General Hooker", "door knockers". (The word after, or before.)
+GAY_HAPPY_NEXT = {"refrain", "apparel", "abandon", "laughter", "nineties", "paree"}
 INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
@@ -434,7 +444,12 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                  "dumb": {"waiter", "waiters", "luck", "founded", "show"},
                  # "gee up" to a horse; the letter G ("a gee string", "gee major")
                  "gee": {"up", "string", "strings", "major", "minor", "sharp", "flat", "clef"},
-                 "dumdum": {"bullet", "bullets"}, "dumdums": {"bullet", "bullets"}}
+                 "dumdum": {"bullet", "bullets"}, "dumdums": {"bullet", "bullets"},
+                 # the dice game (CleanView 1.18.10, Iron Man): "a craps table", "craps game"
+                 "craps": {"table", "tables", "game", "games", "shooter", "shooters", "dealer"},
+                 # "gay" meaning happy ("the gay refrain", "don we now our gay apparel")
+                 "gay": GAY_HAPPY_NEXT,
+                 "bullshit": {"degree", "degrees"}}                 # "a BS degree"
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big"}, "cum": {"summa", "magna"},
                  "hooker": {"general", "john", "joe"}, "hookers": {"general"},
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
@@ -442,7 +457,11 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big"}, "cum": {"summa", "magna"},
                  "butts": {"cigarette", "cigar", "rifle", "gun"},
                  "dumb": {"deaf", "struck"}, "dummy": {"test", "ventriloquist", "ventriloquist's"},
                  "dummies": {"test", "crash"}, "brat": {"army", "navy", "military"},
-                 "brats": {"army", "navy", "military"}, "twits": {"the"}}   # Roald Dahl's book
+                 "brats": {"army", "navy", "military"}, "twits": {"the"},   # Roald Dahl's book
+                 "craps": {"two", "play", "playing", "played", "shoot", "shooting", "rolled",
+                           "roll", "of", "at"},                    # "two craps in a row"
+                 "crud": {"the", "some", "of", "that", "this", "all", "any", "green", "black",
+                          "brown", "gray", "grey"}}                 # "the crud on the floor"
 # Rude words kids copy (CleanListen's "Rude words" box, off unless ticked; the same list as
 # CleanView's). "Shut it" is rude, "shut it down" isn't.
 RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?", r"idiotic",
@@ -572,7 +591,9 @@ def unbleep(w):
 ABBREVIATIONS = [(re.compile(r"[Ss]\.[Oo]\.[Bb]\.?('?s)?|SOB('?S|'?s)?|S-O-B"), "sonofabitch"),
                  (re.compile(r"[Dd][-.]?[Bb][Aa][Gg][Ss]?"), "douchebag"),
                  # "PO'd" (pissed off); not "Po'd" (Po would, Kung Fu Panda). CleanView 1.18.4
-                 (re.compile(r"PO'e?d|[Pp]\.[Oo]\.'?e?d"), "pissed")]
+                 (re.compile(r"PO'e?d|[Pp]\.[Oo]\.'?e?d"), "pissed"),
+                 # "BS", "B.S."; not "Bs" (grades). CleanView 1.18.10
+                 (re.compile(r"B\.S\.?|BS"), "bullshit")]
 
 
 def unabbreviate(w):
@@ -691,6 +712,10 @@ def _find_language(words, cats):
                         continue  # "it's screwed to the wall", "we're screwed up"
                     if ph == ("jesus", "christ") and reverent(words, i, i + 2):
                         continue  # "the gospel of Jesus Christ"
+                    if cat == "deity" and ph[-1] == "god" and nxt in GOD_NOT_OATH:
+                        continue  # "uh oh, God save the queen", "oh God, bless you"
+                    if ph == ("up", "yours") and i and words[i - 1] in UP_YOURS_NOT_AFTER:
+                        continue  # "you hold up yours" (your end of a deal)
                     found = (ph, cat)
                     break
             if found:
@@ -717,6 +742,8 @@ def _find_language(words, cats):
             if any(p.match(w) for p in pats):
                 if w == "bloody" and (words[i + 1] if i + 1 < n else "") not in BLOODY_SWEAR_NEXT:
                     break
+                if w in FREAK_WORDS and "out" in words[i + 1:i + 3]:
+                    break     # "you're freaking me out", "she's freaking out"
                 if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) or
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
@@ -731,20 +758,30 @@ def _find_language(words, cats):
     return hits
 
 
+# CleanView 1.18.10's guards (the November reports)
+UP_YOURS_NOT_AFTER = {"hold", "holds", "held", "holding", "keep", "keeps", "kept", "keeping"}
+GOD_NOT_OATH = {"save", "bless", "blessed", "willing"}   # "oh God" / "my God" before a prayer
+FREAK_WORDS = {"freaking", "freakin"}
+
+
 def sex_score(words):
     """Score a stretch of text. Only stretches with at least two explicit
     words count at all: kissing, beds and sheets alone never flag a scene
     (romance without explicit content is left alone)."""
-    s, explicit = 0, 0
+    s, explicit = 0, set()
     for k, w in enumerate(words):
         if k and words[k - 1] in NOT_SEX_BEFORE.get(w, ()):
             continue                    # "it's a pleasure", "the fair sex" (Pride and Prejudice)
         for weight, pats in SEX_C.items():
-            if any(p.match(w) for p in pats):
+            hit = next((n for n, p in enumerate(pats) if p.match(w)), None)
+            if hit is not None:
                 s += weight
-                explicit += weight == 3
+                if weight == 3:
+                    explicit.add(hit)
                 break
-    return s if explicit >= 2 else 0
+    # two DIFFERENT explicit words: one said over and over ("thrust" in Chicken Run's flying
+    # talk) isn't a sex scene (CleanView 1.18.10)
+    return s if len(explicit) >= 2 else 0
 
 
 def is_explicit(words):
@@ -907,7 +944,9 @@ def _came_out(words, i):
 
 def relationship_hit(words):
     """Does this sentence make a same-sex or non-traditional relationship clear?"""
-    if any(any(p.match(w) for p in RELATIONSHIP_WORDS) for w in words):
+    if any(any(p.match(w) for p in RELATIONSHIP_WORDS) and not (
+            w == "gay" and words[k + 1:k + 2] and words[k + 1] in GAY_HAPPY_NEXT)
+           for k, w in enumerate(words)):
         return True
     for i in range(len(words)):
         for ph in RELATIONSHIP_PHRASES:
@@ -1551,8 +1590,10 @@ def span_times(asr, i, j):
 # ---------------------------------------------------------------------------
 AI_TYPES = {
     "ref": "a sexual reference, sexual joke or innuendo, or talk about sex, including talk of oral "
-           "sex or of touching someone's private parts; only the sentences that are sexual "
-           "themselves, not the ones around a joke (plainly mentioning underwear, ordinary romance, "
+           "sex or of touching someone's private parts, bragging about sleeping with women, or "
+           "brothel talk; only the sentences that are sexual themselves, not the ones around a joke, "
+           "but a follow-up that carries the joke on or calls back to it counts (a reply that only "
+           "reacts to a joke, plainly mentioning underwear, ordinary romance, "
            "affection and kissing, pregnancy or babies, 'sex' meaning men or women ('the fair "
            "sex'), a polite 'it's a pleasure', or a body part in a threat are NOT this)",
     # judged by what's happening, not by where they are or what they wear (Lauren, 2026-10-30:
@@ -1581,15 +1622,20 @@ AI_TYPES = {
                 "him the finger') or making a crude sexual gesture",
     "religion": None,      # set below from RELIGION_PARTS (religion_def)
     "relationship": "a same-sex couple, romance, relationship or flirting (for example a man "
-                    "flirting with or hitting on another man), or a non-traditional relationship "
+                    "flirting with or hitting on another man, or tender words between two women), "
+                    "only when both are men or both are women, going by names and what's said, "
+                    "or a non-traditional relationship "
                     "such as a throuple, polyamory, an open marriage, swingers or polygamy "
                     "(a man and a woman together, dating, engaged or married, is NOT this, and "
                     "neither is 'gay' meaning happy or cheerful, as in an old song or 'gay "
                     "apparel')",
     "bully": "bullying or mean-spirited cruelty: taunting, name-calling, mocking or humiliating "
              "someone, or picking on someone weaker, including a villain's mocking song and an "
-             "insult passed on ('she called you a ...') (an ordinary argument, a villain's plot or "
-             "a police interrogation is NOT this)",
+             "insult passed on ('she called you a ...'), mocking someone's catchphrase, or a "
+             "grown-up putting a child down; it must be meant to hurt or belittle (simply "
+             "disagreeing, friendly ribbing between grown-ups, a married couple arguing, an "
+             "ordinary argument, a villain's plot, a police interrogation, or a sentence whose only "
+             "problem is a swear word is NOT this)",
     "disrespect": "a child or teen being bratty or disrespectful to a parent, teacher or other "
                   "grown-up: talking back, sassing, mocking or insulting them, refusing to do what "
                   "they're told, openly disobeying, sneaking out or lying to them (grown-ups "
@@ -1600,8 +1646,11 @@ AI_TYPES = {
     "kiss_ss": "two men or two women kissing romantically or making out (a friendly kiss on the "
                "cheek is NOT this)",
     "sleeping": "sleeping around: casual sex, hooking up, a one-night stand, cheating on a husband, "
-                "wife or partner, or an affair",
-    "unmarried": "an unmarried man and woman living together or sleeping together",
+                "wife or partner, an affair, or planning one; only the sentences about the affair "
+                "itself (alibis, small talk, or questions that only lead up to it being revealed "
+                "are NOT this)",
+    "unmarried": "an unmarried man and woman living together or sleeping together, now or in the "
+                 "past ('my girlfriend kicked me out') (co-workers sharing a room for work are NOT this)",
     "smoking": "someone smoking or vaping (cigarettes, cigars, a pipe)",
     "drinking": "someone drinking alcohol or being drunk",
     "drugs": "someone using illegal drugs or being high",
@@ -1628,8 +1677,8 @@ AI_TYPES = {
                  "tricks or a Halloween costume are NOT this)",
     "magic": "magic: spells, magic wands, fairies doing magic, potions, enchantments, magic "
              "powers, a genie's wishes or a magic object (dark magic, wizards or witches, stage "
-             "magic tricks, or 'magic' meaning wonderful, as in 'it was magic' or 'the magic "
-             "word', are NOT this)",
+             "magic tricks, science-fiction gadgets, rays or inventions, or 'magic' meaning "
+             "wonderful, as in 'it was magic' or 'the magic word', are NOT this)",
     "vampires": "vampires or werewolves: vampires, Dracula, drinking someone's blood, turning "
                 "into a bat, werewolves, turning into a wolf at the full moon (vampire bats or "
                 "other real animals, and ordinary wolves, are NOT this)",
@@ -1737,7 +1786,8 @@ def religion_def(parts=("preach", "anger")):
               "believing in God or going to church are NOT this; nor is God's name said as an "
               "exclamation, like 'Thank God', 'Dear God', 'Oh, hallelujah' or 'go to hell')")
     t += (" (idioms like 'a match made in heaven', 'fire and brimstone', 'get to the church on time' "
-          "or 'penance' meaning a punishment are NOT this)")
+          "or 'penance' meaning a punishment are NOT this, and nor is a passing 'God bless you' or "
+          "'Merry Christmas'; any religion counts, voodoo too)")
     if "preach" not in parts:
         t += " (preaching or explaining beliefs is NOT this)"
     if "anger" not in parts:

@@ -601,7 +601,8 @@ MODERN_PREV = {"is", "was", "are", "were", "i'm", "im", "he's", "she's", "you're
 OLD_NEXT = {"and", "with", "as", "little", "colors", "colours", "spirits", "laughter", "music",
             "dress", "dresses", "flowers", "voices", "lights", "ribbons", "banners", "young",
             "old", "life", "world", "time", "times", "tune", "song", "songs", "feeling", "sort",
-            "kind", "thing", "things", "look", "looking", "face", "noise", "sound", "smell", "fish"}
+            "kind", "thing", "things", "look", "looking", "face", "noise", "sound", "smell", "fish",
+            *E.GAY_HAPPY_NEXT}       # "the gay refrain", "gay apparel" (CleanView 1.18.10)
 
 
 STRONG_MODERN_NEXT = {"rights", "pride", "marriage", "marriages", "couple", "couples", "community",

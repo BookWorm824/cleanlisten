@@ -632,3 +632,32 @@ def test_listed_word_only_counts_the_ticked_lists():
     ("The choir sang hallelujah at the end.", "deity", False)])
 def test_cleanview_1_18_5_words(text, cat, hit):
     assert bool(E.find_language(words(text), [cat])) is hit
+
+
+# CleanView 1.18.10 (the November reports: Toy Story 4, Iron Man, Chicken Run, Enchanted, Castle,
+# Person of Interest)
+@pytest.mark.parametrize("text", [
+    "two craps in a row", "the craps table", "you hold up yours", "you're freaking me out",
+    "she's freaking out", "the gay refrain", "don we now our gay apparel", "the crud on the floor",
+    "uh oh god save the queen", "oh god bless you", "a BS degree", "straight Bs on her report card",
+    "he took some balls to the park", "we are saved by Jesus"])
+def test_november_everyday_uses(text):
+    assert hits(text, EVERY + ["rude", "orientation"]) == []
+
+
+@pytest.mark.parametrize("text, word", [
+    ("Craps!", "craps"), ("up yours!", "up yours"), ("that's freaking awesome", "freaking"),
+    ("oh crud", "crud"), ("that's BS", "bullshit"), ("that's B.S.", "bullshit"),
+    ("that took some balls", "balls"), ("I swear by Jesus", "jesus"), ("oh god no", "oh god")])
+def test_november_still_caught(text, word):
+    w = words(text)
+    assert word in [" ".join(w[i:j]) for i, j, _ in E.find_language(w, EVERY)]
+
+
+def test_one_explicit_word_said_over_and_over_isnt_a_sex_scene():
+    assert E.sex_score(words("thrust and thrust and thrust again, thrust harder")) == 0
+
+
+def test_gay_meaning_happy_isnt_a_same_sex_line():
+    assert not E.relationship_hit(words("They sang the gay refrain all evening."))
+    assert E.relationship_hit(words("He told his parents he was gay."))

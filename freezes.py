@@ -117,7 +117,7 @@ class Watch:
     def stop(self):
         """When the window closes: the watcher stops, and the crash log is closed (empty)."""
         self.gone = True
-        for i in (self._beat_id, self._offer_id):
+        for i in (self._beat_id, self._offer_id, getattr(self.root, "_drain_id", None)):
             try:
                 if i:
                     self.root.after_cancel(i)
@@ -130,6 +130,9 @@ class Watch:
                 self._crash_log.close()
         except Exception:
             pass
+        # let go of the window, so the watcher thread is never the last one holding it (a Tk
+        # window freed on another thread stops the program: "Tcl_AsyncDelete")
+        self.root = None
 
     def note_freeze(self, secs):
         """Runs on the watcher's thread, so it reads no part of the window."""
@@ -199,7 +202,7 @@ class Watch:
                 done.append(ex)
 
         def check():
-            if self.gone:
+            if self.gone or self.root is None:
                 return
             if not done:
                 self.root.after(300, check)
@@ -240,5 +243,7 @@ def drain(root, q, handle, on_error=None, watch=None):
                     except Exception:
                         pass
     finally:
-        root.after(150 if len(msgs) < MAX_MESSAGES else 10,
-                   lambda: drain(root, q, handle, on_error, watch))
+        # kept so Watch.stop() can cancel it: left waiting, it broke the next window opened in
+        # the same program ("invalid command name"), as in the tests
+        root._drain_id = root.after(150 if len(msgs) < MAX_MESSAGES else 10,
+                                    lambda: drain(root, q, handle, on_error, watch))

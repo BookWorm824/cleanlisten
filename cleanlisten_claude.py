@@ -88,7 +88,10 @@ KIND_RULES = {
            "see my underwear?') is fine. A sentence "
            "that only MENTIONS that someone slept with someone or made love (e.g. 'I should never "
            "have told him I'd slept with someone else') stays - those words are muted on their own "
-           "(answer just_the_word). Ordinary romance, affection, dating, marriage and kissing are fine, "
+           "(answer just_the_word). Do cut a follow-up that carries a joke on or calls back to "
+           "it, bragging about sleeping with women, brothel talk, and jokes that need knowing the "
+           "news (a president and his interns); a reply that only reacts to a joke ('ha!', "
+           "'that's disgusting') stays. Ordinary romance, affection, dating, marriage and kissing are fine, "
            "and so are pregnancy or babies, 'sex' meaning men or women ('the fair sex'), a polite "
            "'it's a pleasure', and a body part in a threat.",
     "gore": "Gore: cut descriptions that dwell on insides on the outside: organs, entrails, "
@@ -109,18 +112,26 @@ KIND_RULES = {
                 "to church or a prayer service; God's name said as an exclamation ('Thank God', "
                 "'Dear God', 'Oh, hallelujah', 'what in the name of God', 'go to hell': the word "
                 "lists mute just those words); and idioms ('a match made in heaven', 'fire and "
-                "brimstone', 'get to the church on time', 'penance' meaning a punishment). In a song "
+                "brimstone', 'get to the church on time', 'penance' meaning a punishment); a passing "
+                "'God bless you' or 'Merry Christmas'. Any religion counts, including voodoo or "
+                "Vodun rituals and Wicca. In a song "
                 "or hymn, cut only the lines that are about it. This family cuts borderline religious talk - when unsure, choose remove.",
     "relationship": "Same-sex and non-traditional relationships: cut sentences that show a "
                     "same-sex couple, romance or flirting (including a man flirting with a man), "
-                    "throuples, polyamory, open marriages, swingers, polygamy. A man and woman "
+                    "throuples, polyamory, open marriages, swingers, polygamy, including a "
+                    "same-sex couple's tender words to each other. Only when both are men or both "
+                    "are women: go by names and what's said, not a guess. A man and woman "
                     "together is fine, and so is 'gay' meaning happy or cheerful (an old song, "
                     "'gay apparel'): that's only ever a word, never a same-sex line.",
     "crude": "Crude humor: cut toilet and gross-out jokes (farting, pooping, burping, boogers, "
              "pranks like that). Someone being sick or using the bathroom plainly is fine.",
     "bully": "Bullying: cut taunting, name-calling, mocking or picking on someone, including a "
              "villain's mocking song and an insult passed on ('she called you a ...'): the whole "
-             "sentence. An ordinary argument, a villain's plan or a police interrogation is fine.",
+             "sentence; also mocking someone's catchphrase and grown-ups putting children down. "
+             "It must be meant to hurt or belittle: simply disagreeing ('you're wrong!'), friendly "
+             "ribbing between grown-up friends, a married couple arguing, an ordinary argument, a "
+             "villain's plan, a police interrogation, and a sentence whose only problem is a swear "
+             "word (that's just_the_word) are fine.",
     "disrespect": "Disrespect: cut sentences where a child or teen is bratty or disrespectful to "
                   "a parent, teacher or other grown-up: talking back, sassing, mocking or "
                   "insulting them, refusing to do what they're told, openly disobeying, sneaking "
@@ -134,10 +145,13 @@ KIND_RULES = {
     "kiss_ss": "Same-sex kissing: cut sentences where two men or two women kiss romantically or "
                "make out. A friendly kiss on the cheek is fine.",
     "sleeping": "Sleeping around: cut sentences about casual sex, hooking up, one-night stands, "
-                "someone cheating on a husband, wife or partner, or an affair.",
+                "someone cheating on a husband, wife or partner, an affair, or planning one. Only "
+                "the sentences about the affair or the cheating itself: not the alibis, small talk "
+                "around it, or questions that only lead up to it being revealed.",
     "unmarried": "Unmarried couples: cut sentences where an unmarried man and woman live or sleep "
-                 "together. A married couple, and friends or family sharing a home or a room, are "
-                 "fine.",
+                 "together, now or in the past ('my girlfriend kicked me out'). A married couple, "
+                 "friends or family sharing a home or a room, and co-workers sharing a room for "
+                 "work are fine.",
     "violence": "Violence: cut sentences describing a fight, a shooting, a stabbing, a beating or an "
                 "attack, including a killing heard or described by what follows (a gunshot, then "
                 "someone or an animal is dead: remove). Saying someone died of illness or old age, "
@@ -180,8 +194,8 @@ KIND_RULES = {
                  "Halloween costume are fine.",
     "magic": "Magic: cut spells, magic wands, fairies doing magic, potions, enchantments, magic "
              "powers, a genie's wishes and magic objects. Wizards and witches are dark magic (a "
-             "separate choice). Stage magic tricks and 'magic' meaning wonderful ('it was "
-             "magic', 'the magic word') are fine.",
+             "separate choice). Stage magic tricks, science-fiction gadgets, rays and "
+             "inventions, and 'magic' meaning wonderful ('it was magic', 'the magic word') are fine.",
     "vampires": "Vampires and werewolves: cut vampires, Dracula, drinking someone's blood, "
                 "turning into a bat, werewolves, turning into a wolf at the full moon. Vampire "
                 "bats and other real animals, and ordinary wolves, are fine.",

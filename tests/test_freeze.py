@@ -94,3 +94,16 @@ def test_both_apps_use_it():
         assert "freezes.drain(self, self.q, self._handle" in src and "def _handle(self, msg):" in src
         assert "self.watch.stop()" in src
     assert "freezes.py" in json.loads((root / "version.json").read_text())["files"]
+
+
+def test_closing_the_window_cancels_the_loop_and_lets_go_of_it(tmp_path):
+    root, q = FakeRoot(), queue.Queue()
+    cancelled = []
+    root.after_cancel = cancelled.append
+    w = freezes.Watch(root, "CleanListen", tmp_path)
+    w.start(offer_after_ms=None)
+    freezes.drain(root, q, lambda m: None, watch=w)
+    drain_id = root._drain_id
+    w.stop()
+    assert drain_id in cancelled         # left waiting, it broke the next window opened
+    assert w.root is None
