@@ -2770,11 +2770,12 @@ def _shift(t, cuts):
     return max(0.0, t - removed)
 
 
-def plan_tracks(asr, clean_durs, cuts_by_part):
+def plan_tracks(asr, clean_durs, cuts_by_part, chapters=None):
     """Chapter tracks on ONE continuous timeline across all the cleaned files,
     so a chapter can span several CD tracks / parts. Adds splits so no track
     runs over an hour; books with no spoken chapter headings get ~30-minute
-    sections at natural pauses. Returns [{"g": start_seconds, "title"}]."""
+    sections at natural pauses. chapters: the book's own chapter marks [{part, t, title}]
+    (original times) to use instead of the announced ones. Returns [{"g": start_seconds, "title"}]."""
     offsets = [0.0]
     for d in clean_durs:
         offsets.append(offsets[-1] + d)
@@ -2784,7 +2785,7 @@ def plan_tracks(asr, clean_durs, cuts_by_part):
         return offsets[part] + _shift(t, cuts_by_part.get(part, []))
 
     starts = []
-    for c in find_chapters(asr):
+    for c in (chapters if chapters else find_chapters(asr)):
         at = g(c["part"], c["t"])
         if starts and at - starts[-1]["g"] < 5:
             continue
@@ -2823,8 +2824,8 @@ def plan_tracks(asr, clean_durs, cuts_by_part):
     return tracks
 
 
-def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print):
-    """Write one MP3 per track into a single numbered "Chapters" folder,
+def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print, folder=None):
+    """Write one MP3 per track into a single numbered "Chapters" folder (or `folder`),
     joining pieces of several cleaned files when a chapter spans them."""
     import tempfile
     offsets = [0.0]
@@ -2844,7 +2845,7 @@ def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print)
                 segs.append((f, a - offsets[j], b - offsets[j]))
         if segs:
             made.append({"title": t["title"], "segs": segs})
-    d = Path(outdir) / "Chapters"
+    d = Path(folder) if folder else Path(outdir) / "Chapters"
     if d.exists():
         for old in d.glob("*.mp3"):  # clear files from an earlier run of this book
             try:
@@ -2855,9 +2856,11 @@ def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print)
     width = max(2, len(str(len(made))))
     all_mp3 = all(Path(f).suffix.lower() == ".mp3" for f in clean_files)
     codec = ["-c", "copy"] if all_mp3 else ["-c:a", "libmp3lame", "-b:a", "128k"]
+    files = []
     for i, m in enumerate(made, 1):
         safe = re.sub(r'[\\/:*?"<>|]', "", m["title"])
         dst = d / f"{i:0{width}d} {safe}.mp3"  # Yoto takes MP3, so chapter files are always MP3
+        files.append(str(dst))
         tags = ["-id3v2_version", "3", "-metadata", f"title={m['title']}",
                 "-metadata", f"track={i}/{len(made)}", "-metadata", f"album={book_title}"]
         if len(m["segs"]) == 1:
@@ -2886,7 +2889,242 @@ def split_tracks(clean_files, clean_durs, tracks, outdir, book_title, log=print)
             raise RuntimeError(f"Couldn't make chapter file {dst.name}:\n{r.stderr[-500:]}")
     log(f"Made {len(made)} chapter files")
     return {"tracks": len(made), "cards": 1, "folders": [str(d)],
-            "titles": [m["title"] for m in made]}
+            "titles": [m["title"] for m in made], "files": files}
+
+# ---------------------------------------------------------------------------
+# One M4B with cover and chapters (2026-11-04). The owner made these by hand in
+# AudiobookConverter from the Yoto chapter files: each file turned into AAC, the files joined
+# one chapter each, then a cover picture added. Same here, but at the book's own bitrate (not
+# 128k from a 64k MP3), with the real chapter names ("Prologue", not "Chapter 001 - 00:00:20").
+# ---------------------------------------------------------------------------
+IMAGE_EXTS = (".jpg", ".jpeg", ".png")
+COVER_WORDS = ("cover", "folder", "front", "albumart")
+M4B_EXTS = (".m4b", ".m4a", ".mp4", ".aac")
+
+
+def probe_info(path):
+    """ffprobe's view of a file: {"format", "streams", "chapters"} ({} if it can't be read)."""
+    try:
+        r = run([_tool("ffprobe"), "-v", "quiet", "-print_format", "json", "-show_format",
+                 "-show_streams", "-show_chapters", str(path)], capture_output=True, text=True,
+                encoding="utf8", errors="replace")
+        return json.loads(r.stdout or "{}")
+    except (ValueError, OSError, RuntimeError):
+        return {}
+
+
+def book_tags(path):
+    tags = (probe_info(path).get("format") or {}).get("tags") or {}
+    return {str(k).lower(): str(v).strip() for k, v in tags.items()}
+
+
+def book_author(parts):
+    """The author from the book's own tags ("" if it has none)."""
+    t = book_tags(parts[0]) if parts else {}
+    return next((t[k] for k in ("artist", "album_artist", "author", "composer") if t.get(k)), "")
+
+
+def own_chapters(path):
+    """A book file's own chapter marks: [{"t", "title"}] (empty unless it has at least two)."""
+    out = []
+    for c in probe_info(path).get("chapters") or []:
+        try:
+            out.append({"t": float(c.get("start_time", 0)),
+                        "title": " ".join(((c.get("tags") or {}).get("title") or "").split())})
+        except (TypeError, ValueError):
+            pass
+    return out if len(out) >= 2 else []
+
+
+def _cover_stream(path):
+    return next((s for s in probe_info(path).get("streams") or []
+                 if s.get("codec_type") == "video" and (s.get("disposition") or {}).get("attached_pic")),
+                None)
+
+
+def find_cover(parts):
+    """Where the cover picture is: ("book", file) for one inside the audiobook file, ("file",
+    picture) for a picture in the book's folder (also the folder above Disc 1, Disc 2...), or
+    None. A picture named cover/folder/front wins, then the biggest one."""
+    if not parts:
+        return None
+    if _cover_stream(parts[0]):
+        return ("book", str(parts[0]))
+    dirs = {Path(p).parent for p in parts}
+    if len(dirs) > 1:
+        dirs |= {d.parent for d in dirs}
+    pics = []
+    for d in dirs:
+        try:
+            pics += [f for f in d.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTS]
+        except OSError:
+            pass
+    if not pics:
+        return None
+    best = min(pics, key=lambda f: (not any(w in f.stem.lower() for w in COVER_WORDS),
+                                    -f.stat().st_size, f.name))
+    return ("file", str(best))
+
+
+def cover_file(cover, workdir):
+    """A picture file to use as the cover. cover: a picture's path (one they chose), or what
+    find_cover() returned. None if there's no usable picture."""
+    if not cover:
+        return None
+    if isinstance(cover, (str, Path)):
+        return str(cover) if Path(cover).is_file() else None
+    kind, p = cover
+    if kind == "file":
+        return p if Path(p).is_file() else None
+    s = _cover_stream(p)
+    if not s:
+        return None
+    png = s.get("codec_name") == "png"
+    dst = Path(workdir) / ("cover.png" if png else "cover.jpg")
+    codec = ["-c:v", "copy"] if png or s.get("codec_name") == "mjpeg" else ["-c:v", "mjpeg", "-q:v", "2"]
+    r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(p), "-map", f"0:{s['index']}", *codec,
+             "-frames:v", "1", str(dst)], capture_output=True, text=True)
+    return str(dst) if r.returncode == 0 and dst.exists() else None
+
+
+def _meta_escape(v):
+    return re.sub(r"([=;#\\\n])", r"\\\1", str(v))
+
+
+def write_ffmeta(path, tags, chapters, total):
+    """An ffmpeg metadata file: the book's tags and chapters [(start_seconds, title)]."""
+    lines = [";FFMETADATA1"] + [f"{k}={_meta_escape(v)}" for k, v in (tags or {}).items() if v]
+    ch = []
+    for s, title in sorted(chapters, key=lambda c: c[0]):
+        s = max(0.0, min(float(s), total))
+        if ch and s - ch[-1][0] < 0.5:          # a chapter that was cut away entirely
+            ch[-1] = (ch[-1][0], ch[-1][1] or title)
+            continue
+        ch.append((s, title))
+    if ch:
+        ch[0] = (0.0, ch[0][1])
+    for i, (s, title) in enumerate(ch):
+        e = ch[i + 1][0] if i + 1 < len(ch) else total
+        lines += ["[CHAPTER]", "TIMEBASE=1/1000", f"START={int(round(s * 1000))}",
+                  f"END={int(round(e * 1000))}", f"title={_meta_escape(title or f'Chapter {i + 1}')}"]
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf8")
+    return len(ch)
+
+
+def _replace(tmp, dst):
+    try:
+        os.replace(tmp, dst)
+    except OSError:
+        try:
+            Path(tmp).unlink()
+        except OSError:
+            pass
+        raise RuntimeError(f"Couldn't replace {Path(dst).name} — it's open in another program (a "
+                           "player or cloud sync?). Close it and press Save again.")
+
+
+def retag_m4b(path, chapters=None, tags=None, cover=None, workdir=None):
+    """Give an M4B new chapter marks, tags or cover without re-encoding it (a quick copy).
+    chapters: [(start_seconds, title)]; None keeps its own. tags: None keeps its own."""
+    path = Path(path)
+    meta = Path(workdir or path.parent) / "~chapters.txt"
+    write_ffmeta(meta, tags or {}, chapters or [], probe_duration(path))
+    tmp = path.with_name("~saving~ " + path.name)
+    cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(path), "-i", str(meta)]
+    if cover:
+        cmd += ["-i", str(cover), "-map", "0:a", "-map", "2:v", "-disposition:v:0", "attached_pic"]
+    else:
+        cmd += ["-map", "0:a", "-map", "0:v?"]
+    cmd += ["-c", "copy", "-map_metadata", "1" if tags else "0",
+            "-map_chapters", "1" if chapters is not None else "0",
+            "-movflags", "+faststart", "-f", "ipod", str(tmp)]
+    r = run(cmd, capture_output=True, text=True)
+    try:
+        meta.unlink()
+    except OSError:
+        pass
+    if r.returncode != 0:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise RuntimeError(f"Couldn't set the chapters of {path.name}:\n{r.stderr[-500:]}")
+    _replace(tmp, path)
+
+
+def m4b_bitrate(path):
+    """The AAC bitrate for the M4B: the clean audio's own (a 64k MP3 stays 64k), 48k-128k."""
+    out = run([_tool("ffprobe"), "-v", "error", "-select_streams", "a:0", "-show_entries",
+               "stream=bit_rate", "-of", "default=nw=1:nk=1", str(path)],
+              capture_output=True, text=True).stdout.strip()
+    br = int(out) if out.isdigit() else 64000
+    return f"{max(48, min(128, round(br / 1000)))}k"
+
+
+def make_m4b(pieces, titles, dst, tags=None, cover=None, bitrate=None, workdir=None,
+             progress=None, log=print):
+    """One M4B from chapter pieces (the Yoto files): each piece becomes AAC (several at once),
+    then they're joined without re-encoding, one chapter each, with the tags and cover."""
+    import tempfile
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    say = progress or (lambda f, m: None)
+    dst = Path(dst)
+    tmpdir = Path(tempfile.mkdtemp(prefix="m4b_", dir=str(workdir) if workdir else None))
+    try:
+        br = bitrate or m4b_bitrate(pieces[0])
+        enc = [tmpdir / f"{i:04d}.m4a" for i in range(len(pieces))]
+
+        def one(i):
+            r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(pieces[i]), "-map", "0:a:0",
+                     "-vn", "-c:a", "aac", "-b:a", br, str(enc[i])], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"Couldn't make the M4B ({Path(pieces[i]).name}):\n{r.stderr[-400:]}")
+
+        workers = max(2, min(8, (os.cpu_count() or 4) // 2))
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = [ex.submit(one, i) for i in range(len(pieces))]
+            for n, f in enumerate(as_completed(futs), 1):
+                f.result()
+                say(n / len(pieces), f"Making the M4B… chapter {n} of {len(pieces)}")
+        durs = [probe_duration(f) for f in enc]
+        starts, at = [], 0.0
+        for d in durs:
+            starts.append(at)
+            at += d
+        lst = tmpdir / "list.txt"
+        lst.write_text("ffconcat version 1.0\n" + "".join(
+            "file '" + f.resolve().as_posix().replace("'", "'\\''") + "'\n" for f in enc),
+            encoding="utf8")
+        meta = tmpdir / "meta.txt"
+        n_ch = write_ffmeta(meta, tags or {}, list(zip(starts, titles)), at)
+        tmp = dst.with_name("~saving~ " + dst.name)
+        cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+               "-i", str(meta)]
+        if cover:
+            cmd += ["-i", str(cover), "-map", "0:a", "-map", "2:v", "-disposition:v:0", "attached_pic"]
+        else:
+            cmd += ["-map", "0:a"]
+        cmd += ["-c", "copy", "-map_metadata", "1", "-map_chapters", "1", "-movflags", "+faststart",
+                "-f", "ipod", str(tmp)]
+        say(1.0, "Making the M4B… adding the chapters and cover")
+        r = run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise RuntimeError(f"Couldn't make the M4B:\n{r.stderr[-500:]}")
+        _replace(tmp, dst)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+    log(f"Made {dst.name} ({n_ch} chapters, {br})")
+    return {"file": str(dst), "chapters": n_ch, "cover": bool(cover), "bitrate": br}
+
+
+def m4b_tags(title, author):
+    return {"title": title, "album": title, "artist": author, "album_artist": author,
+            "genre": "Audiobook"}
+
 
 
 # ---------------------------------------------------------------------------
@@ -2909,10 +3147,13 @@ def _ranges(rs):
     return "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in rs)
 
 
-def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None):
+def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
+           m4b=False, cover=None, author=None):
     """Write clean audio. cuts: list of {"part","s","e","note"}; defaults to
     the scenes marked cut=True in the analysis. chapters=True also writes one
-    file per chapter (Yoto-friendly)."""
+    file per chapter (Yoto-friendly). m4b=True also makes one M4B with chapters and a cover
+    (cover: a picture's path; otherwise the book's own, or one in its folder; author: for the
+    tags, otherwise the book's own)."""
     work = Path(workdir)
     st = json.loads((work / "analysis.json").read_text())
     if cuts is None:
@@ -3013,6 +3254,12 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                                "program (a player, the Yoto app or cloud sync?). Close it and press "
                                "Save again.")
         clean_files.append(str(dst))
+        if out_ext in M4B_EXTS and cr:
+            # its chapter marks were copied as they were: move them with the cuts (a 30-second
+            # cut in chapter one made every later chapter start 30 seconds late)
+            own = own_chapters(src)
+            if own:
+                retag_m4b(dst, [(_shift(c["t"], cr), c["title"]) for c in own], workdir=work)
         report.append(f"\n{src.name}\n" + "-" * len(src.name))
         for m in (m for m in st["mutes"] if m["part"] == pi):
             via = {"audio": "", "ai": "   (found by AI)"}.get(m["src"], "   (caught by ebook check)")
@@ -3028,25 +3275,64 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                      **{t: TOPIC_LABELS[t].lower() for t in TOPICS}}.get(c.get("kind"), "scene")
             report.append(f"  {fmt_t(c['s'])}  CUT {c['e'] - c['s']:.0f} seconds  "
                           f"{c.get('note') or label}")
-    chap = None
-    if chapters:
+    chap = book = None
+    one_m4b = len(st["parts"]) == 1 and Path(clean_files[0]).suffix.lower() in M4B_EXTS
+    if chapters or m4b:
         say(0.95, "Splitting into chapters…")
-        tr = json.loads((work / "transcript.json").read_text())
-        asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(st["parts"]) for w in tr[p]]
+        try:
+            tr = json.loads((work / "transcript.json").read_text())
+        except (OSError, ValueError):
+            tr = {}
+        asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(st["parts"])
+               for w in tr.get(p, [])]
         cuts_by_part = {}
         for c in cuts:
             cuts_by_part.setdefault(c["part"], []).append((c["s"], c["e"]))
         clean_durs = [probe_duration(f) for f in clean_files]
-        tracks = plan_tracks(asr, clean_durs, cuts_by_part)
+        # the book's own chapter marks (an M4B's) beat listening for "Chapter One"
+        own = [own_chapters(p) for p in st["parts"]]
+        marks = ([{"part": pi, **c} for pi, lst in enumerate(own) for c in lst]
+                 if all(own) else None)
+        tracks = plan_tracks(asr, clean_durs, cuts_by_part, marks)
         first = Path(st["parts"][0])
         if len({str(Path(p).parent) for p in st["parts"]}) > 1:
             title = first.parent.parent.name  # the book folder that holds Disc 1, Disc 2...
         else:
             title = re.sub(r"[\s_-]*(part|pt|disc|cd)?[\s_-]*\d+$", "", first.stem,
                            flags=re.I) or first.parent.name or first.stem
-        chap = split_tracks(clean_files, clean_durs, tracks, out, title, log)
-        report.append("\nChapter files\n-------------")
-        report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
+        tags = book_tags(st["parts"][0])
+        # an MP3's "title" is the track's ("Part 01"); an M4B's is the book's
+        title = tags.get("album") or (tags.get("title") if one_m4b else "") or title
+        if chapters or not one_m4b:
+            # the Yoto files (or, for the M4B alone, the same pieces in a folder that's removed)
+            folder = None if chapters else work / "m4b_pieces"
+            chap = split_tracks(clean_files, clean_durs, tracks, out, title, log, folder=folder)
+        if chapters:
+            report.append("\nChapter files\n-------------")
+            report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
+        if m4b:
+            author = (author or "").strip() or book_author(st["parts"])
+            pic = cover_file(cover or find_cover(st["parts"]), work)
+            if one_m4b:
+                # the clean copy is already one M4B: give it the chapters, cover and author
+                ch = [(t["g"], t["title"]) for t in tracks] if not own[0] else None
+                if ch is not None or pic or author:
+                    retag_m4b(clean_files[0], ch if ch is not None else (
+                        [(_shift(c["t"], cuts_by_part.get(0, [])), c["title"]) for c in own[0]]),
+                        m4b_tags(title, author or tags.get("artist", "")), pic, work)
+                book = {"file": clean_files[0], "chapters": len(own[0]) or len(tracks),
+                        "cover": bool(pic or _cover_stream(clean_files[0]))}
+            else:
+                say(0.96, "Making the M4B…")
+                safe = re.sub(r'[\\/:*?"<>|]', "", title).strip() or "Audiobook"
+                book = make_m4b(chap["files"], chap["titles"], out / f"{safe}.m4b",
+                                m4b_tags(title, author), pic, workdir=work,
+                                progress=lambda f, m: say(0.96 + 0.035 * f, m), log=log)
+                if not chapters:
+                    shutil.rmtree(work / "m4b_pieces", ignore_errors=True)
+                    chap = None
+            report.append(f"\nOne M4B: {Path(book['file']).name} ({book['chapters']} chapters"
+                          f"{', with the cover' if book['cover'] else ', no cover picture found'})")
     head = ["CleanListen report", "==================",
             f"{len(st['mutes'])} words/phrases muted, {len(cuts)} passages cut "
             f"({total_cut_sec / 60:.1f} minutes removed)."]
@@ -3056,7 +3342,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     say(1.0, "Saved.")
     log(f"Saved to {out}")
     return {"mutes": len(st["mutes"]), "cuts": len(cuts), "cut_minutes": total_cut_sec / 60,
-            "out": str(out), "chapters": chap}
+            "out": str(out), "chapters": chap, "m4b": book}
 
 
 # ---------------------------------------------------------------------------

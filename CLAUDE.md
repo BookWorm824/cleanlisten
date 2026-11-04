@@ -139,6 +139,16 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    `Clean` folder next to the book (multi-disc books: one `Clean` beside the disc folders, files
    prefixed with the disc name). Optional chapter split for Yoto: MP3 tracks ≤60 min on one
    continuous timeline across files, in a `Chapters` folder.
+   Chapters come from the book's own chapter marks (an M4B's) when every file has them, else
+   from the narrator's "Chapter One" (`find_chapters`). An M4B's clean copy gets its chapter
+   marks moved with the cuts (`retag_m4b`; before 1.13.7 they stayed where they were).
+   Optional **one M4B** (`m4b=True`, 2026-11-04): the owner used to make it by hand in
+   AudiobookConverter from the chapter files. `make_m4b` does the same: each chapter piece to
+   AAC at the book's own bitrate (48–128k, several at once), joined with `-c copy`, one chapter
+   per piece with its real name, tags (title, author) and a cover: one they chose, else the
+   picture inside the book, else a picture in its folder (`find_cover`: cover/folder/front
+   first, then the biggest). A one-file M4B book just gets its clean copy re-tagged. ~47 s for
+   6 hours of audio.
 
 ## 4. Data model (analysis.json)
 
