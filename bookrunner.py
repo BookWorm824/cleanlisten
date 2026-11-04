@@ -121,7 +121,10 @@ def save(engine, spec, stop, say, log):
     res = engine.render(spec["workdir"], spec["outdir"], cuts, progress=say, log=log,
                         chapters=spec.get("split", False), mutes=mutes,
                         m4b=spec.get("m4b", False), cover=spec.get("cover"),
-                        author=spec.get("author") or None)
+                        author=spec.get("author") or None,
+                        chapters_dir=spec.get("chapters_dir") or None,
+                        m4b_dir=spec.get("m4b_dir") or None, abs_layout=spec.get("abs", False),
+                        series=spec.get("series") or "", series_no=spec.get("series_no") or "")
     send(done="saved", result=res)
 
 

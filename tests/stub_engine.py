@@ -44,10 +44,13 @@ def analyze(parts, workdir, ebook=None, groups=(), progress=None, log=print, thr
 
 
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
-           m4b=False, cover=None, author=None):
+           m4b=False, cover=None, author=None, chapters_dir=None, m4b_dir=None, abs_layout=False,
+           series="", series_no=""):
     progress(0.5, "Saving part 1 of 1")
     (Path(workdir) / "stub_render.json").write_text(json.dumps(
-        {"chapters": chapters, "m4b": m4b, "cover": cover, "author": author}))
+        {"chapters": chapters, "m4b": m4b, "cover": cover, "author": author,
+         "chapters_dir": chapters_dir, "m4b_dir": m4b_dir, "abs_layout": abs_layout,
+         "series": series, "series_no": series_no}))
     return {"mutes": len(mutes), "cuts": len(cuts),
             "cut_minutes": round(sum(c["e"] - c["s"] for c in cuts) / 60, 3), "out": outdir,
             "chapters": None}

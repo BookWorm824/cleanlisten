@@ -33,6 +33,7 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `freezes.py` | Noticing a freeze or crash in both apps (CleanView 1.18.9): no answer for 20 s → what every thread was doing goes in `stopped_last_time.txt` (`cleanread_` for CleanRead), a hard crash via faulthandler (`crash_log.txt`); next start they're asked to send it in (kind "problem"). `drain()` runs each window's queue: at most 500 messages a go, only the newest progress, one bad message can't stop it (`_handle`). |
 | `bookqueue.py` | The book queue (Lauren, 2026-11-04): "Your books" page state (`BookQueue`, kept in `APP_DATA/queue.json`, steps waiting → preparing → ready → save_waiting → saving → done, or failed/stopped) and the worker processes (`Workers`). "Books at once" 1–4 (default 2, or 1 on a PC with under 12 GB, `default_at_once()`; their own choice is kept); `plain_error()` turns running out of memory ("bad allocation", "[WinError 1455] The paging file is too small"…) into "set Books at once to 1, close other programs, Try again". Low memory, 1.14.5: `run()`/`popen()` wait 5/15/30 s and try again when Windows can't start ffmpeg for lack of memory (`LOW_MEMORY_ERRORS`), and `free_ai_memory()` tells Ollama to let go of the AI helper's model as soon as it's done (it otherwise holds several GB for 5 minutes); `threads_each()` shares the PC's cores between them (16 threads: 8, 8, 5, 4 per book). No window code, so it's tested directly (`tests/test_queue.py`). |
 | `bookrunner.py` | One book's worker process: runs `analyze()` (prepare) or `render()` (save) and sends JSON lines (`{"p","m"}`, `{"done": "ready"/"saved"}`, `{"error"}`, `{"stopped"}`) back on stdout; its stop file (`queue.stop.<run>`, written by Cancel / closing / updating) or the window going away cancels. Not stdin: on Windows a thread blocked reading a pipe stops DLLs loading (the worker froze importing numpy). Holds `jobs/<key>/queue.lock` so two runs of one book never overlap (after an update). Its stderr and faulthandler go to `jobs/<key>/worker_log.txt`. `CLEANLISTEN_ENGINE` swaps in a stand-in engine for tests. |
+| `dropfiles.py` | Dropping files from File Explorer on a widget (the M4B cover box, 1.14.6): Windows' own WM_DROPFILES through ctypes (subclassing the widget's window), so nothing to install. The window procedure must not call tkinter (Tk holds its lock there): it only notes the files and an `after` loop hands them over. Tested with a real posted drop (`tests/test_dropfiles.py`). |
 | `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
 | `shortcuts.py` | Creates the CleanRead desktop icon; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
@@ -55,6 +56,8 @@ Python 3.12 on the user's PC (private venv). Dependencies: `sherpa-onnx`, `numpy
   ebook, output folder, title), `claude_chat\` (book.txt + findings.txt for the chat),
   `save_error.txt`, `last_error.txt`
 - `learned.json` (what this PC learned), `claude_findings\*.json` + `claude_findings.csv`
+- `save_places.json` — where the chapter files and the M4B go when not the usual place
+  (`chapters_dir`, `m4b_dir`, `abs`)
 - `queue.json` — the "Your books" list (each book's files, filters, analyze arguments, step,
   status, results) and "Books at once"; a book that was preparing or saving when the window
   closed (or updated) goes back in line and carries on (`BookQueue.resume`; listening resumes
@@ -155,6 +158,16 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    picture inside the book, else a picture in its folder (`find_cover`: cover/folder/front
    first, then the biggest). A one-file M4B book just gets its clean copy re-tagged. ~47 s for
    6 hours of audio.
+   **Where they go** (1.14.6; Lauren, 2026-11-04: "allow me to choose where to save the files"
+   ... "set the folder up for audiobookshelf"): the usual places (`Clean\Chapters`, the M4B in
+   `Clean`) unless they chose others on the start page (kept in `APP_DATA/save_places.json`).
+   Chapter files go in `chapters_dir\<book>` (never loose: `split_tracks` clears the folder's
+   old MP3s). The M4B goes in `m4b_dir`, or with `abs_layout` in
+   `m4b_dir\Author\Series\Book 2 - Title\Title.m4b` (`abs_folder`): Audiobookshelf's scanner
+   takes author/series/title from those folders and the number from "Book 2 - ". Series and
+   number are guessed from the folders (`guess_series`: "Grace Ford Series\#2 Nearly Safe" ->
+   Grace Ford, 2) and can be changed; the number is dropped from the title tag (`strip_number`).
+   A one-file M4B book's re-tagged clean copy is copied there. The cover can be dropped on its box.
 
 **The book queue** (1.14.0; Lauren, 2026-11-04: "queue several books, a collapsed row per
 book, 3–4 at a time"). Start cleaning no longer runs the book in the window: it adds a row to

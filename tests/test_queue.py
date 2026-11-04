@@ -208,7 +208,8 @@ def test_a_worker_prepares_then_saves_a_book(tmp_path, workers):
     w, got = workers
     q = BQ.BookQueue(tmp_path / "queue.json")
     job = q.add(spec(tmp_path, stub={"steps": 3}, split=True, m4b=True, cover="cover.jpg",
-                     author="Kate Hunter"))
+                     author="Kate Hunter", chapters_dir="Yoto", m4b_dir="Library", abs=True,
+                     series="Hunter Files", series_no="2"))
     q.started(job["key"])
     w.start(job, "prepare", threads=4)
     seen = wait_for(got, job["key"], lambda m: "exit" in m)
@@ -239,7 +240,9 @@ def test_a_worker_prepares_then_saves_a_book(tmp_path, workers):
                              "chapters": None}
     # the book's own save choices (chapter files, one M4B with its cover and author)
     assert json.loads((Path(job["workdir"]) / "stub_render.json").read_text()) == {
-        "chapters": True, "m4b": True, "cover": "cover.jpg", "author": "Kate Hunter"}
+        "chapters": True, "m4b": True, "cover": "cover.jpg", "author": "Kate Hunter",
+        "chapters_dir": "Yoto", "m4b_dir": "Library", "abs_layout": True,
+        "series": "Hunter Files", "series_no": "2"}
 
 
 def test_cancel_stops_a_worker_and_keeps_what_it_heard(tmp_path, workers):

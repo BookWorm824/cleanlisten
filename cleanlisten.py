@@ -3010,6 +3010,83 @@ def _cover_stream(path):
                 None)
 
 
+def safe_name(text, default="Audiobook"):
+    """A file or folder name Windows takes: without the characters it refuses (slashes, colon,
+    star, question mark, quotes, angle brackets, bar) or dots and spaces at the end."""
+    s = " ".join(re.sub(r'[\\/:*?"<>|]', "", str(text or "")).split()).rstrip(". ")
+    return s or default
+
+
+# "#2 Nearly Safe", "Book 2 - Nearly Safe", "02. Nearly Safe", "Vol 2 Nearly Safe"
+SERIES_NO = re.compile(r"^\s*(?:#\s*|no\.?\s*|book\s+|vol(?:ume)?\.?\s*)?(\d{1,3}(?:\.\d{1,2})?)"
+                       r"(?:\s*[-–.:)]\s*|\s+)(\S.*)$", re.I)
+
+
+def _number(n):
+    n = str(n or "").strip().lstrip("#").strip()
+    if not re.fullmatch(r"\d{1,3}(?:\.\d{1,2})?", n):
+        return ""
+    return re.sub(r"^0+(?=\d)", "", n)
+
+
+def book_folder(parts):
+    """The book's own folder (the one above Disc 1, Disc 2...)."""
+    first = Path(parts[0])
+    return first.parent.parent if len({str(Path(p).parent) for p in parts}) > 1 else first.parent
+
+
+def guess_series(parts):
+    """("Grace Ford", "2") for a book in "...\\Grace Ford Series\\#2 Nearly Safe": a numbered book
+    folder's series is the folder above it. ("", "") when the folders don't say."""
+    if not parts:
+        return "", ""
+    book = book_folder(parts)
+    m = SERIES_NO.match(book.name)
+    up = book.parent.name if book.parent != book else ""
+    if not m or not up:
+        return "", ""
+    series = re.sub(r"[\s_-]*\bseries$", "", up, flags=re.I).strip() or up
+    return series, _number(m.group(1))
+
+
+def strip_number(title, number):
+    """"#2 Nearly Safe" -> "Nearly Safe" when 2 is its number in the series."""
+    m = SERIES_NO.match(title or "")
+    if m and number and _number(m.group(1)) == _number(number):
+        return m.group(2).strip()
+    return title
+
+
+def abs_folder(library, title, author="", series="", number=""):
+    """Where a book goes in an Audiobookshelf library: Author\\Series\\Book 2 - Title, or
+    Author\\Title with no series. Audiobookshelf reads the author, series and the book's number
+    from these folders (its scanner takes "Book 2 - " as the number)."""
+    number = _number(number)
+    series = (series or "").strip()
+    title = safe_name(strip_number(title, number))
+    folders = [safe_name(author, "Unknown Author")] if (author or "").strip() or series else []
+    if series:
+        folders.append(safe_name(series))
+        if number:
+            title = f"Book {number} - {title}"
+    return Path(library).joinpath(*folders, title)
+
+
+def m4b_title(parts):
+    """The book's name for the M4B and its folders: its own album tag (an M4B's title), else
+    the folder above the discs, else the file name without "Part 01"."""
+    first = Path(parts[0])
+    if len({str(Path(p).parent) for p in parts}) > 1:
+        title = first.parent.parent.name  # the book folder that holds Disc 1, Disc 2...
+    else:
+        title = re.sub(r"[\s_-]*(part|pt|disc|cd)?[\s_-]*\d+$", "", first.stem,
+                       flags=re.I) or first.parent.name or first.stem
+    tags = book_tags(parts[0])
+    one_m4b = len(parts) == 1 and first.suffix.lower() in M4B_EXTS
+    # an MP3's "title" is the track's ("Part 01"); an M4B's is the book's
+    return tags.get("album") or (tags.get("title") if one_m4b else "") or title
+
+
 def find_cover(parts):
     """Where the cover picture is: ("book", file) for one inside the audiobook file, ("file",
     picture) for a picture in the book's folder (also the folder above Disc 1, Disc 2...), or
@@ -3216,12 +3293,16 @@ def _ranges(rs):
 
 
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
-           m4b=False, cover=None, author=None):
+           m4b=False, cover=None, author=None, chapters_dir=None, m4b_dir=None, abs_layout=False,
+           series="", series_no=""):
     """Write clean audio. cuts: list of {"part","s","e","note"}; defaults to
     the scenes marked cut=True in the analysis. chapters=True also writes one
     file per chapter (Yoto-friendly). m4b=True also makes one M4B with chapters and a cover
     (cover: a picture's path; otherwise the book's own, or one in its folder; author: for the
-    tags, otherwise the book's own)."""
+    tags, otherwise the book's own).
+    Where they go (Lauren, 2026-11-04: "allow me to choose where to save the files"): the chapter
+    files in outdir/Chapters, or chapters_dir/<book>; the M4B in outdir, or m4b_dir, and with
+    abs_layout in m4b_dir/Author/Series/Book 2 - Title, the way Audiobookshelf reads a library."""
     work = Path(workdir)
     st = json.loads((work / "analysis.json").read_text())
     if cuts is None:
@@ -3362,45 +3443,58 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         marks = ([{"part": pi, **c} for pi, lst in enumerate(own) for c in lst]
                  if all(own) else None)
         tracks = plan_tracks(asr, clean_durs, cuts_by_part, marks)
-        first = Path(st["parts"][0])
-        if len({str(Path(p).parent) for p in st["parts"]}) > 1:
-            title = first.parent.parent.name  # the book folder that holds Disc 1, Disc 2...
-        else:
-            title = re.sub(r"[\s_-]*(part|pt|disc|cd)?[\s_-]*\d+$", "", first.stem,
-                           flags=re.I) or first.parent.name or first.stem
         tags = book_tags(st["parts"][0])
-        # an MP3's "title" is the track's ("Part 01"); an M4B's is the book's
-        title = tags.get("album") or (tags.get("title") if one_m4b else "") or title
+        title = m4b_title(st["parts"])
         if chapters or not one_m4b:
-            # the Yoto files (or, for the M4B alone, the same pieces in a folder that's removed)
-            folder = None if chapters else work / "m4b_pieces"
+            # the Yoto files (or, for the M4B alone, the same pieces in a folder that's removed);
+            # in a folder they chose, inside one named for the book (never loose among others:
+            # the folder's old MP3s are cleared first)
+            if not chapters:
+                folder = work / "m4b_pieces"
+            elif chapters_dir:
+                folder = Path(chapters_dir) / safe_name(strip_number(title, series_no))
+            else:
+                folder = None
             chap = split_tracks(clean_files, clean_durs, tracks, out, title, log, folder=folder)
         if chapters:
-            report.append("\nChapter files\n-------------")
+            report.append(f"\nChapter files (in {os.path.normpath(chap['folders'][0])})"
+                          "\n-------------")
             report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
         if m4b:
             author = (author or "").strip() or book_author(st["parts"])
             pic = cover_file(cover or find_cover(st["parts"]), work)
+            home = out
+            if m4b_dir:
+                home = (abs_folder(m4b_dir, title, author or tags.get("artist", ""), series,
+                                   series_no) if abs_layout else Path(m4b_dir))
+                home.mkdir(parents=True, exist_ok=True)
+            name = safe_name(strip_number(title, series_no) if abs_layout else title) + ".m4b"
             if one_m4b:
                 # the clean copy is already one M4B: give it the chapters, cover and author
                 ch = [(t["g"], t["title"]) for t in tracks] if not own[0] else None
                 if ch is not None or pic or author:
                     retag_m4b(clean_files[0], ch if ch is not None else (
                         [(_shift(c["t"], cuts_by_part.get(0, [])), c["title"]) for c in own[0]]),
-                        m4b_tags(title, author or tags.get("artist", "")), pic, work)
+                        m4b_tags(strip_number(title, series_no), author or tags.get("artist", "")),
+                        pic, work)
                 book = {"file": clean_files[0], "chapters": len(own[0]) or len(tracks),
                         "cover": bool(pic or _cover_stream(clean_files[0]))}
+                if m4b_dir:      # a copy where they want the M4B (the clean copy stays too)
+                    tmp = home / ("~saving~ " + name)
+                    shutil.copyfile(clean_files[0], tmp)
+                    _replace(tmp, home / name)
+                    book["file"] = str(home / name)
             else:
                 say(0.96, "Making the M4B…")
-                safe = re.sub(r'[\\/:*?"<>|]', "", title).strip() or "Audiobook"
-                book = make_m4b(chap["files"], chap["titles"], out / f"{safe}.m4b",
-                                m4b_tags(title, author), pic, workdir=work,
+                book = make_m4b(chap["files"], chap["titles"], home / name,
+                                m4b_tags(strip_number(title, series_no), author), pic, workdir=work,
                                 progress=lambda f, m: say(0.96 + 0.035 * f, m), log=log)
                 if not chapters:
                     shutil.rmtree(work / "m4b_pieces", ignore_errors=True)
                     chap = None
             report.append(f"\nOne M4B: {Path(book['file']).name} ({book['chapters']} chapters"
-                          f"{', with the cover' if book['cover'] else ', no cover picture found'})")
+                          f"{', with the cover' if book['cover'] else ', no cover picture found'})"
+                          f"\n  in {os.path.normpath(str(Path(book['file']).parent))}")
     head = ["CleanListen report", "==================",
             f"{len(st['mutes'])} words/phrases muted, {len(cuts)} passages cut "
             f"({total_cut_sec / 60:.1f} minutes removed)."]

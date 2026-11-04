@@ -16,12 +16,31 @@ import cleanlisten as engine  # noqa: E402
 import filters as F  # noqa: E402  (the filters, shared with CleanRead)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanRead)
 import bookqueue as BQ  # noqa: E402  (several books at once, each in its own worker)
+import dropfiles  # noqa: E402  (dropping the cover picture on the window)
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 HERE = Path(__file__).resolve().parent
 RESUME = APP_DATA / "resume.json"     # your review, kept across an update or closing the window
 LEFT = APP_DATA / "left_review.json"  # a review you went "Back to start" from, to pick up again
 QUEUE = APP_DATA / "queue.json"       # the books on the "Your books" page (bookqueue.py)
+# where the chapter files and the M4B go when not the usual place (kept for the next book)
+PLACES = APP_DATA / "save_places.json"
+
+
+def load_places():
+    try:
+        d = json.loads(PLACES.read_text(encoding="utf8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_places(d):
+    try:
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        PLACES.write_text(json.dumps(d, indent=1), encoding="utf8")
+    except OSError:
+        pass
 
 
 def chime():
@@ -523,26 +542,59 @@ class App(tk.Tk):
                                 fg=MUTED, font=(FONT, 10), wraplength=480, justify="left")
         self.out_lbl.pack(side="left")
         self.split_var = tk.BooleanVar(value=self.saved_opts.get("split", False))
-        ttk.Checkbutton(b5, text="Also split into chapter files  (for Yoto and players "
-                        "that can't skip chapters)", variable=self.split_var).pack(anchor="w", pady=(6, 0))
+        self.split_chk = ttk.Checkbutton(b5, text="Also split into chapter files  (for Yoto and "
+                                         "players that can't skip chapters)",
+                                         variable=self.split_var, command=self._places_shown)
+        self.split_chk.pack(anchor="w", pady=(6, 0))
+        # where they go: the usual place, or a folder they choose (Lauren, 2026-11-04)
+        places = load_places()
+        self.chapters_dir = places.get("chapters_dir") or None
+        self.m4b_dir = places.get("m4b_dir") or None
+        self.chap_box = tk.Frame(b5, bg=CARD)
+        self.chap_lbl = self._place_row(self.chap_box, "chapters")
         # one M4B with the cover and chapters, as AudiobookConverter made from the chapter files
         self.m4b_var = tk.BooleanVar(value=self.saved_opts.get("m4b", False))
         ttk.Checkbutton(b5, text="Also make one M4B with the cover and chapters  (for phones "
                         "and audiobook apps)", variable=self.m4b_var,
                         command=self._m4b_shown).pack(anchor="w", pady=(4, 0))
         self.m4b_box = tk.Frame(b5, bg=CARD)
-        row = tk.Frame(self.m4b_box, bg=CARD)
-        row.pack(fill="x", pady=(4, 0))
-        self.cover_lbl = tk.Label(row, text="", bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w",
-                                  wraplength=380, justify="left")
+        # the cover: drop a picture on this box from File Explorer, or choose one
+        zone = tk.Frame(self.m4b_box, bg=CARD, highlightthickness=1, highlightbackground=LINE,
+                        padx=8, pady=6)
+        zone.pack(fill="x", pady=(4, 0))
+        self.cover_lbl = tk.Label(zone, text="", bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w",
+                                  wraplength=360, justify="left")
         self.cover_lbl.pack(side="left")
-        ttk.Button(row, text="Choose a picture\u2026", style="Plain.TButton",
+        ttk.Button(zone, text="Choose a picture\u2026", style="Plain.TButton",
                    command=self.pick_cover).pack(side="right")
+        self._can_drop = any([dropfiles.accept(w, self._cover_dropped)
+                              for w in (zone, self.cover_lbl)])
         row = tk.Frame(self.m4b_box, bg=CARD)
         row.pack(fill="x", pady=(6, 0))
         tk.Label(row, text="Author:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
         self.author_var = tk.StringVar(value=getattr(self, "author", "") or "")
         ttk.Entry(row, textvariable=self.author_var, width=40).pack(side="left", padx=(8, 0))
+        self.m4b_place_lbl = self._place_row(self.m4b_box, "m4b")
+        # an Audiobookshelf library: Author > Series > Book 2 - Title (its scanner reads them)
+        self.abs_var = tk.BooleanVar(value=bool(places.get("abs", True)))
+        self.abs_chk = ttk.Checkbutton(self.m4b_box, text="Make Author \u203a Series \u203a Book "
+                                       "folders in it  (the way Audiobookshelf likes)",
+                                       variable=self.abs_var, command=self._abs_changed)
+        self.series_row = tk.Frame(self.m4b_box, bg=CARD)
+        tk.Label(self.series_row, text="Series:", bg=CARD, fg=MUTED,
+                 font=(FONT, 10)).pack(side="left")
+        self.series_var = tk.StringVar(value=getattr(self, "series", "") or "")
+        ttk.Entry(self.series_row, textvariable=self.series_var, width=26).pack(side="left",
+                                                                                padx=(8, 12))
+        tk.Label(self.series_row, text="Book number:", bg=CARD, fg=MUTED,
+                 font=(FONT, 10)).pack(side="left")
+        self.series_no_var = tk.StringVar(value=getattr(self, "series_no", "") or "")
+        ttk.Entry(self.series_row, textvariable=self.series_no_var, width=5).pack(side="left",
+                                                                                 padx=(8, 0))
+        self.abs_lbl = tk.Label(self.m4b_box, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
+                                wraplength=480, justify="left", anchor="w")
+        for v in (self.series_var, self.series_no_var, self.author_var):
+            v.trace_add("write", lambda *_: self._abs_preview())
         self._m4b_shown()
         self._refresh_labels()
 
@@ -551,6 +603,118 @@ class App(tk.Tk):
             self.m4b_box.pack(anchor="w", fill="x", padx=(26, 0))
         else:
             self.m4b_box.pack_forget()
+        self._places_shown()
+
+    # ---------- where the chapter files and the M4B go ----------
+    def _place_row(self, parent, which):
+        row = tk.Frame(parent, bg=CARD)
+        row.pack(fill="x", pady=(6, 0))
+        lbl = tk.Label(row, text="", bg=CARD, fg=INK, font=(FONT, 10), anchor="w",
+                       wraplength=330, justify="left")
+        lbl.pack(side="left")
+        lbl.usual_btn = ttk.Button(row, text="Usual place", style="Plain.TButton",
+                                   command=lambda: self._set_place(which, None))
+        lbl.usual_btn.pack(side="right", padx=(6, 0))
+        ttk.Button(row, text="Change\u2026", style="Plain.TButton",
+                   command=lambda: self._pick_place(which)).pack(side="right")
+        return lbl
+
+    def _pick_place(self, which):
+        title = ("Where should the chapter files go? (Each book gets its own folder in it.)"
+                 if which == "chapters" else
+                 "Where should the M4B go? (Your Audiobookshelf library folder, say.)")
+        d = filedialog.askdirectory(title=title, initialdir=getattr(self, which + "_dir") or None)
+        if d:
+            self._set_place(which, d)
+
+    def _set_place(self, which, d):
+        setattr(self, which + "_dir", d or None)
+        self._keep_places()
+        self._places_shown()
+
+    def _keep_places(self):
+        save_places({"chapters_dir": getattr(self, "chapters_dir", None),
+                     "m4b_dir": getattr(self, "m4b_dir", None),
+                     "abs": bool(self.abs_var.get()) if getattr(self, "abs_var", None) else True})
+
+    def _abs_changed(self):
+        self._keep_places()
+        self._places_shown()
+
+    def _book_name(self):
+        return getattr(self, "_name_for_book", "") or "the book's name"
+
+    def _places_shown(self):
+        """Show where the chapter files and the M4B will go, and the Audiobookshelf choices."""
+        lbl = getattr(self, "chap_lbl", None)
+        if not lbl or not lbl.winfo_exists():
+            return
+        if self.split_var.get():
+            self.chap_box.pack(anchor="w", fill="x", padx=(26, 0), after=self.split_chk)
+        else:
+            self.chap_box.pack_forget()
+        self._chapters_text()
+        m = self.m4b_place_lbl
+        m.config(text="M4B goes in: " + (os.path.normpath(self.m4b_dir) if self.m4b_dir
+                                          else "the clean folder"))
+        m.usual_btn.config(state="normal" if self.m4b_dir else "disabled")
+        for w in (self.abs_chk, self.series_row, self.abs_lbl):
+            w.pack_forget()
+        if self.m4b_dir:
+            self.abs_chk.pack(anchor="w", pady=(4, 0))
+            if self.abs_var.get():
+                self.series_row.pack(anchor="w", fill="x", pady=(4, 0), padx=(22, 0))
+                self.abs_lbl.pack(anchor="w", fill="x", pady=(2, 0), padx=(22, 0))
+        self._abs_preview()
+
+    def _chapters_text(self):
+        lbl = self.chap_lbl
+        if self.chapters_dir:
+            # as render() names it: the book, without its number in the series
+            name = engine.safe_name(engine.strip_number(
+                self._book_name(), engine._number(self.series_no_var.get())))
+            lbl.config(text="Chapter files go in: " + os.path.normpath(
+                str(Path(self.chapters_dir) / name)))
+        else:
+            lbl.config(text="Chapter files go in: a “Chapters” folder in the clean folder")
+        lbl.usual_btn.config(state="normal" if self.chapters_dir else "disabled")
+
+    def _abs_preview(self):
+        if getattr(self, "chap_lbl", None) and self.chap_lbl.winfo_exists():
+            self._chapters_text()
+        lbl = getattr(self, "abs_lbl", None)
+        if not lbl or not lbl.winfo_exists() or not self.m4b_dir:
+            return
+        series, no = self.series_var.get().strip(), self.series_no_var.get().strip()
+        title = getattr(self, "_name_for_book", "") or "Book name"
+        home = engine.abs_folder(self.m4b_dir, title, self.author_var.get().strip(), series, no)
+        file = engine.safe_name(engine.strip_number(title, engine._number(no))) + ".m4b"
+        lbl.config(text="It's saved as:  " + os.path.normpath(str(home / file))
+                   + ("" if self.author_var.get().strip() or not series
+                      else "\n(Fill in the author, or it goes in \u201cUnknown Author\u201d.)"))
+
+    def _places_for_job(self):
+        """What a new book's row needs to know about where its files go."""
+        split, m4b = getattr(self, "split_chapters", False), getattr(self, "make_m4b", False)
+        places = load_places()
+        chapters_dir = getattr(self, "chapters_dir", places.get("chapters_dir")) or None
+        m4b_dir = getattr(self, "m4b_dir", places.get("m4b_dir")) or None
+        abs_on = getattr(self, "abs_layout", places.get("abs", True))
+        return {"chapters_dir": chapters_dir if split else None,
+                "m4b_dir": m4b_dir if m4b else None,
+                "abs": bool(m4b and m4b_dir and abs_on),
+                "series": getattr(self, "series", "") or "",
+                "series_no": getattr(self, "series_no", "") or ""}
+
+    def _cover_dropped(self, files):
+        pics = [f for f in files if Path(f).suffix.lower() in engine.IMAGE_EXTS and Path(f).is_file()]
+        if not pics:
+            chime()
+            messagebox.showinfo("CleanListen", "That isn't a picture CleanListen can use for the "
+                                "cover. Drop a JPG or PNG picture.")
+            return
+        self.cover_pick = pics[0]
+        self._cover_refresh()
 
     def _cover_refresh(self):
         """Say which cover picture the M4B gets (and fill in the author for a new book)."""
@@ -562,6 +726,14 @@ class App(tk.Tk):
             self._cover_for = key
             self.cover_pick = None
             self.author_var.set(engine.book_author(self.audio) if self.audio else "")
+            # "...\Grace Ford Series\#2 Nearly Safe": series "Grace Ford", book 2
+            series, no = engine.guess_series(self.audio) if self.audio else ("", "")
+            self.series_var.set(series)
+            self.series_no_var.set(no)
+            try:
+                self._name_for_book = engine.m4b_title(self.audio) if self.audio else ""
+            except Exception:
+                self._name_for_book = book_title(self.audio) if self.audio else ""
         if getattr(self, "cover_pick", None):
             text = f"Cover: {Path(self.cover_pick).name}"
         elif not self.audio:
@@ -571,7 +743,10 @@ class App(tk.Tk):
             text = ("Cover: the picture inside the book" if found and found[0] == "book" else
                     f"Cover: {Path(found[1]).name}" if found else
                     "No cover picture found. Choose one, or it's made without one.")
+        if getattr(self, "_can_drop", False):
+            text += "\nOr drag a picture here from a folder to use that one."
         lbl.config(text=text, fg=INK if self.audio else MUTED)
+        self._places_shown()
 
     def pick_cover(self):
         f = filedialog.askopenfilename(title="Choose the cover picture",
@@ -652,6 +827,11 @@ class App(tk.Tk):
                     "cover": getattr(self, "cover_pick", None),
                     "author": (self.author_var.get().strip() if getattr(self, "author_var", None)
                                and self.page_name == "setup" else getattr(self, "author", ""))}
+            on_setup = getattr(self, "series_var", None) and self.page_name == "setup"
+            data.update(series=self.series_var.get().strip() if on_setup else
+                        getattr(self, "series", ""),
+                        series_no=self.series_no_var.get().strip() if on_setup else
+                        getattr(self, "series_no", ""))
             if self.page_name == "review" and self.analysis and self.workdir:
                 self._sync_ticks()
                 self._save_analysis()
@@ -689,6 +869,7 @@ class App(tk.Tk):
         self.saved_opts = data.get("saved_opts") or {}
         self.cover_pick = data.get("cover") if data.get("cover") and Path(data["cover"]).exists() else None
         self.author = data.get("author") or ""
+        self.series, self.series_no = data.get("series") or "", data.get("series_no") or ""
         self._cover_for = tuple(self.audio)
         self.resume_note = data.get("note") or "Picked up where you left off."
         if data.get("page") == "review" and data.get("workdir"):
@@ -1291,6 +1472,14 @@ class App(tk.Tk):
         self.split_chapters = self.split_var.get()
         self.make_m4b = self.m4b_var.get()
         self.author = self.author_var.get().strip()
+        self.series = self.series_var.get().strip()
+        self.series_no = self.series_no_var.get().strip()
+        self.abs_layout = self.abs_var.get()
+        if self.make_m4b and self.m4b_dir and self.abs_layout and self.series_no and \
+                not engine._number(self.series_no):
+            messagebox.showinfo("CleanListen", "The book number should be just a number, like 2 "
+                                "(or 2.5). Fix it, or leave it empty.")
+            return
         if not F.anything_on(ticks) and not mywords:
             messagebox.showinfo("CleanListen", "Tick at least one thing to remove (Choose filters\u2026).")
             return
@@ -1331,7 +1520,7 @@ class App(tk.Tk):
                 "filter_args": self.filter_args, "use_ai": self.use_ai,
                 "use_claude": self.use_claude, "split": self.split_chapters,
                 "m4b": self.make_m4b, "cover": getattr(self, "cover_pick", None),
-                "author": self.author or None,
+                "author": self.author or None, **self._places_for_job(),
                 "opts": dict(self.saved_opts), "summary": F.summary(ticks, mywords),
                 "profile": dict(F.PROFILES).get(self.saved_opts.get("profile"), ""),
                 "heard": heard, "length": dur}
@@ -1628,13 +1817,21 @@ class App(tk.Tk):
             lines.append("Saves to: " + os.path.normpath(job["outdir"])
                          + (f"  (and {' and '.join(also)})" if also else ""))
         res = job.get("result") or {}
+        if not res and job.get("split") and job.get("chapters_dir"):
+            lines.append("Chapter files go in: " + os.path.normpath(job["chapters_dir"]))
+        if not res and job.get("m4b") and job.get("m4b_dir"):
+            lines.append("M4B goes in: " + os.path.normpath(job["m4b_dir"])
+                         + ("  (Audiobookshelf folders)" if job.get("abs") else ""))
         if res.get("chapters"):
-            lines.append(f"Also split into {res['chapters']['tracks']} chapter files, in the "
-                         "\u201cChapters\u201d folder.")
+            where = (res["chapters"].get("folders") or [""])[0]
+            lines.append(f"Also split into {res['chapters']['tracks']} chapter files, in "
+                         + (os.path.normpath(where) if where else "the \u201cChapters\u201d folder")
+                         + ".")
         if res.get("m4b"):
             bk = res["m4b"]
             lines.append(f"One M4B: \u201c{Path(bk['file']).name}\u201d, {bk['chapters']} chapters"
-                         + (", with the cover." if bk.get("cover") else ", no cover picture."))
+                         + (", with the cover" if bk.get("cover") else ", no cover picture")
+                         + ", in " + os.path.normpath(str(Path(bk["file"]).parent)) + ".")
         if (job.get("found") or {}).get("claude_note"):
             lines.append(job["found"]["claude_note"])
         for line in lines:
@@ -1752,7 +1949,7 @@ class App(tk.Tk):
                     "split": getattr(self, "split_chapters", False), "opts": dict(opts),
                     "m4b": getattr(self, "make_m4b", False),
                     "cover": getattr(self, "cover_pick", None),
-                    "author": getattr(self, "author", "") or None,
+                    "author": getattr(self, "author", "") or None, **self._places_for_job(),
                     "summary": F.summary(opts) if F.anything_on(opts) else "",
                     "profile": dict(F.PROFILES).get(opts.get("profile"), ""),
                     "length": a.get("duration", 0), "task": "save"}
