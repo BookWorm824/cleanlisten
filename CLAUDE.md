@@ -168,6 +168,15 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    number are guessed from the folders (`guess_series`: "Grace Ford Series\#2 Nearly Safe" ->
    Grace Ford, 2) and can be changed; the number is dropped from the title tag (`strip_number`).
    A one-file M4B book's re-tagged clean copy is copied there. The cover can be dropped on its box.
+   **A cover from the internet** (1.14.7; Lauren: "the cover picture an option for automatic?"):
+   ticked by default (`save_places.json` `cover_online`). When no cover was chosen and the book
+   and its folder have none, `find_cover_online` asks Audible's catalog (square, 1215 px), then
+   Apple Books, then Open Library, sending only the title and author. `same_book` is strict on
+   purpose (same title without subtitle/"Unabridged", and the author's last name), because a
+   wrong cover is worse than none. Apple's search returned unrelated books for "Nearly Safe".
+   Results are kept (`APP_DATA/covers`, or the job folder when saving looks). The start page
+   looks it up in the background and shows a small picture; saving looks it up if the start
+   page hadn't. The report and the book's row say where the cover came from.
 
 **The book queue** (1.14.0; Lauren, 2026-11-04: "queue several books, a collapsed row per
 book, 3–4 at a time"). Start cleaning no longer runs the book in the window: it adds a row to

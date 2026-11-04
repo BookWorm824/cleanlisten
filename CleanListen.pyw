@@ -27,6 +27,16 @@ QUEUE = APP_DATA / "queue.json"       # the books on the "Your books" page (book
 PLACES = APP_DATA / "save_places.json"
 
 
+def cover_thumbnail(pic, size=72):
+    """A small PNG of a cover picture for the start page (tkinter shows PNG, not JPG)."""
+    dst = Path(pic).with_name(Path(pic).stem + " small.png")
+    if not dst.exists():
+        engine.run([engine._tool("ffmpeg"), "-y", "-v", "error", "-i", str(pic), "-vf",
+                    f"scale={size}:{size}:force_original_aspect_ratio=decrease", "-frames:v", "1",
+                    str(dst)], capture_output=True)
+    return str(dst) if dst.exists() else None
+
+
 def load_places():
     try:
         d = json.loads(PLACES.read_text(encoding="utf8"))
@@ -562,18 +572,29 @@ class App(tk.Tk):
         zone = tk.Frame(self.m4b_box, bg=CARD, highlightthickness=1, highlightbackground=LINE,
                         padx=8, pady=6)
         zone.pack(fill="x", pady=(4, 0))
+        self.cover_img_lbl = tk.Label(zone, bg=CARD)     # the picture found online, small
         self.cover_lbl = tk.Label(zone, text="", bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w",
                                   wraplength=360, justify="left")
         self.cover_lbl.pack(side="left")
         ttk.Button(zone, text="Choose a picture\u2026", style="Plain.TButton",
                    command=self.pick_cover).pack(side="right")
         self._can_drop = any([dropfiles.accept(w, self._cover_dropped)
-                              for w in (zone, self.cover_lbl)])
+                              for w in (zone, self.cover_lbl, self.cover_img_lbl)])
+        # no cover in the book or its folder: look it up online (Lauren, 2026-11-04)
+        self.cover_online_var = tk.BooleanVar(value=bool(places.get("cover_online", True)))
+        ttk.Checkbutton(self.m4b_box, text="When the book has no cover, find one online  (by its "
+                        "title and author)",
+                        variable=self.cover_online_var,
+                        command=self._online_changed).pack(anchor="w", pady=(4, 0))
         row = tk.Frame(self.m4b_box, bg=CARD)
         row.pack(fill="x", pady=(6, 0))
         tk.Label(row, text="Author:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
         self.author_var = tk.StringVar(value=getattr(self, "author", "") or "")
-        ttk.Entry(row, textvariable=self.author_var, width=40).pack(side="left", padx=(8, 0))
+        author_entry = ttk.Entry(row, textvariable=self.author_var, width=40)
+        author_entry.pack(side="left", padx=(8, 0))
+        # a new author: look for the cover again (not on every key press)
+        author_entry.bind("<FocusOut>", lambda e: self._cover_refresh())
+        author_entry.bind("<Return>", lambda e: self._cover_refresh())
         self.m4b_place_lbl = self._place_row(self.m4b_box, "m4b")
         # an Audiobookshelf library: Author > Series > Book 2 - Title (its scanner reads them)
         self.abs_var = tk.BooleanVar(value=bool(places.get("abs", True)))
@@ -635,7 +656,56 @@ class App(tk.Tk):
     def _keep_places(self):
         save_places({"chapters_dir": getattr(self, "chapters_dir", None),
                      "m4b_dir": getattr(self, "m4b_dir", None),
-                     "abs": bool(self.abs_var.get()) if getattr(self, "abs_var", None) else True})
+                     "abs": bool(self.abs_var.get()) if getattr(self, "abs_var", None) else True,
+                     "cover_online": (bool(self.cover_online_var.get())
+                                      if getattr(self, "cover_online_var", None) else True)})
+
+    def _online_changed(self):
+        self._keep_places()
+        self._cover_refresh()
+
+    def _online_lookup(self):
+        """Look for this book's cover online, in the background (once per book and author).
+        Returns its state: {"done", "res", "thumb"}."""
+        name = engine.strip_number(getattr(self, "_name_for_book", ""),
+                                   engine._number(self.series_no_var.get()))
+        author = self.author_var.get().strip()
+        want = (tuple(self.audio or ()), name, author)
+        st = getattr(self, "_online", None)
+        if st and st["want"] == want:
+            return st
+        st = {"want": want, "done": False, "res": None, "thumb": None}
+        self._online = st
+
+        def work():
+            try:
+                res = engine.find_cover_online(name, author, APP_DATA / "covers",
+                                               log=lambda m: None)
+                if res:
+                    st["thumb"] = cover_thumbnail(res["file"])
+                st["res"] = res
+            except Exception:
+                pass
+            st["done"] = True
+        threading.Thread(target=work, daemon=True, name="cover lookup").start()
+        self.after(300, lambda: self._wait_online(st))
+        return st
+
+    def _wait_online(self, st):
+        if st is not getattr(self, "_online", None):
+            return                      # another book (or author) since
+        if not st["done"]:
+            self.after(300, lambda: self._wait_online(st))
+            return
+        self._cover_refresh()
+
+    def _online_file(self):
+        """The cover found online for the book on the start page, if there is one."""
+        st = getattr(self, "_online", None)
+        if (st and st["done"] and st["res"] and st["want"][0] == tuple(self.audio or ())
+                and self.cover_online_var.get()):
+            return st["res"]["file"]
+        return None
 
     def _abs_changed(self):
         self._keep_places()
@@ -704,7 +774,11 @@ class App(tk.Tk):
                 "m4b_dir": m4b_dir if m4b else None,
                 "abs": bool(m4b and m4b_dir and abs_on),
                 "series": getattr(self, "series", "") or "",
-                "series_no": getattr(self, "series_no", "") or ""}
+                "series_no": getattr(self, "series_no", "") or "",
+                # saving looks it up then if the start page hadn't found it yet
+                "cover_online": bool(self.cover_online_var.get()
+                                     if getattr(self, "cover_online_var", None)
+                                     else places.get("cover_online", True))}
 
     def _cover_dropped(self, files):
         pics = [f for f in files if Path(f).suffix.lower() in engine.IMAGE_EXTS and Path(f).is_file()]
@@ -734,6 +808,7 @@ class App(tk.Tk):
                 self._name_for_book = engine.m4b_title(self.audio) if self.audio else ""
             except Exception:
                 self._name_for_book = book_title(self.audio) if self.audio else ""
+        online = None
         if getattr(self, "cover_pick", None):
             text = f"Cover: {Path(self.cover_pick).name}"
         elif not self.audio:
@@ -743,10 +818,42 @@ class App(tk.Tk):
             text = ("Cover: the picture inside the book" if found and found[0] == "book" else
                     f"Cover: {Path(found[1]).name}" if found else
                     "No cover picture found. Choose one, or it's made without one.")
+            if not found and self.cover_online_var.get():
+                st = self._online_lookup()
+                r = st["res"]
+                if not st["done"]:
+                    text = "No cover in the book. Looking for one online…"
+                elif r:
+                    text = (f"Cover: found on {r['source']}: “{r['title']}”"
+                            + (f" by {r['author']}" if r["author"] else ""))
+                    online = st
+                else:
+                    text = ("No cover picture found, here or online. Choose one, or it's made "
+                            "without one.")
+        self._show_thumb(online["thumb"] if online else None)
         if getattr(self, "_can_drop", False):
             text += "\nOr drag a picture here from a folder to use that one."
         lbl.config(text=text, fg=INK if self.audio else MUTED)
         self._places_shown()
+
+    def _show_thumb(self, path):
+        """The small picture of the cover found online (none otherwise)."""
+        lbl = self.cover_img_lbl
+        img = None
+        if path:
+            try:
+                img = tk.PhotoImage(file=path)
+            except tk.TclError:
+                img = None
+        if img:
+            lbl.config(image=img)
+            lbl.image = img
+            if not lbl.winfo_ismapped():
+                lbl.pack(side="left", padx=(0, 10), before=self.cover_lbl)
+        else:
+            lbl.config(image="")
+            lbl.image = None
+            lbl.pack_forget()
 
     def pick_cover(self):
         f = filedialog.askopenfilename(title="Choose the cover picture",
@@ -1519,7 +1626,8 @@ class App(tk.Tk):
                 "title": book_title(self.audio), "workdir": str(self.workdir), "groups": groups,
                 "filter_args": self.filter_args, "use_ai": self.use_ai,
                 "use_claude": self.use_claude, "split": self.split_chapters,
-                "m4b": self.make_m4b, "cover": getattr(self, "cover_pick", None),
+                "m4b": self.make_m4b,
+                "cover": getattr(self, "cover_pick", None) or self._online_file(),
                 "author": self.author or None, **self._places_for_job(),
                 "opts": dict(self.saved_opts), "summary": F.summary(ticks, mywords),
                 "profile": dict(F.PROFILES).get(self.saved_opts.get("profile"), ""),
@@ -1830,7 +1938,9 @@ class App(tk.Tk):
         if res.get("m4b"):
             bk = res["m4b"]
             lines.append(f"One M4B: \u201c{Path(bk['file']).name}\u201d, {bk['chapters']} chapters"
-                         + (", with the cover" if bk.get("cover") else ", no cover picture")
+                         + ((", with the cover" + (f" from {bk['cover_from']}"
+                                                  if bk.get("cover_from") else ""))
+                            if bk.get("cover") else ", no cover picture")
                          + ", in " + os.path.normpath(str(Path(bk["file"]).parent)) + ".")
         if (job.get("found") or {}).get("claude_note"):
             lines.append(job["found"]["claude_note"])

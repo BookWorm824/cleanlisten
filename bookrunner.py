@@ -124,7 +124,8 @@ def save(engine, spec, stop, say, log):
                         author=spec.get("author") or None,
                         chapters_dir=spec.get("chapters_dir") or None,
                         m4b_dir=spec.get("m4b_dir") or None, abs_layout=spec.get("abs", False),
-                        series=spec.get("series") or "", series_no=spec.get("series_no") or "")
+                        series=spec.get("series") or "", series_no=spec.get("series_no") or "",
+                        cover_online=spec.get("cover_online", False))
     send(done="saved", result=res)
 
 

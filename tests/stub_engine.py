@@ -45,7 +45,7 @@ def analyze(parts, workdir, ebook=None, groups=(), progress=None, log=print, thr
 
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
            m4b=False, cover=None, author=None, chapters_dir=None, m4b_dir=None, abs_layout=False,
-           series="", series_no=""):
+           series="", series_no="", cover_online=False):
     progress(0.5, "Saving part 1 of 1")
     (Path(workdir) / "stub_render.json").write_text(json.dumps(
         {"chapters": chapters, "m4b": m4b, "cover": cover, "author": author,

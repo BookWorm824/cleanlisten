@@ -3132,6 +3132,135 @@ def cover_file(cover, workdir):
     return str(dst) if r.returncode == 0 and dst.exists() else None
 
 
+# ---------------------------------------------------------------------------
+# A cover from the internet when the book has none (Lauren, 2026-11-04: "anyway we can have the
+# cover picture an option for automatic?"). Only the title and author are sent. Audible first
+# (square audiobook covers, 1215 px), then Apple Books, then Open Library (printed covers).
+# ---------------------------------------------------------------------------
+COVER_AGENT = {"User-Agent": "CleanListen (audiobook cover lookup)"}
+
+
+def _get_json(url, timeout=15):
+    import urllib.request
+    with urllib.request.urlopen(urllib.request.Request(url, headers=COVER_AGENT),
+                                timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def _covers_audible(title, author):
+    from urllib.parse import urlencode
+    q = urlencode({"title": title, "author": author, "num_results": 10,
+                   "products_sort_by": "Relevance", "response_groups": "media,contributors",
+                   "image_sizes": "1215,500"})
+    for p in _get_json("https://api.audible.com/1.0/catalog/products?" + q).get("products") or []:
+        imgs = p.get("product_images") or {}
+        url = imgs.get("1215") or imgs.get("500")
+        if url:
+            yield p.get("title", ""), [a.get("name", "") for a in p.get("authors") or []], url
+
+
+def _covers_apple(title, author):
+    from urllib.parse import urlencode
+    q = urlencode({"term": f"{title} {author}".strip(), "media": "audiobook", "limit": 10})
+    for x in _get_json("https://itunes.apple.com/search?" + q).get("results") or []:
+        url = x.get("artworkUrl100") or ""
+        if url:
+            yield (x.get("collectionName", ""), [x.get("artistName", "")],
+                   url.replace("100x100bb", "1200x1200bb"))
+
+
+def _covers_openlibrary(title, author):
+    from urllib.parse import urlencode
+    q = urlencode({"title": title, "author": author, "limit": 10,
+                   "fields": "title,author_name,cover_i"})
+    for d in _get_json("https://openlibrary.org/search.json?" + q).get("docs") or []:
+        if d.get("cover_i"):
+            yield (d.get("title", ""), d.get("author_name") or [],
+                   f"https://covers.openlibrary.org/b/id/{d['cover_i']}-L.jpg")
+
+
+COVER_SOURCES = (("Audible", _covers_audible), ("Apple Books", _covers_apple),
+                 ("Open Library", _covers_openlibrary))
+
+
+def _title_key(t):
+    """"At Home in Mitford: A Novel (Unabridged)" -> "at home in mitford"."""
+    t = re.sub(r"[(\[]\s*(un)?abridged\s*[)\]]", "", str(t or ""), flags=re.I)
+    t = re.split(r"\s*[:(\[]", t)[0]
+    words = re.sub(r"[^\w\s]", " ", t.lower().replace("&", " and ")).split()
+    if words and words[0] in ("the", "a", "an"):
+        words = words[1:]
+    return " ".join(words)
+
+
+def same_book(want_title, want_author, title, authors):
+    """Is this search result the book? The same title, and (when we know it) the author's last
+    name among its authors. Strict on purpose: a wrong cover is worse than none."""
+    a, b = _title_key(want_title), _title_key(title)
+    if not a or a != b:
+        return False
+    names = re.findall(r"[^\W\d_]{2,}", (want_author or "").lower())
+    if not names:
+        return True
+    return names[-1] in " ".join(authors or []).lower()
+
+
+def _picture_kind(data):
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    return None
+
+
+def find_cover_online(title, author, folder, log=print):
+    """Look for the book's cover online and save it in `folder`. Returns {"file", "source",
+    "title", "author"} or None (nothing that's surely this book, or no internet). Kept: the same
+    title and author is only looked up once."""
+    import hashlib
+    import urllib.request
+    title, author = " ".join(str(title or "").split()), " ".join(str(author or "").split())
+    if not _title_key(title):
+        return None
+    folder = Path(folder)
+    key = hashlib.sha1(f"{_title_key(title)}|{author.lower()}".encode()).hexdigest()[:16]
+    note = folder / f"online cover {key}.json"
+    try:
+        kept = json.loads(note.read_text(encoding="utf8"))
+        if kept.get("file") and Path(kept["file"]).is_file():
+            return kept
+    except (OSError, ValueError):
+        pass
+    for source, search in COVER_SOURCES:
+        try:
+            hits = [h for h in search(title, author) if same_book(title, author, h[0], h[1])]
+        except Exception as ex:          # that site is down or changed: try the next one
+            log(f"Couldn't search {source} for a cover ({ex})")
+            continue
+        for found_title, found_authors, url in hits[:2]:
+            try:
+                req = urllib.request.Request(url, headers=COVER_AGENT)
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    data = r.read(8_000_000)
+            except Exception:
+                continue
+            ext = _picture_kind(data)
+            if not ext or len(data) < 3000:     # not a picture, or Open Library's blank one
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            pic = folder / f"online cover {key}{ext}"
+            pic.write_bytes(data)
+            res = {"file": str(pic), "source": source, "title": found_title,
+                   "author": ", ".join(a for a in found_authors if a)}
+            try:
+                note.write_text(json.dumps(res), encoding="utf8")
+            except OSError:
+                pass
+            log(f"Found the cover on {source}: {found_title}")
+            return res
+    return None
+
+
 def _meta_escape(v):
     return re.sub(r"([=;#\\\n])", r"\\\1", str(v))
 
@@ -3294,7 +3423,7 @@ def _ranges(rs):
 
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
            m4b=False, cover=None, author=None, chapters_dir=None, m4b_dir=None, abs_layout=False,
-           series="", series_no=""):
+           series="", series_no="", cover_online=False):
     """Write clean audio. cuts: list of {"part","s","e","note"}; defaults to
     the scenes marked cut=True in the analysis. chapters=True also writes one
     file per chapter (Yoto-friendly). m4b=True also makes one M4B with chapters and a cover
@@ -3302,7 +3431,8 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     tags, otherwise the book's own).
     Where they go (Lauren, 2026-11-04: "allow me to choose where to save the files"): the chapter
     files in outdir/Chapters, or chapters_dir/<book>; the M4B in outdir, or m4b_dir, and with
-    abs_layout in m4b_dir/Author/Series/Book 2 - Title, the way Audiobookshelf reads a library."""
+    abs_layout in m4b_dir/Author/Series/Book 2 - Title, the way Audiobookshelf reads a library.
+    cover_online: no cover chosen and none in the book or its folder -> look one up online."""
     work = Path(workdir)
     st = json.loads((work / "analysis.json").read_text())
     if cuts is None:
@@ -3463,6 +3593,12 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         if m4b:
             author = (author or "").strip() or book_author(st["parts"])
             pic = cover_file(cover or find_cover(st["parts"]), work)
+            online = None
+            if not pic and cover_online:
+                say(0.955, "Looking for the cover online…")
+                online = find_cover_online(strip_number(title, series_no),
+                                           author or tags.get("artist", ""), work, log=log)
+                pic = online and online["file"]
             home = out
             if m4b_dir:
                 home = (abs_folder(m4b_dir, title, author or tags.get("artist", ""), series,
@@ -3492,8 +3628,11 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                 if not chapters:
                     shutil.rmtree(work / "m4b_pieces", ignore_errors=True)
                     chap = None
+            if online:
+                book["cover_from"] = online["source"]
             report.append(f"\nOne M4B: {Path(book['file']).name} ({book['chapters']} chapters"
-                          f"{', with the cover' if book['cover'] else ', no cover picture found'})"
+                          f"{', with the cover' if book['cover'] else ', no cover picture found'}"
+                          f"{' from ' + online['source'] if online else ''})"
                           f"\n  in {os.path.normpath(str(Path(book['file']).parent))}")
     head = ["CleanListen report", "==================",
             f"{len(st['mutes'])} words/phrases muted, {len(cuts)} passages cut "
