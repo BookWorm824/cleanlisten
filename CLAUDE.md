@@ -8,7 +8,9 @@ display scaling on) and her family, including a grandmother who listens on a **Y
 This file explains how it works, the family's rules, how releases ship, and what to improve.
 
 Same repo, separate apps: **CleanRead** (ebooks, `cleanread.py` / `CleanRead.pyw`, built in
-another chat) imports this engine. **CleanView** (movies/TV) has moved to its own repo
+another chat) imports this engine. **ReadAloud** (ebook -> audiobook, `readaloud.py` /
+`ReadAloud.pyw`, §11) uses CleanRead's book reader and this engine's M4B helpers.
+**CleanView** (movies/TV) has moved to its own repo
 `BookWorm824/cleanview` with its own engine copy (`cvcore.py`) and its own install. The old
 copy that shipped here is gone (1.9.6): CleanListen used to make a "CleanView" icon for it with
 the same name as the real one's, and on one PC it won, so Jason got the October version.
@@ -35,7 +37,9 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `bookrunner.py` | One book's worker process: runs `analyze()` (prepare) or `render()` (save) and sends JSON lines (`{"p","m"}`, `{"done": "ready"/"saved"}`, `{"error"}`, `{"stopped"}`) back on stdout; its stop file (`queue.stop.<run>`, written by Cancel / closing / updating) or the window going away cancels. Not stdin: on Windows a thread blocked reading a pipe stops DLLs loading (the worker froze importing numpy). Holds `jobs/<key>/queue.lock` so two runs of one book never overlap (after an update). Its stderr and faulthandler go to `jobs/<key>/worker_log.txt`. `CLEANLISTEN_ENGINE` swaps in a stand-in engine for tests. |
 | `dropfiles.py` | Dropping files from File Explorer on a widget (the M4B cover box, 1.14.6): Windows' own WM_DROPFILES through ctypes (subclassing the widget's window), so nothing to install. The window procedure must not call tkinter (Tk holds its lock there): it only notes the files and an `after` loop hands them over. Tested with a real posted drop (`tests/test_dropfiles.py`). |
 | `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
-| `shortcuts.py` | Creates the CleanRead desktop icon; points an old CleanView icon at the real CleanView. |
+| `readaloud.py` | ReadAloud's engine (§11): ebook -> chapters -> Kokoro voice (sherpa-onnx) in worker processes -> one M4B with chapters, tags and cover. CLI: `info`, `make`, `speak` (one worker). |
+| `ReadAloud.pyw` | ReadAloud's window: choose ebook, voice (▶ Hear it), what to read, where to save; working page; done page. Launcher arg `aloud`. |
+| `shortcuts.py` | Creates the CleanRead and ReadAloud desktop icons; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
 | `version.json` | Version + **the list of files the launcher downloads**. Anything not listed never reaches users. |
 | `installer/` | First-time install (PowerShell): Python venv, sherpa-onnx, ffmpeg, speech model, shortcut. |
@@ -426,6 +430,50 @@ console windows) could not be tested in development — Lauren tests on her PC.
 9. **Engine shared by copy-paste with CleanView** (`cvcore.py`) — filter fixes don't reach both.
    A shared package (or CleanView importing this engine) would keep them in sync.
 10. **Ebook alignment** isn't exercised much yet; check it on a real EPUB + audiobook pair.
+
+## 11. ReadAloud (ebook -> audiobook)
+
+Lauren, 2026-11-04: "there are some books I have that they didn't make audiobooks for... I don't
+want stilted computer voices... but I also don't want to pay $100 per." A third window in this
+install (own icon, launcher arg `aloud`, own name in Task Manager), like CleanRead.
+
+- **Voice:** Kokoro v1.0 (82M, Apache 2.0) through sherpa-onnx's `OfflineTtsKokoroModelConfig`,
+  on the CPU. Model `kokoro-multi-lang-v1_0` (334 MB, sherpa-onnx `tts-models` release) goes in
+  `app\models\` on first use (`get_model`, from "▶ Hear it" or "Make audiobook"; the updater can't
+  install it). `READALOUD_MODEL` points elsewhere (dev), `READALOUD_FAKE_VOICE=1` swaps in a tone
+  (tests). `VOICES` is the English list worth hearing, with the model's speaker numbers (checked in
+  `test_every_voice_is_in_the_model`). British voices use the gb lexicon with espeak-ng's `"en"`:
+  there is no `"en-gb"` voice, and with it every British line came out silent (caught before
+  release; `test_every_voice_really_speaks` runs when the model is on the PC, and `say_text`
+  refuses to leave a silent gap where there were words).
+- **Speed** (owner's PC, Ryzen 7 260, 16 threads): one voice with 8 threads reads ~4x real time,
+  two with 4 threads each ~5.5x together, four ~5x (`workers_for_pc`: cores/5, at most 3, 4
+  threads each, ~1.5 GB free memory each). A 10-hour book takes about 2 hours. Workers run at below-normal priority so the PC stays usable. The GPU
+  build (`sherpa-onnx==1.13.8+cuda12.cudnn9` + 2.4 GB of NVIDIA pip packages) was tried on the RTX
+  5070: ~14x real time after a 60 s first-run compile, and that build skipped words missing from
+  the lexicon ("lived", "waited"). Not worth it yet.
+- **Text** (`load_book`): EPUB/PDF/TXT through `cleanread.Book` (chapters from the TOC), .docx by
+  its Heading styles. Cover and series (calibre:series / belongs-to-collection) from the OPF.
+  `speakable()`: plain quotes, dashes as commas, "Chapter IV" -> "Chapter 4", capitals read as
+  words (`KEEP_CAPS` for acronyms), no URLs or [3] footnotes. `chunks()` splits sentences (not
+  after Mr. or initials) and very long ones at commas (`MAX_CHUNK`). Pauses are fixed (`GAP_*`):
+  each generated piece is trimmed of its own silence first. Contents, copyright, "Also by" and
+  Project Gutenberg's licence start unticked (`SKIP_TITLES`, only when short: a whole story once
+  sat under "List of Illustrations"). A heading-only "Part One" joins the next chapter.
+- **Job** (`APP_DATA\readaloud\<key>`, key = book + voice + speed + chapters): `job.json`,
+  `chapters.json`, `cover.*`, one `chNNNN.m4a` per chapter (AAC 64k mono, written through a `~`
+  temp name), a `stop` file = stop. Closing the window or "Stop for now" keeps the chapters; the
+  start page offers "Carry on" (`unfinished_jobs`). `assemble()` joins them with `-c copy`,
+  `write_ffmeta` chapters, `m4b_tags`, the cover as attached_pic (left off if ffmpeg refuses it),
+  optional MP3 chapter files (`<book> - chapters`); then the job folder is deleted.
+- **Where it goes:** next to the ebook, or a chosen folder (starts from CleanListen's
+  `save_places.json` `m4b_dir`), optionally Audiobookshelf's `Author\Series\Book 2 - Title`
+  (`E.abs_folder`), series and number editable.
+- Checked by listening back with Parakeet: a whole chapter matched the book's words 98% (the
+  rest: names, dialect, "lunch basket").
+- Ideas: a queue of several books; different voices for dialogue; a pronunciation list for
+  names; "clean it first" straight from CleanRead's filters (for now: clean in CleanRead, then
+  choose the clean copy).
 
 ## 10. Working with Lauren
 

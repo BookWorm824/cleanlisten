@@ -1211,6 +1211,7 @@ def _fix_shortcut():
     try:
         import shortcuts
         shortcuts.ensure_cleanread_shortcut()
+        shortcuts.ensure_readaloud_shortcut()
     except Exception:
         pass
 

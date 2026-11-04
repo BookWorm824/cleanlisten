@@ -1,7 +1,7 @@
 """CleanListen launcher: checks GitHub for a newer version, updates the
 program files if there is one, then opens the app (CleanListen, or CleanRead
-when started with "read"; "view" opens CleanView.pyw, which hands over to the real CleanView,
-its own program now). If the check fails (offline, GitHub down) the app
+when started with "read", ReadAloud with "aloud"; "view" opens CleanView.pyw, which hands over
+to the real CleanView, its own program now). If the check fails (offline, GitHub down) the app
 simply opens as-is."""
 import json
 import os
@@ -36,7 +36,10 @@ def _ver(s):
 # sherpa-onnx put an onnxruntime.dll there, which an .exe in that folder would load first.)
 # The changed .exe has no signature, so Smart App Control would block it: it's only made while
 # that's off, and only used once a test run of it has worked (never tried again once it failed).
-OWN = {"": ("CleanListen", "icon.ico"), "read": ("CleanRead", "cleanread.ico")}
+OWN = {"": ("CleanListen", "icon.ico"), "read": ("CleanRead", "cleanread.ico"),
+       "aloud": ("ReadAloud", "readaloud.ico")}
+APPS = {"view": ("CleanView", "CleanView.pyw"), "read": ("CleanRead", "CleanRead.pyw"),
+        "aloud": ("ReadAloud", "ReadAloud.pyw")}
 OWN_BUILD = 1          # raise to make every copy again
 
 
@@ -294,7 +297,7 @@ def main():
             sys.exit(0)
     except Exception:      # never block the app over its name
         pass
-    name = {"view": "CleanView", "read": "CleanRead"}.get(arg, "CleanListen")
+    name = APPS.get(arg, ("CleanListen",))[0]
     try:
         # CLEANLISTEN_UPDATE_DONE: started again right after an update (start_again, or
         # CleanListen's "Check for updates")
@@ -310,7 +313,7 @@ def main():
             pass
     if note:
         os.environ["CLEANLISTEN_UPDATED"] = note
-    app = {"view": "CleanView.pyw", "read": "CleanRead.pyw"}.get(arg, "CleanListen.pyw")
+    app = APPS.get(arg, ("", "CleanListen.pyw"))[1]
     if not (HERE / app).exists():
         app = "CleanListen.pyw"
     sys.argv = [str(HERE / app)]

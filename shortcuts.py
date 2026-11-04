@@ -1,5 +1,5 @@
-"""Puts the CleanRead icon on the desktop and in the Start menu (once), and points an old
-CleanView icon at the real CleanView."""
+"""Puts the CleanRead and ReadAloud icons on the desktop and in the Start menu (once), and points
+an old CleanView icon at the real CleanView."""
 import base64
 import os
 import subprocess
@@ -85,6 +85,11 @@ foreach ($dir in {where}) {{
 def ensure_cleanread_shortcut(force=False, dirs=None):
     return _ensure_shortcut("CleanRead", "read", "cleanread.ico",
                             "Check what's in an ebook, or make a clean copy", force, dirs)
+
+
+def ensure_readaloud_shortcut(force=False, dirs=None):
+    return _ensure_shortcut("ReadAloud", "aloud", "readaloud.ico",
+                            "Turn an ebook into an audiobook", force, dirs)
 
 
 def installed_copy():
