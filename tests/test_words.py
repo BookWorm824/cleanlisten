@@ -706,3 +706,23 @@ def test_gods_name_phrases_dont_cross_a_full_stop():
 
 def test_sod_meaning_turf_may_be_left_in():
     assert "sod" in E.INNOCENT_WORDS
+
+
+# CleanView 1.18.13: prayers Lauren kept in Wings of a Dream (CleanRead, 2026-11-04)
+@pytest.mark.parametrize("text", [
+    "Oh God. Help me know what to do.", "Please, please, dear Jesus.",
+    "Had I let Jesus illuminate my path", "May You never be ashamed that I call You my God.",
+    "You are my God", "Please, dear God, let him live", "Lord, help me understand",
+    "Oh Lord, help me forgive him"])
+def test_prayers_arent_oaths(text):
+    assert hits(text, EVERY) == []
+
+
+@pytest.mark.parametrize("text, word", [
+    ("Oh God, help me, I'm going to be sick", "oh god"), ("Oh Lord Jesus.", "oh lord"),
+    ("Oh, dear Jesus, look at this mess", "jesus"), ("Dear God, what happened here?", "dear god"),
+    ("My God, you've grown", "my god"), ("Look at you! My God, you've grown", "my god"),
+    ("Jesus, let me go", "jesus"), ("Lord help me if he finds out", "lord help me")])
+def test_oaths_near_prayers_still_caught(text, word):
+    w = words(text)
+    assert word in [" ".join(w[i:j]) for i, j, _ in E.find_language(w, EVERY)]

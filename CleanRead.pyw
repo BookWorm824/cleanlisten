@@ -1206,5 +1206,16 @@ class App(tk.Tk):
         self.show_setup()
 
 
+def _fix_shortcut():
+    # put the CleanRead icon right if it leads somewhere else (the installed copy only)
+    try:
+        import shortcuts
+        shortcuts.ensure_cleanread_shortcut()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=_fix_shortcut, daemon=True).start()
     App().mainloop()

@@ -13,6 +13,10 @@ APP_DATA = LOCAL / "CleanListen"
 # "Install CleanView.bat"). CleanListen used to ship an old copy and make a "CleanView" icon
 # for it, with the same name as the real one's; whichever was made last won (Jason, 2026-10-30).
 CLEANVIEW = LOCAL / "CleanView"
+# The installed CleanListen (install.ps1 puts it here). Only it makes or moves the CleanRead
+# icon: a copy run from anywhere else (for testing) once made the icon on the owner's PC, and
+# the icon led nowhere once that copy was gone (2026-11-04).
+INSTALLED = APP_DATA / "app"
 NO_WINDOW = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
 
@@ -78,23 +82,42 @@ foreach ($dir in {where}) {{
     return _powershell(ps).returncode == 0
 
 
-def ensure_cleanread_shortcut(force=False):
+def ensure_cleanread_shortcut(force=False, dirs=None):
     return _ensure_shortcut("CleanRead", "read", "cleanread.ico",
-                            "Check what's in an ebook, or make a clean copy", force)
+                            "Check what's in an ebook, or make a clean copy", force, dirs)
 
 
-def _ensure_shortcut(name, arg, ico, desc, force=False):
-    if os.name != "nt" or not (HERE / (name + ".pyw")).exists():
+def installed_copy():
+    """True when this is the installed CleanListen, not a copy run from somewhere else."""
+    try:
+        return os.path.normcase(str(HERE.resolve())) == os.path.normcase(str(INSTALLED.resolve()))
+    except OSError:
+        return False
+
+
+def _ensure_shortcut(name, arg, ico, desc, force=False, dirs=None):
+    """Make the icon on the desktop and in the Start menu the first time (a marker file says it
+    was made, so one they delete stays deleted), and every time after, put right an icon that
+    leads somewhere else or to a program that isn't there. dirs: the folders (for tests)."""
+    if os.name != "nt" or not (HERE / (name + ".pyw")).exists() or not installed_copy():
         return False
     marker = APP_DATA / f"{name.lower()}_shortcut_made.txt"
-    if marker.exists() and not force:
-        return True
-    args = '"' + str(HERE / "launcher.pyw") + '" ' + arg
+    make = force or not marker.exists()
+    launcher = HERE / "launcher.pyw"
+    args = '"' + str(launcher) + '" ' + arg
+    where = ("@(" + ", ".join(_q(d) for d in dirs) + ")" if dirs is not None else
+             "@([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))")
     ps = f"""
 $s = New-Object -ComObject WScript.Shell
-foreach ($dir in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {{
+$make = ${'true' if make else 'false'}
+foreach ($dir in {where}) {{
     if (-not $dir) {{ continue }}
-    $l = $s.CreateShortcut((Join-Path $dir '{name}.lnk'))
+    $p = Join-Path $dir '{name}.lnk'
+    $there = Test-Path -LiteralPath $p
+    if (-not $there -and -not $make) {{ continue }}
+    $l = $s.CreateShortcut($p)
+    if ($there -and -not $make -and $l.Arguments.ToLower().Contains({_q(str(launcher).lower())}) `
+            -and $l.TargetPath -and (Test-Path -LiteralPath $l.TargetPath)) {{ continue }}
     $l.TargetPath = {_q(_pythonw())}
     $l.Arguments = {_q(args)}
     $l.WorkingDirectory = {_q(HERE)}
