@@ -114,6 +114,11 @@ try {
     } else {
         Fail "Couldn't download CleanListen. Check that this computer is on the internet, then run setup again."
     }
+    # where updates come from (1.14.1's setup left this out, and CleanListen wouldn't open)
+    $cfg = Join-Path $AppDir 'update.json'
+    if (-not (Test-Path $cfg)) {
+        [IO.File]::WriteAllText($cfg, '{"repo": "BookWorm824/cleanlisten", "branch": "main"}')
+    }
 
     # 2. Python
     Step 2 "Checking for Python..."

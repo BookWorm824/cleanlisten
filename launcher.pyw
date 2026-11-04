@@ -12,7 +12,14 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-CONFIG = json.loads((HERE / "update.json").read_text())   # {"repo": "...", "branch": "main"}
+# {"repo": "...", "branch": "main"}. A fresh install from 1.14.1's setup had no update.json
+# (it wasn't on version.json's list), and this line stopped CleanListen before its window
+# opened (2026-11-04), so it's on the list now and missing or broken means the usual place.
+try:
+    CONFIG = json.loads((HERE / "update.json").read_text())
+    CONFIG["repo"]
+except (OSError, ValueError, KeyError, TypeError):
+    CONFIG = {"repo": "BookWorm824/cleanlisten", "branch": "main"}
 RAW = f"https://raw.githubusercontent.com/{CONFIG['repo']}/{CONFIG.get('branch', 'main')}/"
 
 
