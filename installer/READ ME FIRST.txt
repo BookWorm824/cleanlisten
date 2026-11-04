@@ -4,14 +4,15 @@ CleanListen
 Mutes bad language and cuts explicit scenes out of audiobooks you own.
 
 
-INSTALL (one time)
-1. Right-click the zip file, choose Properties, tick "Unblock" at the bottom, click OK.
+INSTALL (one time; the computer needs to be on the internet)
+1. If setup came as a zip file: right-click it, choose Properties, tick "Unblock" at the
+   bottom, click OK. Then right-click it, choose "Extract All", and open the extracted folder.
    (Windows blocks downloaded programs until you do this.)
-2. Right-click the zip file and choose "Extract All", then open the extracted folder.
-3. Double-click "Install CleanListen".
+2. Double-click "Install CleanListen". It downloads the newest CleanListen itself, so
+   "Install CleanListen" and "install.ps1" are all another computer needs.
    - If Windows says "Windows protected your PC", click "More info", then "Run anyway".
      (It says that about any program that isn't from a big company.)
-4. Wait 5-15 minutes while it downloads what it needs. It opens CleanListen when it's done.
+3. Wait 5-15 minutes while it downloads what it needs. It opens CleanListen when it's done.
 
 After that, open CleanListen from the icon on your Desktop.
 

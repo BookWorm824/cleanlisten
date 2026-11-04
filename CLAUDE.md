@@ -342,6 +342,8 @@ book-check kinds like "lying" and "romance" count too). Taught: lines she or Cla
 don't fit their filter ("slapped his hat on his head" as violence, "stole over me" as lying, a
 man-and-woman romance as same-sex). Not taught: anything she ticked back after Claude kept it, lines
 that fit (blood as gore, preaching or prayers as religion), and lines with a listed word.
+Third (2026-11-04, Wings of a Dream again): 16 lines she kept this time after ticking them back
+on 11-03 (the cotton gin as drinking, "eyebrows shot up" as drugs, a tortured look, "My naked arms").
 
 ## 8. Testing
 

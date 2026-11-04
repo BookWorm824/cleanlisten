@@ -12,20 +12,66 @@ $ModelName = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'
 $ModelUrl  = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/$ModelName.tar.bz2"
 $FfmpegUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip'
 $PyInstallerUrl = 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe'
+# Where updates come from: setup takes the newest CleanListen from here too, so it never
+# installs an old copy (the setup folder's "app" copy is only used when this PC is offline).
+$RepoUrl = 'https://raw.githubusercontent.com/BookWorm824/cleanlisten/main'
 
 function Step($n, $text) { Write-Host ""; Write-Host "[$n/6] $text" -ForegroundColor Cyan }
 function Ok($text) { Write-Host "      $text" -ForegroundColor Green }
 function Fail($text) { throw $text }
 
-function Download($url, $dest) {
+function Download($url, $dest, [switch]$Quiet) {
     # curl.exe ships with Windows 10+ and is much faster than Invoke-WebRequest
     $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
     if (Test-Path $curl) {
-        & $curl -L --fail --retry 3 -o $dest $url
+        $show = if ($Quiet) { @('-s', '-S') } else { @() }
+        & $curl -L --fail --retry 3 @show -o $dest $url
         if ($LASTEXITCODE -ne 0) { Fail "Download failed: $url" }
     } else {
         Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
     }
+}
+
+function Get-NewestApp {
+    # Every file in version.json's list, into a fresh folder first, so a half-finished
+    # download never mixes with what's there. Returns the version.
+    $new = Join-Path $Tmp 'app-download'
+    if (Test-Path $new) { Remove-Item $new -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $new | Out-Null
+    $vj = Join-Path $new 'version.json'
+    Download "$RepoUrl/version.json" $vj -Quiet
+    $info = Get-Content $vj -Raw | ConvertFrom-Json
+    if (-not $info.files) { Fail "The list of CleanListen's files looked wrong." }
+    foreach ($f in $info.files) {
+        if ($f -match '[\\/]') { continue }
+        $dest = Join-Path $new $f
+        Download "$RepoUrl/$([uri]::EscapeDataString($f))" $dest -Quiet
+        if (-not (Test-Path $dest) -or (Get-Item $dest).Length -eq 0) { Fail "$f didn't download." }
+    }
+    Copy-Item -Path (Join-Path $new '*') -Destination $AppDir -Force
+    Remove-Item $new -Recurse -Force -ErrorAction SilentlyContinue
+    return $info.version
+}
+
+function Copy-BundledApp {
+    # Offline: the "app" folder that came with setup, or (setup run from a download of the
+    # CleanListen page on GitHub) the files in the folder above it. $false if there's neither.
+    $app = Join-Path $PSScriptRoot 'app'
+    if (Test-Path (Join-Path $app 'CleanListen.pyw')) {
+        Copy-Item -Path (Join-Path $app '*') -Destination $AppDir -Recurse -Force
+        return $true
+    }
+    $up = Split-Path $PSScriptRoot -Parent
+    $vj = Join-Path $up 'version.json'
+    if ((Test-Path (Join-Path $up 'CleanListen.pyw')) -and (Test-Path $vj)) {
+        foreach ($f in (Get-Content $vj -Raw | ConvertFrom-Json).files) {
+            $src = Join-Path $up $f
+            if (Test-Path $src) { Copy-Item -Path $src -Destination $AppDir -Force }
+        }
+        Copy-Item -Path $vj -Destination $AppDir -Force
+        return $true
+    }
+    return $false
 }
 
 function Find-Python {
@@ -57,13 +103,17 @@ try {
     Write-Host "This downloads about 700 MB and takes 5-15 minutes. Leave this window open."
     New-Item -ItemType Directory -Force -Path $Root, $AppDir, $Tmp | Out-Null
 
-    # 1. app files
-    Step 1 "Copying CleanListen..."
-    if (-not (Test-Path (Join-Path $PSScriptRoot 'app\CleanListen.pyw'))) {
-        Fail "Setup files are missing. Right-click the zip, choose 'Extract All', and run setup from the extracted folder."
+    # 1. app files: the newest from GitHub; the copy that came with setup only when offline
+    Step 1 "Getting the newest CleanListen..."
+    $got = $null
+    try { $got = Get-NewestApp } catch { Write-Host "      Couldn't download it: $($_.Exception.Message)" -ForegroundColor Yellow }
+    if ($got) {
+        Ok "Version $got"
+    } elseif (Copy-BundledApp) {
+        Ok "Used the copy that came with setup. CleanListen updates itself once this PC is online."
+    } else {
+        Fail "Couldn't download CleanListen. Check that this computer is on the internet, then run setup again."
     }
-    Copy-Item -Path (Join-Path $PSScriptRoot 'app\*') -Destination $AppDir -Recurse -Force
-    Ok "Done"
 
     # 2. Python
     Step 2 "Checking for Python..."
