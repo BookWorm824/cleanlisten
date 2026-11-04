@@ -31,6 +31,8 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `shared_learned.json` | Built-in knowledge every copy starts with (merged from exports — see §7). |
 | `launcher.pyw` | Desktop shortcut target: checks GitHub for a newer `version.json`, downloads the listed files, swaps them in, starts the app (`read` → CleanRead; `view` → the CleanView hand-over). First it starts itself again as `venv\CleanListen\CleanListen.exe` or `venv\CleanRead\CleanRead.exe` so Task Manager shows the app's name, not "Python" (Jason, 2026-11-03; CleanView 1.18.9's code: copies of the base pythonw.exe with the description and icon changed, only while Smart App Control is off and after a test run worked, `failed.txt` = never again; not in `Scripts`, whose onnxruntime.dll would load first). After an update it starts the launcher it just downloaded (`start_again`, env `CLEANLISTEN_UPDATE_DONE` so it doesn't check again); before 1.13.2 the old launcher opened the app itself, so the first start after 1.13.0 still said "Python" (Jason). CleanListen's "Check for updates" restarts through the launcher too. |
 | `freezes.py` | Noticing a freeze or crash in both apps (CleanView 1.18.9): no answer for 20 s → what every thread was doing goes in `stopped_last_time.txt` (`cleanread_` for CleanRead), a hard crash via faulthandler (`crash_log.txt`); next start they're asked to send it in (kind "problem"). `drain()` runs each window's queue: at most 500 messages a go, only the newest progress, one bad message can't stop it (`_handle`). |
+| `bookqueue.py` | The book queue (Lauren, 2026-11-04): "Your books" page state (`BookQueue`, kept in `APP_DATA/queue.json`, steps waiting → preparing → ready → save_waiting → saving → done, or failed/stopped) and the worker processes (`Workers`). "Books at once" 1–4 (default 2); `threads_each()` shares the PC's cores between them (16 threads: 8, 8, 5, 4 per book). No window code, so it's tested directly (`tests/test_queue.py`). |
+| `bookrunner.py` | One book's worker process: runs `analyze()` (prepare) or `render()` (save) and sends JSON lines (`{"p","m"}`, `{"done": "ready"/"saved"}`, `{"error"}`, `{"stopped"}`) back on stdout; its stop file (`queue.stop.<run>`, written by Cancel / closing / updating) or the window going away cancels. Not stdin: on Windows a thread blocked reading a pipe stops DLLs loading (the worker froze importing numpy). Holds `jobs/<key>/queue.lock` so two runs of one book never overlap (after an update). Its stderr and faulthandler go to `jobs/<key>/worker_log.txt`. `CLEANLISTEN_ENGINE` swaps in a stand-in engine for tests. |
 | `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
 | `shortcuts.py` | Creates the CleanRead desktop icon; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
@@ -53,6 +55,10 @@ Python 3.12 on the user's PC (private venv). Dependencies: `sherpa-onnx`, `numpy
   ebook, output folder, title), `claude_chat\` (book.txt + findings.txt for the chat),
   `save_error.txt`, `last_error.txt`
 - `learned.json` (what this PC learned), `claude_findings\*.json` + `claude_findings.csv`
+- `queue.json` — the "Your books" list (each book's files, filters, analyze arguments, step,
+  status, results) and "Books at once"; a book that was preparing or saving when the window
+  closed (or updated) goes back in line and carries on (`BookQueue.resume`; listening resumes
+  per file from `transcript.json`, so the file it was on starts over)
 - `settings.json` (`claude_model`, `reviewer` = claude|chatgpt), `resume.json` (reopen onto the
   same review after an update or after closing the window), `left_review.json` (a review left
   with "◀ Back to start"; the start page offers "Pick up where I left off" for 14 days)
@@ -149,6 +155,22 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    picture inside the book, else a picture in its folder (`find_cover`: cover/folder/front
    first, then the biggest). A one-file M4B book just gets its clean copy re-tagged. ~47 s for
    6 hours of audio.
+
+**The book queue** (1.14.0; Lauren, 2026-11-04: "queue several books, a collapsed row per
+book, 3–4 at a time"). Start cleaning no longer runs the book in the window: it adds a row to
+"Your books" (`show_queue`) and the start page is free for the next book. Each row: title,
+filter summary, status line, progress bar, "▸ More" (files, extra checks, save folder,
+Claude's note), Cancel / Remove / Try again / Move up. Up to "Books at once" run together,
+each in its own worker process (`bookrunner.py`), so a crash or freeze in one book never takes
+the window down (the window's own freezes are still noticed by `freezes.py`). A ready book
+chimes and says "Ready to review"; Review opens the usual review page (one book at a time,
+`review_job`, `review_key`). "Save clean audiobook" writes the ticks into analysis.json and
+queues the save (saving goes ahead of preparing); "◀ Back to my books" keeps the review as a
+ready row. The local AI helper (one Ollama model) simply makes the books' requests wait their
+turn; Claude/ChatGPT final checks overlap and use the plan's limits faster (said on the page).
+Closing the window asks first when books are running; workers are told to stop (5 s, then
+killed with their ffmpeg/claude children) and carry on next time. `cleanlisten.write_safely`
+writes transcript/analysis whole or not at all, since a worker can be stopped mid-write.
 
 ## 4. Data model (analysis.json)
 
@@ -335,6 +357,10 @@ that fit (blood as gore, preaching or prayers as religion), and lines with a lis
   speech model), then `render()`; checks the mute is silent and the cut shortens the file, and
   that `extract_clip` (the Play button) cuts the right stretch.
   Needs ffmpeg on PATH or in the installed app's `bin`, else skipped.
+- `test_queue.py`: the book queue's steps (add, run, ready, review, save, cancel, crash,
+  resume), real worker processes with a stand-in engine (`tests/stub_engine.py`), the
+  one-worker-per-book lock, and the "Your books" page driven with faked workers (opens a
+  hidden Tk window).
 `conftest.py` points `LOCALAPPDATA` at a temp folder, so tests never touch the real app data.
 The GUI has no automated tests. On Windows it was checked by loading `CleanListen.pyw` with a
 made-up analysis, faking `winsound`, and grabbing the window with Pillow's `ImageGrab`

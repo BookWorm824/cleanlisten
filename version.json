@@ -1,5 +1,5 @@
 {
- "version": "1.13.7",
+ "version": "1.14.0",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -14,6 +14,8 @@
   "CleanView.pyw",
   "filters.py",
   "freezes.py",
+  "bookrunner.py",
+  "bookqueue.py",
   "shortcuts.py",
   "cleanread.py",
   "CleanRead.pyw",

@@ -104,7 +104,7 @@ def save(d):
         for k in ("cut", "kept", "claude_cut", "claude_kept", "claude_ok_words"):
             d[k] = d[k][-MAX:]
         d["cut_for"] = {t: k for t, k in d.get("cut_for", {}).items() if t in set(d["cut"])}
-        tmp = PATH.with_suffix(".tmp")
+        tmp = PATH.with_suffix(f".{os.getpid()}.tmp")   # (books in the queue save at once)
         tmp.write_text(json.dumps(d, indent=1), encoding="utf8")
         os.replace(tmp, PATH)
     except OSError:

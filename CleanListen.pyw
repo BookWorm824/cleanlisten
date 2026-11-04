@@ -8,7 +8,6 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-import traceback
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -16,11 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cleanlisten as engine  # noqa: E402
 import filters as F  # noqa: E402  (the filters, shared with CleanRead)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanRead)
+import bookqueue as BQ  # noqa: E402  (several books at once, each in its own worker)
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 HERE = Path(__file__).resolve().parent
 RESUME = APP_DATA / "resume.json"     # your review, kept across an update or closing the window
 LEFT = APP_DATA / "left_review.json"  # a review you went "Back to start" from, to pick up again
+QUEUE = APP_DATA / "queue.json"       # the books on the "Your books" page (bookqueue.py)
 
 
 def chime():
@@ -200,6 +201,13 @@ class App(tk.Tk):
         self.audio, self.ebook, self.outdir = [], None, None
         self.analysis, self.workdir = None, None
         self.saved_opts = {}   # filter ticks, kept when re-checking a book
+        # the books being prepared, ready to review or saving (the "Your books" page); each
+        # runs in its own worker process, so one book's trouble never stops the window
+        self.books = BQ.BookQueue(QUEUE)
+        self.books.resume()
+        self.workers = BQ.Workers(lambda key, msg: self.q.put(("job", key, msg)))
+        self.review_key = None   # the book in the queue whose review is open
+        self._open_rows, self._rows = set(), {}
         self._style()
         self.page = None
         self.page_name = None
@@ -209,6 +217,9 @@ class App(tk.Tk):
         self.after(100, self._poll)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._restore()
+        if self.page_name != "review" and not self.audio and self.books.jobs:
+            self.show_queue()       # back to your books, and they carry on
+        self.after(300, self._run_queue)
 
     # ---------- look ----------
     def _style(self):
@@ -296,9 +307,18 @@ class App(tk.Tk):
         return img
 
     def destroy(self):
+        self._stop_books()
         if getattr(self, "watch", None):     # stops the freeze watcher; the crash log is closed
             self.watch.stop()
         super().destroy()
+
+    def _stop_books(self):
+        """The window is closing (or updating): the books being worked on stop after the bit
+        they're on and carry on from there next time (bookqueue.BookQueue.resume)."""
+        if getattr(self, "workers", None) and self.workers.procs:
+            self.workers.stop_all()
+        if getattr(self, "books", None):
+            self.books.save()
 
     def _new_page(self, title, subtitle="", name=""):
         if getattr(self, "watch", None):
@@ -324,6 +344,13 @@ class App(tk.Tk):
                                  fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
         self._upd_lbl.place(relx=1.0, y=2, anchor="ne")
         self._upd_lbl.bind("<Button-1>", lambda e: self.check_updates())
+        self._books_lbl = None
+        if getattr(self, "books", None) is not None and self.books.jobs:
+            self._books_lbl = tk.Label(self.page, text="", bg=BG, fg=ACCENT, font=(FONT, 10, "bold underline"),
+                                       cursor="hand2")
+            self._books_lbl.place(relx=1.0, y=24, anchor="ne")
+            self._books_lbl.bind("<Button-1>", lambda e: self._to_books())
+            self._show_books_count()
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
                      wraplength=700, justify="left").pack(anchor="w", pady=(2, 12))
@@ -395,11 +422,20 @@ class App(tk.Tk):
                      anchor="w").pack(side="left")
             ttk.Button(bar, text="Pick up where I left off", style="Plain.TButton",
                        command=self._pick_up).pack(side="right", padx=4, pady=2)
-        try:
-            ver = json.loads((Path(__file__).resolve().parent / "version.json").read_text())["version"]
-            self.title(f"CleanListen {ver}")
-        except Exception:
-            pass
+        if self.books.jobs:   # the books already added: back to them with one click
+            self._drop_books_link()
+            bar = tk.Frame(p, bg="#E3EFEC")
+            bar.pack(fill="x", pady=(0, 6))
+            ready = self.books.count(BQ.READY)
+            busy = len(self.books.unfinished()) - ready
+            bits = ([f"{ready} ready to review"] if ready else []) + (
+                [f"{busy} being worked on"] if busy else [])
+            tk.Label(bar, text="Your books: " + (", ".join(bits) if bits else "all saved") + ".",
+                     bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10, "bold" if ready else "normal"),
+                     padx=10, anchor="w").pack(side="left")
+            ttk.Button(bar, text="See your books", style="Plain.TButton",
+                       command=self.show_queue).pack(side="right", padx=4, pady=2)
+        self._show_books_count()
         self.start_btn = ttk.Button(self.footer, text="Start cleaning", style="Main.TButton",
                                     command=self.start, state="disabled")
         self.start_btn.pack(side="right")
@@ -597,6 +633,7 @@ class App(tk.Tk):
         elif kind == "updated":
             self._save_resume(note=f"CleanListen was updated to version {val}. Everything is just "
                                    "as you left it.")
+            self._stop_books()       # they carry on in the new version
             env = dict(os.environ, CLEANLISTEN_UPDATED=f"CleanListen was updated to version {val}.",
                        CLEANLISTEN_UPDATE_DONE="1")
             try:   # through the new launcher, so what's new in it works now (its own name, say)
@@ -618,7 +655,7 @@ class App(tk.Tk):
             if self.page_name == "review" and self.analysis and self.workdir:
                 self._sync_ticks()
                 self._save_analysis()
-                data.update(page="review", workdir=str(self.workdir),
+                data.update(page="review", workdir=str(self.workdir), job=self.review_key,
                             split=getattr(self, "split_chapters", False),
                             m4b=getattr(self, "make_m4b", False),
                             view=getattr(self, "view_mode", "list"))
@@ -662,6 +699,8 @@ class App(tk.Tk):
                 self.analysis = None
             if self.analysis:
                 self.workdir = wd
+                job = self.books.find(data.get("job") or "")
+                self.review_key = job["key"] if job else None
                 self.split_chapters = data.get("split", False)
                 self.make_m4b = data.get("m4b", False)
                 # (older versions saved show_fine: True meant "show everything")
@@ -675,13 +714,16 @@ class App(tk.Tk):
 
     def _back_to_start(self):
         """Leave the review without saving an audiobook (Jason, 2026-10-30: a parent may only
-        want to see what's in a book). The review is kept: "Pick up where I left off" on the
-        start page opens it again, ticks and all."""
-        self._save_resume(note="Picked up where you left off.", path=LEFT)
+        want to see what's in a book). The review is kept: the book stays on "Your books" as
+        ready to review, ticks and all."""
+        self._sync_ticks()
         self._learn_choices()            # checking without saving still teaches it (Jason)
-        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
-            self.chat_win.destroy()
-        self.reset()
+        try:
+            self._queue_this_review()
+        except BQ.Busy:
+            pass
+        self._leave_review()
+        self.show_queue()
 
     def _left_review(self):
         """The review you went back to the start from, if it can still be opened."""
@@ -703,6 +745,14 @@ class App(tk.Tk):
         self._restore()
 
     def _on_close(self):
+        n = len(self.books.running())
+        if n:
+            chime()
+            if not messagebox.askyesno(
+                    "CleanListen", f"CleanListen is still working on {n} book{'s' if n > 1 else ''}. "
+                    "Close it anyway?\n\nThey'll carry on from where they got to when you open "
+                    "CleanListen again."):
+                return
         if self.page_name == "review":
             self._save_resume()        # reopen straight onto this review
         self.destroy()
@@ -1184,7 +1234,9 @@ class App(tk.Tk):
         self.show_setup()
 
     def recheck_same(self):
-        """Back to the start screen with the same book loaded and the same ticks."""
+        """Back to the start screen with the same book loaded and the same ticks (the
+        re-check replaces the book's row on "Your books")."""
+        self.review_key = None
         self.analysis = None
         self.show_setup()
 
@@ -1270,10 +1322,31 @@ class App(tk.Tk):
                  "title": book_title(self.audio)}, indent=1), encoding="utf8")
         except Exception:
             pass
-        self.show_working("Checking the book…" if heard else "Listening to the book…",
-                          quick=heard)
-        self.cancel_flag = False
-        threading.Thread(target=self._analyze_thread, args=(groups,), daemon=True).start()
+        try:
+            dur = sum(engine.probe_duration(a) for a in self.audio)
+        except Exception:
+            dur = 0
+        spec = {"audio": list(self.audio), "ebook": self.ebook, "outdir": self.outdir,
+                "title": book_title(self.audio), "workdir": str(self.workdir), "groups": groups,
+                "filter_args": self.filter_args, "use_ai": self.use_ai,
+                "use_claude": self.use_claude, "split": self.split_chapters,
+                "m4b": self.make_m4b, "cover": getattr(self, "cover_pick", None),
+                "author": self.author or None,
+                "opts": dict(self.saved_opts), "summary": F.summary(ticks, mywords),
+                "profile": dict(F.PROFILES).get(self.saved_opts.get("profile"), ""),
+                "heard": heard, "length": dur}
+        try:
+            self.books.add(spec)
+        except BQ.Busy:
+            messagebox.showinfo("CleanListen", "This book is being worked on right now. Wait for "
+                                "it to finish (or press Cancel on it), then try again.")
+            self.show_queue()
+            return
+        # the book becomes a row on "Your books"; the start page is free for the next one
+        self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None
+        self.cover_pick, self.author = None, ""
+        self._run_queue()
+        self.show_queue()
 
     def show_working(self, title, quick=False):
         dur = sum(engine.probe_duration(a) for a in self.audio) if self.audio else 0
@@ -1303,34 +1376,6 @@ class App(tk.Tk):
         self.cancel_flag = True
         self.status.config(text="Stopping after the current chunk…")
 
-    def _analyze_thread(self, groups):
-        try:
-            st = engine.analyze(
-                self.audio, self.workdir, ebook=self.ebook, groups=groups,
-                use_ai=self.use_ai, use_claude=getattr(self, "use_claude", False),
-                **self.filter_args, title=book_title(self.audio),
-                progress=lambda f, m: self.q.put(("progress", f, m)),
-                log=lambda m: self.q.put(("log", m)),
-                cancel=lambda: self.cancel_flag)
-            self.q.put(("analyzed", st))
-        except KeyboardInterrupt:
-            self.q.put(("cancelled",))
-        except Exception as ex:  # show the problem instead of dying silently
-            self.q.put(("error", str(ex), traceback.format_exc()))
-
-    def _render_thread(self, cuts, mutes):
-        try:
-            res = engine.render(self.workdir, self.outdir, cuts,
-                                progress=lambda f, m: self.q.put(("progress", f, m)),
-                                log=lambda m: self.q.put(("log", m)),
-                                chapters=self.split_chapters, mutes=mutes,
-                                m4b=getattr(self, "make_m4b", False),
-                                cover=getattr(self, "cover_pick", None),
-                                author=getattr(self, "author", "") or None)
-            self.q.put(("rendered", res))
-        except Exception as ex:
-            self.q.put(("error", str(ex), traceback.format_exc()))
-
     def _poll(self):
         """From now on freezes.drain runs the queue: a flood of messages can't keep the window
         busy, and one bad message can't stop it updating (Jason, 2026-11-03)."""
@@ -1348,13 +1393,8 @@ class App(tk.Tk):
         if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
             self.pb["value"] = int(msg[1] * 1000)
             self.status.config(text=msg[2])
-        elif kind == "analyzed":
-            self.analysis = msg[1]
-            self.analysis["title"] = book_title(self.audio) if self.audio else ""
-            self.show_review()
-        elif kind == "rendered":
-            self._saving = False
-            self.show_done(msg[1])
+        elif kind == "job":
+            self._job_msg(msg[1], msg[2])
         elif kind in ("update_none", "update_fail", "update_progress", "updated"):
             self._update_msg(kind, msg[1])
         elif kind == "claude_status":
@@ -1383,11 +1423,346 @@ class App(tk.Tk):
             (self.workdir / "last_error.txt").parent.mkdir(parents=True, exist_ok=True)
             (self.workdir / "last_error.txt").write_text(msg[2], encoding="utf8")
             messagebox.showerror("CleanListen ran into a problem", msg[1])
-            if getattr(self, "_saving", False) and self.analysis:
-                self._saving = False
-                self.show_review()       # keep your review; just press Save again
-            else:
-                self.show_setup()
+            self.show_setup()
+
+    # ---------- "Your books": the queue ----------
+    def _to_books(self):
+        """From another page to "Your books" (a review in progress is kept as it is)."""
+        if self.page_name == "review":
+            self._back_to_start()
+        else:
+            self.show_queue()
+
+    def _show_books_count(self):
+        """The "Your books" link on other pages, and the window's title, say what's ready."""
+        ready = self.books.count(BQ.READY)
+        busy = self.books.count(BQ.PREPARING, BQ.WAITING, BQ.SAVING, BQ.SAVE_WAITING)
+        bits = ([f"{ready} ready to review"] if ready else []) + ([f"{busy} in progress"] if busy else [])
+        lbl = getattr(self, "_books_lbl", None)
+        if lbl is not None and lbl.winfo_exists():
+            lbl.config(text="Your books" + (" · " + ", ".join(bits) if bits else "") + " ▸")
+        title = f"CleanListen {app_version()}" + (f" · {ready} ready to review" if ready else "")
+        if self.title() != title:
+            self.title(title)
+
+    def _drop_books_link(self):
+        if getattr(self, "_books_lbl", None) is not None:
+            self._books_lbl.destroy()
+            self._books_lbl = None
+
+    def _run_queue(self):
+        """Start the next books, up to "Books at once" (saving first, then preparing)."""
+        changed = False
+        for job in self.books.to_start():
+            task = "save" if job["step"] == BQ.SAVE_WAITING else "prepare"
+            try:
+                self.workers.start(job, task, BQ.threads_each(self.books.at_once))
+                self.books.started(job["key"])
+            except Exception as ex:
+                self.books.started(job["key"])
+                self.books.handle(job["key"], {"error": f"It couldn't start ({ex})."})
+            changed = True
+        if changed:
+            self._books_changed()
+
+    def _books_changed(self):
+        if self.page_name == "queue":
+            self.show_queue()
+        else:
+            self._show_books_count()
+
+    def _job_msg(self, key, msg):
+        what = self.books.handle(key, msg)
+        job = self.books.find(key)
+        if what == "progress" and job:
+            r = self._rows.get(key)
+            if self.page_name == "queue" and r and r["status"].winfo_exists():
+                r["status"].config(text=self._job_status(job))
+                if r.get("pb") is not None:
+                    r["pb"]["value"] = int(job["frac"] * 1000)
+        elif what == "step":
+            if job and job["step"] in (BQ.READY, BQ.DONE):
+                chime()                   # a book is ready to review, or saved
+            self._run_queue()
+            self._books_changed()
+
+    def _job_status(self, job):
+        step = job["step"]
+        if step == BQ.READY and job.get("found"):
+            f = job["found"]
+            w, n = f.get("words", 0), f.get("passages", 0)
+            return (f"Ready to review · {w} word{'s' if w != 1 else ''} to mute, "
+                    f"{n} passage{'s' if n != 1 else ''} to cut")
+        if step == BQ.DONE and job.get("result"):
+            r = job["result"]
+            cm = r.get("cut_minutes", 0)
+            gone = f" ({cm:.0f} min removed)" if cm >= 1 else (f" ({cm * 60:.0f} sec removed)" if cm else "")
+            return (f"✓ Saved · {r.get('mutes', 0)} words muted, "
+                    f"{r.get('cuts', 0)} passages cut{gone}")
+        if step == BQ.FAILED:
+            return "Ran into a problem: " + (job.get("error") or "")
+        return job.get("status") or BQ.STATUS.get(step, "")
+
+    def show_queue(self):
+        keep = None      # redrawn when a book moves on: stay where you were in a long list
+        if self.page_name == "queue" and getattr(self, "_canvas", None):
+            try:
+                keep = self._canvas.yview()[0]
+            except tk.TclError:
+                keep = None
+        p = self._new_page("Your books", "Each book is listened to and checked here, a few at a "
+                           "time. When one says “Ready to review”, press Review. You can add "
+                           "more books at any time.")
+        self.page_name = "queue"
+        self._rows = {}
+        self._drop_books_link()
+        top = tk.Frame(p, bg=BG)
+        top.pack(fill="x", pady=(0, 8))
+        tk.Label(top, text="Books at once:", bg=BG, fg=INK, font=(FONT, 10)).pack(side="left")
+        n_var = tk.StringVar(value=str(self.books.at_once))
+        box = ttk.Combobox(top, values=[str(n) for n in BQ.AT_ONCE_CHOICES], width=3,
+                           state="readonly", textvariable=n_var, font=(FONT, 10))
+        box.pack(side="left", padx=(6, 0))
+        box.bind("<<ComboboxSelected>>", lambda e: self._set_at_once(int(n_var.get())))
+        tk.Label(top, text="More at once finishes a pile of books sooner, but each one takes "
+                 "longer. With the final check on, it also uses up your Claude, ChatGPT or "
+                 "Gemini plan's limits faster.", bg=BG, fg=MUTED, font=(FONT, 9),
+                 wraplength=560, justify="left").pack(side="left", padx=(12, 0))
+        ttk.Button(self.footer, text="Add another book" if self.books.jobs else "Add a book",
+                   style="Main.TButton", command=self._add_book).pack(side="right")
+        if self.books.count(BQ.DONE):
+            ttk.Button(self.footer, text="Clear saved books", style="Plain.TButton",
+                       command=self._clear_done).pack(side="left")
+        body = self._scroll_area(p)
+        if not self.books.jobs:
+            tk.Label(body, text="No books yet. Press “Add a book” to choose one.", bg=BG,
+                     fg=MUTED, font=(FONT, 11)).pack(anchor="w", pady=20)
+        for job in self.books.jobs:
+            self._book_row(body, job)
+        self._show_books_count()
+        if keep:
+            canvas = self._canvas
+            self.after(30, lambda: canvas.winfo_exists() and canvas.yview_moveto(keep))
+
+    def _book_row(self, parent, job):
+        key, step = job["key"], job["step"]
+        ready = step == BQ.READY
+        outer = tk.Frame(parent, bg=GO if ready else LINE)
+        outer.pack(fill="x", pady=4)
+        c = tk.Frame(outer, bg=CARD, padx=14, pady=10)
+        c.pack(fill="x", padx=2 if ready else 1, pady=2 if ready else 1)
+        btns = tk.Frame(c, bg=CARD)
+        btns.pack(side="right", anchor="n", padx=(10, 0))
+        if ready:
+            ttk.Button(btns, text="Review", style="Go.TButton",
+                       command=lambda: self.review_job(key)).pack(side="left")
+        elif step == BQ.DONE and (job.get("result") or {}).get("out"):
+            ttk.Button(btns, text="Open folder", style="Go.TButton",
+                       command=lambda: open_path(job["result"]["out"])).pack(side="left")
+        elif step in (BQ.FAILED, BQ.STOPPED):
+            ttk.Button(btns, text="Try again", style="Go.TButton",
+                       command=lambda: self._retry(key)).pack(side="left")
+        if step in (BQ.WAITING, BQ.PREPARING, BQ.SAVE_WAITING, BQ.SAVING):
+            ttk.Button(btns, text="Cancel", style="Plain.TButton",
+                       command=lambda: self._cancel_book(key)).pack(side="left", padx=(8, 0))
+        else:
+            ttk.Button(btns, text="Remove", style="Plain.TButton",
+                       command=lambda: self._remove_book(key)).pack(side="left", padx=(8, 0))
+        left = tk.Frame(c, bg=CARD)
+        left.pack(side="left", fill="x", expand=True)
+        tk.Label(left, text=job.get("title") or "Book", bg=CARD, fg=INK, font=(FONT, 12, "bold"),
+                 wraplength=360, justify="left", anchor="w").pack(anchor="w")
+        summ = (f"For {job['profile']}. " if job.get("profile") else "") + (job.get("summary") or "")
+        short = summ if len(summ) <= 80 else summ[:77].rsplit(" ", 1)[0] + "…"
+        if short:
+            tk.Label(left, text=short, bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w",
+                     wraplength=360, justify="left").pack(anchor="w")
+        color = {BQ.READY: GO, BQ.DONE: ACCENT_DK, BQ.FAILED: "#A3362B"}.get(step, INK)
+        status = tk.Label(left, text=self._job_status(job), bg=CARD, fg=color,
+                          font=(FONT, 10, "bold" if step in (BQ.READY, BQ.DONE) else "normal"),
+                          wraplength=360, justify="left", anchor="w")
+        status.pack(anchor="w", pady=(4, 0))
+        pb = None
+        if step in (BQ.WAITING, BQ.PREPARING, BQ.SAVE_WAITING, BQ.SAVING):
+            pb = ttk.Progressbar(left, style="Green.Horizontal.TProgressbar", maximum=1000)
+            pb.pack(fill="x", pady=(4, 0))
+            pb["value"] = int(job.get("frac", 0) * 1000)
+        self._rows[key] = {"status": status, "pb": pb}
+        is_open = key in self._open_rows
+        more = tk.Label(left, text=("▾ Less" if is_open else "▸ More"), bg=CARD, fg=ACCENT,
+                        font=(FONT, 9, "underline"), cursor="hand2")
+        more.pack(anchor="w", pady=(4, 0))
+        more.bind("<Button-1>", lambda e: self._flip_row(key))
+        if is_open:
+            self._row_details(left, job)
+
+        def fit(e):     # the row's words wrap to its width (fixed widths ran under the scrollbar)
+            labels = [w for w in left.winfo_children() if isinstance(w, tk.Label)]
+            for f in left.winfo_children():
+                if isinstance(f, tk.Frame):
+                    labels += [w for w in f.winfo_children() if isinstance(w, tk.Label)]
+            for w in labels:
+                if int(w.cget("wraplength") or 0):
+                    w.config(wraplength=max(200, e.width - 8))
+        left.bind("<Configure>", fit)
+
+    def _row_details(self, parent, job):
+        d = tk.Frame(parent, bg=CARD)
+        d.pack(fill="x", pady=(4, 0))
+        n = len(job.get("audio") or [])
+        lines = [f"{n} file{'s' if n != 1 else ''}"
+                 + (f" · {fmt_len(job['length'])}" if job.get("length") else "")
+                 + (" · with ebook" if job.get("ebook") else "")
+                 + (" · already listened to, so only the checking is done again"
+                    if job.get("heard") else "")]
+        if job.get("summary"):
+            lines.append((f"For {job['profile']}. " if job.get("profile") else "") + job["summary"])
+        extra = (["AI helper on this PC"] if job.get("use_ai") else []) + (
+            ["final check by " + self._ai_name()] if job.get("use_claude") else [])
+        lines.append("Extra checks: " + (", ".join(extra) if extra else "none"))
+        if job.get("outdir"):
+            also = [w for w, on in (("chapter files", job.get("split")), ("one M4B", job.get("m4b"))) if on]
+            lines.append("Saves to: " + os.path.normpath(job["outdir"])
+                         + (f"  (and {' and '.join(also)})" if also else ""))
+        res = job.get("result") or {}
+        if res.get("chapters"):
+            lines.append(f"Also split into {res['chapters']['tracks']} chapter files, in the "
+                         "\u201cChapters\u201d folder.")
+        if res.get("m4b"):
+            bk = res["m4b"]
+            lines.append(f"One M4B: \u201c{Path(bk['file']).name}\u201d, {bk['chapters']} chapters"
+                         + (", with the cover." if bk.get("cover") else ", no cover picture."))
+        if (job.get("found") or {}).get("claude_note"):
+            lines.append(job["found"]["claude_note"])
+        for line in lines:
+            tk.Label(d, text=line, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=360,
+                     justify="left", anchor="w").pack(anchor="w")
+        row = tk.Frame(d, bg=CARD)
+        row.pack(anchor="w", pady=(6, 0))
+        if job["step"] == BQ.DONE and (job.get("result") or {}).get("out"):
+            out = job["result"]["out"]
+            ttk.Button(row, text="See what was removed", style="Plain.TButton",
+                       command=lambda: open_path(str(Path(out) / "CleanListen report.txt"))
+                       ).pack(side="left", padx=(0, 8))
+            ttk.Button(row, text="Send what we refined…", style="Plain.TButton",
+                       command=lambda: self._refined_for(job)).pack(side="left", padx=(0, 8))
+        if job["step"] in (BQ.WAITING, BQ.SAVE_WAITING) and self.books.jobs.index(job) > 0:
+            ttk.Button(row, text="Move up", style="Plain.TButton",
+                       command=lambda: self._move_book(job["key"], -1)).pack(side="left")
+
+    def _flip_row(self, key):
+        self._open_rows ^= {key}
+        self.show_queue()
+
+    def _set_at_once(self, n):
+        self.books.set_at_once(n)
+        self._run_queue()
+
+    def _add_book(self):
+        self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None
+        self.show_setup()
+
+    def _retry(self, key):
+        self.books.retry(key)
+        self._run_queue()
+        self.show_queue()
+
+    def _cancel_book(self, key):
+        job = self.books.find(key)
+        if not job:
+            return
+        saving = job["step"] in (BQ.SAVING, BQ.SAVE_WAITING)
+        if job["step"] in BQ.RUNNING:
+            chime()
+            if not messagebox.askyesno("CleanListen", f"Stop {'saving' if saving else 'working on'} "
+                                       f"“{job.get('title', 'this book')}”?" + (
+                                           "" if saving else "\n\nWhat it has listened to so far is "
+                                           "kept. Try again carries on from there.")):
+                return
+            self.workers.stop(key, wait=1.0 if saving else 8.0)
+        self.books.stop(key)
+        self._run_queue()
+        self.show_queue()
+
+    def _remove_book(self, key):
+        self.books.remove(key)
+        self._open_rows.discard(key)
+        self.show_queue()
+
+    def _move_book(self, key, by):
+        self.books.move(key, by)
+        self.show_queue()
+
+    def _clear_done(self):
+        self.books.clear_finished()
+        self.show_queue()
+
+    def _refined_for(self, job):
+        try:
+            a = json.loads((Path(job["workdir"]) / "analysis.json").read_text())
+        except Exception as ex:
+            messagebox.showerror("CleanListen", f"Couldn't read that book's review ({ex}).")
+            return
+        a["title"] = job.get("title") or a.get("title", "")
+        keep = self.analysis
+        self.analysis = a
+        try:
+            self.export_refined()
+        finally:
+            self.analysis = keep
+
+    def review_job(self, key):
+        """Open a ready book's review (one at a time, on the usual review page)."""
+        job = self.books.find(key)
+        if not job or job["step"] != BQ.READY:
+            return
+        try:
+            a = json.loads((Path(job["workdir"]) / "analysis.json").read_text())
+        except Exception as ex:
+            messagebox.showerror("CleanListen", f"Couldn't open this book's review ({ex}). "
+                                 "Press Remove, then add the book again.")
+            return
+        a["title"] = job.get("title") or a.get("title", "")
+        self.analysis = a
+        self.audio, self.ebook, self.outdir = list(job["audio"]), job.get("ebook"), job["outdir"]
+        self.workdir = Path(job["workdir"])
+        self.split_chapters = job.get("split", False)
+        self.make_m4b = job.get("m4b", False)
+        self.cover_pick, self.author = job.get("cover"), job.get("author") or ""
+        self.saved_opts = dict(job.get("opts") or self.saved_opts)
+        self.review_key = key
+        self.view_mode = "list"
+        self.show_review()
+
+    def _queue_this_review(self):
+        """The book whose review is open, as a row on "Your books" (a review from before the
+        queue, or picked up again, has none yet)."""
+        job = self.books.find(self.review_key or "")
+        if job is None:
+            a = self.analysis or {}
+            opts = self.saved_opts or {}
+            parts = list(self.audio or a.get("parts", []))
+            spec = {"audio": parts, "ebook": self.ebook,
+                    "outdir": self.outdir or str(Path(parts[0]).parent / "Clean"),
+                    "title": a.get("title") or book_title(parts),
+                    "workdir": str(self.workdir), "groups": a.get("groups", []), "filter_args": {},
+                    "split": getattr(self, "split_chapters", False), "opts": dict(opts),
+                    "m4b": getattr(self, "make_m4b", False),
+                    "cover": getattr(self, "cover_pick", None),
+                    "author": getattr(self, "author", "") or None,
+                    "summary": F.summary(opts) if F.anything_on(opts) else "",
+                    "profile": dict(F.PROFILES).get(opts.get("profile"), ""),
+                    "length": a.get("duration", 0), "task": "save"}
+            job = self.books.add_ready(spec)
+            self.review_key = job["key"]
+        return job
+
+    def _leave_review(self):
+        if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
+            self.chat_win.destroy()
+        self.review_key = None
+        self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None
+        self.cover_pick, self.author = None, ""
 
     # ---------- page 3: review everything before saving ----------
     def _y_in_list(self, w):
@@ -1554,7 +1929,7 @@ class App(tk.Tk):
         ttk.Button(row, text="Change filters & re-check", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
         # a way out without saving (Jason): the review is kept to pick up again
-        ttk.Button(row, text="\u25c0 Back to start", style="Plain.TButton",
+        ttk.Button(row, text="\u25c0 My books", style="Plain.TButton",
                    command=self._back_to_start).pack(side="left")
         # send it in now, without saving the audiobook first (the ticks as they are now count)
         ttk.Button(row, text="Send what we refined…", style="Plain.TButton",
@@ -2008,12 +2383,20 @@ class App(tk.Tk):
         self.last_export = out
 
     def _save_from_review(self):
+        """Save: the ticks go into the book's analysis, and saving waits its turn on "Your
+        books" (bookrunner.save reads them), so you can review the next book meanwhile."""
         self._sync_ticks()
-        a = self.analysis
-        cuts = [sc for sc in a["scenes"] if sc.get("cut", True)]
-        mutes = [m for m in a["mutes"] if m.get("on", True)]
-        self._learn_choices()
-        self.save(cuts, mutes)
+        self._learn_choices()            # (also writes the ticks to analysis.json)
+        try:
+            job = self._queue_this_review()
+        except BQ.Busy:
+            messagebox.showinfo("CleanListen", "This book is being checked again right now. Wait "
+                                "for that to finish, then review it again.")
+            return
+        self.books.reviewed(job["key"])
+        self._leave_review()
+        self._run_queue()
+        self.show_queue()
 
     def _learn_choices(self):
         """Learn from what you chose (each choice counted once, however often you leave the
@@ -2024,62 +2407,6 @@ class App(tk.Tk):
         except Exception:
             pass
         self._save_analysis()
-
-    def save(self, cuts, mutes):
-        self._saving = True
-        self.show_working("Saving the clean audiobook\u2026")
-        self.cancel_btn.destroy()
-        threading.Thread(target=self._render_thread, args=(cuts, mutes), daemon=True).start()
-
-    # ---------- page 4: done ----------
-    def show_done(self, res):
-        p = self._new_page("All done!", "Your clean audiobook is ready.")
-        stats = tk.Frame(p, bg=BG)
-        stats.pack(fill="x", pady=20)
-        cm = res["cut_minutes"]
-        removed = (f"{cm:.0f}", "minutes removed") if cm >= 1 else (f"{cm * 60:.0f}", "seconds removed")
-        for big, small in [(str(res["mutes"]), "words muted"),
-                           (str(res["cuts"]), "passages cut"), removed]:
-            box = tk.Frame(stats, bg=CARD, padx=24, pady=14, highlightbackground=LINE,
-                           highlightthickness=1)
-            box.pack(side="left", padx=(0, 12))
-            tk.Label(box, text=big, bg=CARD, fg=ACCENT, font=(FONT, 26, "bold")).pack()
-            tk.Label(box, text=small, bg=CARD, fg=MUTED, font=(FONT, 10)).pack()
-        tk.Label(p, text=f"Saved in:  {res['out']}", bg=BG, fg=INK, font=(FONT, 10),
-                 wraplength=700, justify="left").pack(anchor="w", pady=(4, 6))
-        ch, bk = res.get("chapters"), res.get("m4b")
-        notes = []
-        if ch:
-            notes.append(f"Also split into {ch['tracks']} chapter files, in the \u201cChapters\u201d folder.")
-        if bk:
-            notes.append(f"One M4B: \u201c{Path(bk['file']).name}\u201d, {bk['chapters']} chapters"
-                         + (", with the cover." if bk["cover"] else ", no cover picture."))
-        if notes:
-            tk.Label(p, text="\n".join(notes), bg=BG, fg=INK, font=(FONT, 10), wraplength=700,
-                     justify="left").pack(anchor="w", pady=(0, 16))
-        else:
-            tk.Frame(p, bg=BG, height=10).pack()
-        row = tk.Frame(p, bg=BG)
-        row.pack(anchor="w")
-        ttk.Button(row, text="Clean another book", style="Main.TButton",
-                   command=self.reset).pack(side="left")
-        ttk.Button(row, text="Open folder", style="Go.TButton",
-                   command=lambda: open_path(res["out"])).pack(side="left", padx=(14, 0))
-        ttk.Button(row, text="See what was removed", style="Plain.TButton",
-                   command=lambda: open_path(str(Path(res["out"]) / "CleanListen report.txt"))
-                   ).pack(side="left", padx=(10, 0))
-        exp = tk.Frame(p, bg=CARD, padx=16, pady=12, highlightbackground=LINE, highlightthickness=1)
-        exp.pack(fill="x", pady=(18, 0))
-        tk.Label(exp, text="Help teach CleanListen", bg=CARD, fg=INK,
-                 font=(FONT, 12, "bold")).pack(anchor="w")
-        tk.Label(exp, text="Saves one file with everything we refined on this book \u2014 what you "
-                 "cut, kept and changed, Claude's reasons and your chat \u2014 so it can be added to "
-                 "the knowledge every copy of CleanListen starts with. No audio.", bg=CARD, fg=MUTED,
-                 font=(FONT, 9), wraplength=680, justify="left").pack(anchor="w", pady=(2, 8))
-        ttk.Button(exp, text="Export what we refined\u2026", style="Plain.TButton",
-                   command=self.export_refined).pack(anchor="w")
-        ttk.Button(self.footer, text="Re-check this book", style="Plain.TButton",
-                   command=self.recheck_same).pack(side="right")
 
     def _send_report_now(self):
         """"Send what we refined" from the review page, before the clean audiobook is saved."""

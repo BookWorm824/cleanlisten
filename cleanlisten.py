@@ -2256,6 +2256,15 @@ def _merge_ai(st, scene_pairs, mute_pairs, ai_scenes, ai_mutes, claude_ok):
             f"decide (left unticked), and unticked {n_off} it thinks were flagged by mistake.")
 
 
+def write_safely(path, text):
+    """Write a file whole or not at all (a book stopped mid-write by the queue's Cancel, or by
+    closing the window, must not leave a half-written transcript that can't be read again)."""
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
 def load_asr(workdir, parts):
     """The transcript as one word list (same shape analyze() uses)."""
     done = json.loads((Path(workdir) / "transcript.json").read_text())
@@ -2301,7 +2310,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 say(0.92 * frac, f"Listening to part {n} of {len(todo)} · {eta}")
             done[p] = transcribe(p, rec, prog, cancel=cancel)
             heard += durs[p]
-            tfile.write_text(json.dumps(done))
+            write_safely(tfile, json.dumps(done))
             log(f"Listened to {Path(p).name}: {len(done[p])} words")
 
     asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(parts) for w in done[p]]
@@ -2709,7 +2718,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             except Exception as ex:
                 st["ai_note"] = f"AI helper couldn't run ({ex})."
             log(st["ai_note"])
-    (work / "analysis.json").write_text(json.dumps(st, indent=1))
+    write_safely(work / "analysis.json", json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st
 
