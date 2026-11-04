@@ -1422,7 +1422,7 @@ class App(tk.Tk):
         elif kind == "error":
             (self.workdir / "last_error.txt").parent.mkdir(parents=True, exist_ok=True)
             (self.workdir / "last_error.txt").write_text(msg[2], encoding="utf8")
-            messagebox.showerror("CleanListen ran into a problem", msg[1])
+            messagebox.showerror("CleanListen ran into a problem", BQ.plain_error(msg[1]))
             self.show_setup()
 
     # ---------- "Your books": the queue ----------
@@ -1500,7 +1500,7 @@ class App(tk.Tk):
             return (f"✓ Saved · {r.get('mutes', 0)} words muted, "
                     f"{r.get('cuts', 0)} passages cut{gone}")
         if step == BQ.FAILED:
-            return "Ran into a problem: " + (job.get("error") or "")
+            return "Ran into a problem: " + BQ.plain_error(job.get("error"))
         return job.get("status") or BQ.STATUS.get(step, "")
 
     def show_queue(self):
@@ -1524,9 +1524,12 @@ class App(tk.Tk):
                            state="readonly", textvariable=n_var, font=(FONT, 10))
         box.pack(side="left", padx=(6, 0))
         box.bind("<<ComboboxSelected>>", lambda e: self._set_at_once(int(n_var.get())))
+        gb = BQ.memory_gb()
+        low = (f" This PC has {gb:.0f} GB of memory, so 1 at a time is safest."
+               if 0 < gb < BQ.LOW_MEMORY_GB else "")
         tk.Label(top, text="More at once finishes a pile of books sooner, but each one takes "
                  "longer. With the final check on, it also uses up your Claude, ChatGPT or "
-                 "Gemini plan's limits faster.", bg=BG, fg=MUTED, font=(FONT, 9),
+                 "Gemini plan's limits faster." + low, bg=BG, fg=MUTED, font=(FONT, 9),
                  wraplength=560, justify="left").pack(side="left", padx=(12, 0))
         ttk.Button(self.footer, text="Add another book" if self.books.jobs else "Add a book",
                    style="Main.TButton", command=self._add_book).pack(side="right")

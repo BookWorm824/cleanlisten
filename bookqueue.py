@@ -35,11 +35,54 @@ RUNNING = (PREPARING, SAVING)
 FINISHED = (DONE, FAILED, STOPPED)
 AT_ONCE_CHOICES = (1, 2, 3, 4)
 DEFAULT_AT_ONCE = 2
+# Under this much memory, one book at a time to start with, as CleanView does: each book's
+# speech recognition needs its own share, and two at once ran a smaller PC out of memory
+# ("bad allocation", 2026-11-04). They can still choose more.
+LOW_MEMORY_GB = 12
+OUT_OF_MEMORY = ("This computer ran out of memory. Set \u201cBooks at once\u201d to 1, close "
+                 "other programs, and press Try again.")
 
 STATUS = {WAITING: "Waiting its turn", PREPARING: "Starting…",
           READY: "Ready to review", SAVE_WAITING: "Waiting its turn to be saved",
           SAVING: "Saving…", DONE: "Saved", FAILED: "Ran into a problem",
           STOPPED: "Stopped"}
+
+
+def memory_gb():
+    """This PC's memory in GB (0 if it can't tell)."""
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong)] + [
+                    (n, ctypes.c_ulonglong) for n in (
+                        "ullTotalPhys", "ullAvailPhys", "ullTotalPageFile", "ullAvailPageFile",
+                        "ullTotalVirtual", "ullAvailVirtual", "ullAvailExtendedVirtual")]
+            s = Status()
+            s.dwLength = ctypes.sizeof(Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(s)):
+                return s.ullTotalPhys / 2 ** 30
+            return 0
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2 ** 30
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
+def default_at_once(gb=None):
+    """How many books at once to start with on this PC."""
+    gb = memory_gb() if gb is None else gb
+    return 1 if 0 < gb < LOW_MEMORY_GB else DEFAULT_AT_ONCE
+
+
+def plain_error(text):
+    """The problem in everyday words when memory ran out ("bad allocation" is what the speech
+    recognizer says); anything else as it was."""
+    t = str(text or "")
+    if any(w in t.lower() for w in ("bad allocation", "bad_alloc", "memoryerror", "out of memory",
+                                    "not enough memory", "failed to allocate", "unable to allocate")):
+        return OUT_OF_MEMORY
+    return t
 
 
 class Busy(Exception):
@@ -54,10 +97,11 @@ def threads_each(at_once, cpus=None):
 
 
 class BookQueue:
-    def __init__(self, path, at_once=DEFAULT_AT_ONCE):
+    def __init__(self, path, at_once=None):
         self.path = Path(path)
         self.jobs = []
-        self.at_once = at_once
+        self.at_once = at_once or default_at_once()
+        self.chosen = False          # they picked "Books at once" themselves
         self.load()
 
     # ---------- keeping it ----------
@@ -68,15 +112,18 @@ class BookQueue:
             return
         self.jobs = [j for j in data.get("jobs", []) if isinstance(j, dict) and j.get("key")]
         n = data.get("at_once", self.at_once)
-        self.at_once = n if n in AT_ONCE_CHOICES else DEFAULT_AT_ONCE
+        # 1.14.0-1.14.3 saved 2 on every PC without asking: only a choice of theirs is kept
+        self.chosen = bool(data.get("at_once_chosen", n != DEFAULT_AT_ONCE))
+        if self.chosen and n in AT_ONCE_CHOICES:
+            self.at_once = n
 
     def save(self):
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             keep = [{k: v for k, v in j.items() if not k.startswith("_")} for j in self.jobs]
             tmp = self.path.with_name(self.path.name + f".{os.getpid()}.tmp")
-            tmp.write_text(json.dumps({"at_once": self.at_once, "jobs": keep}, indent=1),
-                           encoding="utf8")
+            tmp.write_text(json.dumps({"at_once": self.at_once, "at_once_chosen": self.chosen,
+                                       "jobs": keep}, indent=1), encoding="utf8")
             os.replace(tmp, self.path)
         except OSError:
             pass
@@ -105,7 +152,8 @@ class BookQueue:
         return sum(1 for j in self.jobs if j["step"] in steps)
 
     def set_at_once(self, n):
-        self.at_once = n if n in AT_ONCE_CHOICES else DEFAULT_AT_ONCE
+        self.at_once = n if n in AT_ONCE_CHOICES else default_at_once()
+        self.chosen = True
         self.save()
 
     def add(self, spec):

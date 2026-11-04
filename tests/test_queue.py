@@ -460,3 +460,29 @@ def test_a_worker_notices_the_window_has_gone():
     gone = subprocess.Popen([sys.executable, "-c", "pass"])
     gone.wait()
     assert bookrunner.window_gone(gone.pid)
+
+
+# "bad allocation" (2026-11-04): two books at once ran a smaller PC out of memory
+def test_one_book_at_a_time_on_a_pc_with_little_memory(tmp_path, monkeypatch):
+    assert BQ.default_at_once(8) == 1 and BQ.default_at_once(16) == 2
+    assert BQ.default_at_once(0) == 2                    # can't tell: as before
+    monkeypatch.setattr(BQ, "memory_gb", lambda: 8)
+    q = BQ.BookQueue(tmp_path / "queue.json")
+    assert q.at_once == 1
+    # 1.14.0-1.14.3 saved 2 without being asked: a small PC goes down to 1
+    (tmp_path / "queue.json").write_text('{"at_once": 2, "jobs": []}')
+    assert BQ.BookQueue(tmp_path / "queue.json").at_once == 1
+    # their own choice is kept, also 2
+    q.set_at_once(2)
+    assert BQ.BookQueue(tmp_path / "queue.json").at_once == 2
+    (tmp_path / "queue.json").write_text('{"at_once": 3, "jobs": []}')     # chose 3 before
+    assert BQ.BookQueue(tmp_path / "queue.json").at_once == 3
+
+
+def test_running_out_of_memory_is_said_plainly():
+    for raw in ("bad allocation", "std::bad_alloc", "MemoryError", "Unable to allocate 2.1 GiB",
+                "[ONNXRuntimeError] : 6 : Failed to allocate memory"):
+        assert BQ.plain_error(raw) == BQ.OUT_OF_MEMORY
+    assert "Books at once" in BQ.OUT_OF_MEMORY and "allocation" not in BQ.OUT_OF_MEMORY
+    assert BQ.plain_error("Couldn't save Part 1.mp3") == "Couldn't save Part 1.mp3"
+    assert BQ.plain_error(None) == ""
