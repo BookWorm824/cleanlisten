@@ -305,6 +305,11 @@ helper sees them as "not a problem" examples. Only teach clear mistakes she unti
 flagged as religion, "pleasure to meet you" as a sexual reference), never her own choice to keep
 something that fits its filter (preaching in a Christian novel). First batch (2026-10-30): At
 Every Turn, Camp Club Girls, Love Songs Suck, The Boxcar Children (63 marks, built by hand).
+Second batch (2026-11-03): Playing by Heart, Wings of a Dream, All That Glitters (147 marks;
+book-check kinds like "lying" and "romance" count too). Taught: lines she or Claude unticked that
+don't fit their filter ("slapped his hat on his head" as violence, "stole over me" as lying, a
+man-and-woman romance as same-sex). Not taught: anything she ticked back after Claude kept it, lines
+that fit (blood as gore, preaching or prayers as religion), and lines with a listed word.
 
 ## 8. Testing
 

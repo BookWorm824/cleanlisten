@@ -134,7 +134,17 @@ def test_built_in_marks_from_sent_in_reports(book, tmp_path, monkeypatch):
 
 def test_shipped_marks_are_well_formed():
     fine = R.shared_fine()
-    assert fine and set(fine) <= set(R.CLEAN_AI)
+    # the clean copy's filters, and the book check's kinds ("Lying, sneaking & stealing", romance)
+    assert fine and set(fine) <= set(R.CLEAN_AI) | {row[0] for row in R.SCAN}
     for kind, lst in fine.items():
         for key, text in lst:
             assert key == R.item_key(text) or R.item_key(text).startswith(key[:150]), (kind, text)
+
+
+def test_built_in_marks_are_usable():
+    """Every built-in "not a problem" mark (shared_learned.json, from the reports families sent
+    in) has the sentence's own key and no listed word in it (a listed word is never "fine")."""
+    for kind, lst in R.shared_fine().items():
+        for key, text in lst:
+            assert key == R.item_key(text), (kind, text)
+            assert not R.E.find_language([R.nrm(w) for w in text.split() if R.nrm(w)], R.E.ALL_CATS), text
