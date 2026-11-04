@@ -80,7 +80,10 @@ def plain_error(text):
     recognizer says); anything else as it was."""
     t = str(text or "")
     if any(w in t.lower() for w in ("bad allocation", "bad_alloc", "memoryerror", "out of memory",
-                                    "not enough memory", "failed to allocate", "unable to allocate")):
+                                    "not enough memory", "failed to allocate", "unable to allocate",
+                                    # Windows' own words (WinError 1455, 1450, 8)
+                                    "paging file is too small", "insufficient system resources",
+                                    "not enough storage is available")):
         return OUT_OF_MEMORY
     return t
 

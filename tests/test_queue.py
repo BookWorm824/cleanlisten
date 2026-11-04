@@ -481,7 +481,10 @@ def test_one_book_at_a_time_on_a_pc_with_little_memory(tmp_path, monkeypatch):
 
 def test_running_out_of_memory_is_said_plainly():
     for raw in ("bad allocation", "std::bad_alloc", "MemoryError", "Unable to allocate 2.1 GiB",
-                "[ONNXRuntimeError] : 6 : Failed to allocate memory"):
+                "[ONNXRuntimeError] : 6 : Failed to allocate memory",
+                "[WinError 1455] The paging file is too small for this operation to complete",
+                "[WinError 1450] Insufficient system resources exist to complete the requested service",
+                "[WinError 8] Not enough storage is available to process this command"):
         assert BQ.plain_error(raw) == BQ.OUT_OF_MEMORY
     assert "Books at once" in BQ.OUT_OF_MEMORY and "allocation" not in BQ.OUT_OF_MEMORY
     assert BQ.plain_error("Couldn't save Part 1.mp3") == "Couldn't save Part 1.mp3"

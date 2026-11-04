@@ -45,12 +45,30 @@ def _tool(name):
 _NOWIN = {"creationflags": 0x08000000} if os.name == "nt" else {}
 
 
+# Windows' "not enough memory" errors when starting a program: 1455 "The paging file is too
+# small", 1450/1453 "Insufficient system resources/quota", 8/14 "Not enough storage/memory".
+# Seen saving a 4.5-hour book on a smaller PC (2026-11-04): memory frees up as other work ends,
+# so wait and try again before giving up.
+LOW_MEMORY_ERRORS = {8, 14, 1450, 1453, 1455}
+LOW_MEMORY_WAITS = (5, 15, 30)
+
+
+def _start(start, cmd, kw):
+    for wait in LOW_MEMORY_WAITS + (None,):
+        try:
+            return start(cmd, **_NOWIN, **kw)
+        except OSError as ex:
+            if wait is None or getattr(ex, "winerror", None) not in LOW_MEMORY_ERRORS:
+                raise
+            time.sleep(wait)
+
+
 def run(cmd, **kw):
-    return subprocess.run(cmd, **_NOWIN, **kw)
+    return _start(subprocess.run, cmd, kw)
 
 
 def popen(cmd, **kw):
-    return subprocess.Popen(cmd, **_NOWIN, **kw)
+    return _start(subprocess.Popen, cmd, kw)
 
 
 def probe_duration(path):
@@ -1766,6 +1784,17 @@ def crude_hit(words):
     return any(tuple(words[i:i + len(ph)]) == ph for ph in CRUDE_PHRASES for i in range(len(words)))
 
 
+def free_ai_memory():
+    """Ask Ollama to let go of the AI helper's model now instead of 5 minutes later: it holds
+    several GB, and on a smaller PC the next step or the next book needs them ("The paging file
+    is too small", 2026-11-04). Another book still using it just loads it again."""
+    try:
+        ai = _ai_module()
+        ai._api("/api/generate", {"model": ai.MODEL, "keep_alive": 0}, timeout=10).close()
+    except Exception:
+        pass
+
+
 def _ai_module():
     try:
         import cleanview_ai as ai  # ships alongside CleanListen (shared with CleanView)
@@ -2691,6 +2720,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             raise
         except Exception as ex:
             ai_note = f"AI helper couldn't run ({ex}); results are from the word lists only."
+        finally:
+            free_ai_memory()
         log(ai_note)
     scenes.sort(key=lambda x: (x["part"], x["s"]))
     for n, sc in enumerate(scenes, 1):
@@ -2743,6 +2774,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 raise
             except Exception as ex:
                 st["ai_note"] = f"AI helper couldn't run ({ex})."
+            finally:
+                free_ai_memory()
             log(st["ai_note"])
     write_safely(work / "analysis.json", json.dumps(st, indent=1))
     say(1.0, "Done listening.")
