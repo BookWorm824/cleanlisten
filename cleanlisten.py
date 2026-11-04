@@ -114,6 +114,14 @@ MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "
 # cvcore.MINCED_SLANG.
 MINCED_PHRASES = [("what", "the", w) for w in ("fudge", "flip", "fork", "frack", "fuh", "devil",
                                                  "dickens", "deuce", "blazes")]
+# "how the dickens", "scared the dickens out of me", "hurts like the dickens", "oh dickens"
+# (Julie & Julia; Lauren 2026-11-03), never "Charles Dickens" or "the Dickens novel"
+# (CleanView 1.18.11)
+MINCED_PHRASES += [(wh, *i_, "the", w) for wh in ("how", "who", "where", "why", "when")
+                   for i_ in ((), ("in",)) for w in ("dickens", "deuce", "blazes")]
+MINCED_PHRASES += [("the", w, "out", "of") for w in ("dickens", "deuce")]
+MINCED_PHRASES += [("like", "the", w) for w in ("dickens", "deuce", "blazes")]
+MINCED_PHRASES += [(o, *t, "dickens") for o in ("oh", "aw", "ah") for t in ((), ("the",))]
 MINCED_PHRASES += [(o, w) for o in ("oh", "aw", "ah", "ahh", "aww") for w in ("fudge", "shoot", "sugar")]
 MINCED_PHRASES += [("gee", w) for w in ("whiz", "whizz", "willikers", "whillikers", "wilikers")]
 MINCED_PHRASES += [("jeepers", "creepers"), ("goodness", "gracious"), ("my", "goodness"),
@@ -432,6 +440,8 @@ GAY_HAPPY_NEXT = {"refrain", "apparel", "abandon", "laughter", "nineties", "pare
 INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
+                 # turf: "sod houses", "a sod roof" (CleanView 1.18.11, from CleanRead)
+                 "sod": {"house", "houses", "roof", "roofs", "hut", "huts", "buster", "busters"},
                  "cum": {"laude"}, "peckers": {"up"}, "pecker": {"up"},
                  "retard": {"the", "its", "their", "growth"},
                  "horny": {"toad", "toads"}, "boob": {"tube", "tubes"},
@@ -450,7 +460,15 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                  # "gay" meaning happy ("the gay refrain", "don we now our gay apparel")
                  "gay": GAY_HAPPY_NEXT,
                  "bullshit": {"degree", "degrees"}}                 # "a BS degree"
-INNOCENT_PREV = {"dick": {"moby", "uncle", "big"}, "cum": {"summa", "magna"},
+INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WWI army camp
+                 "cum": {"summa", "magna"},
+                 # a small sting: "a tiny prick of black", "a jealous prick at my heart",
+                 # "you can prick them" (never "you little prick", "that prick")
+                 "prick": {"tiny", "jealous", "sharp", "slight", "faint", "sudden", "pin",
+                           "needle", "to", "can", "could", "will", "would", "may", "might"},
+                 # turf: "an unending strip of sod" (never "sod it", "you lucky sod")
+                 "sod": {"of", "with", "some", "fresh", "green", "new", "lay", "laid",
+                         "laying", "cut", "grass"},
                  "hooker": {"general", "john", "joe"}, "hookers": {"general"},
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
                  "butt": {"cigarette", "cigar", "rifle", "gun"},
@@ -540,7 +558,9 @@ SEX_TERMS = {
 NOT_SEX_BEFORE = {
     "pleasure": {"a", "my", "the", "our", "great", "such", "real", "your", "true"},
     "sex": {"your", "our", "her", "his", "their", "fair", "fairer", "weaker", "gentle",
-            "gentler", "opposite", "same", "other", "either", "each", "whose"},
+            "gentler", "opposite", "same", "other", "either", "each", "whose",
+            # "the others of my sex", "we are a marvelous sex" (My Fair Lady, CleanView 1.18.11)
+            "my", "marvelous", "marvellous", "stronger", "superior", "inferior", "noble"},
 }
 SEX_WINDOW_SCORE = 9   # a stretch of ~3 paragraphs (or ~60s) scoring this much gets flagged
 SEX_PARA_SCORE = 3     # a single paragraph inside such a stretch must score this to be cut
@@ -662,16 +682,18 @@ def listed_word(text, cats):
     return bool(ws) and bool(find_language(ws, list(cats)))
 
 
-def find_language(words, cats, lead_in_too=False, mine=()):
+def find_language(words, cats, lead_in_too=False, mine=(), breaks=()):
     """Return (i, j, category) spans of words[i:j] to mute. With lead_in_too, a swear's
     lead-in ("what the" hell) is part of its span. mine: your own words and phrases (tuples of
-    normalised words), always muted, as category "mine" (as in CleanView)."""
+    normalised words), always muted, as category "mine" (as in CleanView). breaks: the indexes
+    of words that start a sentence (CleanRead's books), so God's name phrases aren't matched
+    across a full stop ("Help me, Lord. Help me to trust")."""
     own = []
     for ph in sorted(mine, key=len, reverse=True):
         for i in range(len(words) - len(ph) + 1):
             if tuple(words[i:i + len(ph)]) == ph and not any(a < i + len(ph) and i < b for a, b, _ in own):
                 own.append((i, i + len(ph), "mine"))
-    hits = [h for h in _find_language(words, cats)
+    hits = [h for h in _find_language(words, cats, breaks)
             if not any(a < h[1] and h[0] < b for a, b, _ in own)]
     if lead_in_too:
         for k, (i, j, cat) in enumerate(hits):
@@ -691,8 +713,9 @@ def own_phrases(lines):
     return out
 
 
-def _find_language(words, cats):
+def _find_language(words, cats, breaks=()):
     hits, n, i = [], len(words), 0
+    breaks = breaks if isinstance(breaks, (set, frozenset)) else set(breaks)
     fruit = fruit_slang(words) if "moderate" in cats else set()
     while i < n:
         found = None
@@ -714,6 +737,13 @@ def _find_language(words, cats):
                         continue  # "the gospel of Jesus Christ"
                     if cat == "deity" and ph[-1] == "god" and nxt in GOD_NOT_OATH:
                         continue  # "uh oh, God save the queen", "oh God, bless you"
+                    if cat == "deity" and (ph[-1] == "knows" and nxt in KNOWS_NOT_OATH or
+                                           ph[-2:-1] == ("help",) and nxt in HELP_NOT_OATH):
+                        continue  # "God knows best", "Lord, help me to trust You"
+                    if cat == "deity" and breaks and any(k in breaks for k in range(i + 1, i + len(ph))):
+                        continue  # "Help me, Lord. Help me to trust" (two sentences)
+                    if ph[-1] == "dickens" and ph[0] in ("oh", "aw", "ah") and nxt in DICKENS_NOT_NEXT:
+                        continue  # "Oh, the Dickens museum"
                     if ph == ("up", "yours") and i and words[i - 1] in UP_YOURS_NOT_AFTER:
                         continue  # "you hold up yours" (your end of a deal)
                     found = (ph, cat)
@@ -761,6 +791,11 @@ def _find_language(words, cats):
 # CleanView 1.18.10's guards (the November reports)
 UP_YOURS_NOT_AFTER = {"hold", "holds", "held", "holding", "keep", "keeps", "kept", "keeping"}
 GOD_NOT_OATH = {"save", "bless", "blessed", "willing"}   # "oh God" / "my God" before a prayer
+# CleanView 1.18.11: "God knows best" is faith, not "God knows!"; "Lord, help me to trust" is a
+# prayer, not "Lord help me, I'll strangle him" (CleanRead: Wings of a Dream)
+KNOWS_NOT_OATH = {"best"}
+HELP_NOT_OATH = {"to"}
+DICKENS_NOT_NEXT = {"novel", "book", "story", "stories", "museum", "fan"}
 FREAK_WORDS = {"freaking", "freakin"}
 
 
@@ -1749,7 +1784,7 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
                   "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
                   "hookers", "tosser", "tossers", "shat", "boner", "boners", "bull", "squat", "gee",
-                  "crud", "cruddy", *SUCK_WORDS, *FRUIT_WORDS}
+                  "crud", "cruddy", "sod", *SUCK_WORDS, *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
 # verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
 

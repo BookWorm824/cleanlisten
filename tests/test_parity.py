@@ -144,7 +144,8 @@ def test_the_ai_looks_for_same_sex_content_but_only_ticks_what_the_lists_see(boo
 @pytest.mark.parametrize("kind,text,hit", [
     ("violence", "He punched him and ran.", True), ("violence", "She owned a gun.", False),
     ("disturbing", "They tortured the prisoner for days.", True),
-    ("nudity", "She was stark naked.", True), ("nudity", "He saw it with the naked eye.", True),
+    ("nudity", "She was stark naked.", True), ("nudity", "He came in naked.", True),
+    ("nudity", "He saw it with the naked eye.", False),   # CleanView 1.18.11
     ("implied", "He came out wrapped in a towel.", True),
     ("immodest", "She strutted past in a bikini.", True),
     ("gestures", "He flipped them off and drove away.", True),

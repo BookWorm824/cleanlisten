@@ -403,7 +403,9 @@ class Book:
         # every bad word in the book (all categories), for starring out previews
         self.old_style = old_style_book(self.wn)
         self.bad = {}
-        self.lang_hits = E.find_language(self.wn, E.ALL_CATS)
+        # God's name phrases aren't matched across a full stop ("Help me, Lord. Help me to trust")
+        self.breaks = frozenset(s[3] for s in self.sents)
+        self.lang_hits = E.find_language(self.wn, E.ALL_CATS, breaks=self.breaks)
         for i, j, cat in self.lang_hits:
             q = self.words[i][0]
             self.bad.setdefault(q, []).append((self.words[i][1], self.words[j - 1][2]))
@@ -811,7 +813,33 @@ DRUGS = Matcher(
              "smoked|smoking|smoke|smokes a joint",
              "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line",
              "shot|shooting up"])
-NUDITY = Matcher(
+# Not about a body (CleanRead reports, 2026-11-03): "a topless automobile", "the fear in her
+# eyes naked", "my discomfort stood naked", "the naked eye", "the naked truth". Still found:
+# "a topless dancer", "stood naked and unashamed".
+TOPLESS_NOT_NEXT = {"car", "cars", "automobile", "automobiles", "motorcar", "motorcars", "roadster",
+                    "roadsters", "convertible", "convertibles", "bus", "buses", "jeep", "jeeps"}
+NAKED_NOT_AFTER = {"eyes", "fear", "discomfort", "grief", "pain", "emotion", "longing", "soul"}
+NAKED_NOT_NEXT = {"eye", "truth", "flame", "flames", "ambition", "blade", "blades", "steel",
+                  "branches"}
+
+
+def innocent_nudity(words, i):
+    """Is words[i] ("naked", "topless") about something other than a body?"""
+    w, nxt = words[i], (words[i + 1] if i + 1 < len(words) else "")
+    if w == "topless":
+        return nxt in TOPLESS_NOT_NEXT
+    if w == "naked":
+        return nxt in NAKED_NOT_NEXT or any(p in NAKED_NOT_AFTER for p in words[max(0, i - 2):i])
+    return False
+
+
+class NudityMatcher(Matcher):
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in super().__call__(words, near)
+                if not (j == i + 1 and innocent_nudity(words, i))]
+
+
+NUDITY = NudityMatcher(
     words=[r"naked", r"nude", r"nudity", r"nudist", r"topless", r"bottomless"],
     phrases=["in the buff|raw", "stark naked", "bare breasts|breast|bottom|buttocks",
              "took|takes|taking off all her|his|their|my clothes"])
@@ -1893,7 +1921,7 @@ def analyze(book, opts, progress=None, cancel=None):
     mine = E.own_phrases(opts.get("mywords"))      # your own words, always marked out
     say(0.02, "Finding language…")
     mutes = []
-    for i, j, cat in E.find_language(book.wn, cats, mine=mine):
+    for i, j, cat in E.find_language(book.wn, cats, mine=mine, breaks=book.breaks):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
@@ -2024,7 +2052,7 @@ def _sent_cut(book, kind, run_):
 
 AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks", "bugger",
              "tits", "sex", "sexes", "sexual", "sexually", "climaxed", "homo", "homos", "queer",
-             "queers", "screw", "gay", "gays", "damned", "christ", "jesus", "lord", "god"}
+             "queers", "screw", "gay", "gays", "damned", "christ", "jesus", "lord", "god", "sod"}
 
 
 def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""):

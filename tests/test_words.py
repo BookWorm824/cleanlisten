@@ -661,3 +661,48 @@ def test_one_explicit_word_said_over_and_over_isnt_a_sex_scene():
 def test_gay_meaning_happy_isnt_a_same_sex_line():
     assert not E.relationship_hit(words("They sang the gay refrain all evening."))
     assert E.relationship_hit(words("He told his parents he was gay."))
+
+
+# CleanView 1.18.11 (Julie & Julia, My Fair Lady, and the CleanRead reports: Wings of a Dream,
+# Playing by Heart, All That Glitters)
+@pytest.mark.parametrize("text", [
+    "Arthur went to Camp Dick in Texas", "a tiny prick of black escaped",
+    "I felt a jealous prick at my heart", "you can prick them", "an unending strip of sod",
+    "they lived in sod houses", "God knows best", "Lord help me to trust you",
+    "God help us to know", "Charles Dickens wrote it", "the Dickens novel", "I love Dickens",
+    "A Dickens Christmas", "Oh, the Dickens museum"])
+def test_cleanview_1_18_11_everyday_uses(text):
+    assert hits(text, EVERY + ["rude", "orientation"]) == []
+
+
+@pytest.mark.parametrize("text, word", [
+    ("what a dick", "dick"), ("you little prick", "prick"), ("that prick at the office", "prick"),
+    ("sod it", "sod"), ("sod off", "sod"), ("you lucky sod", "sod"), ("the poor sod", "sod"),
+    ("God knows where he went", "god knows"), ("Lord help me, I will strangle him", "lord help me"),
+    ("God help us, they are here", "god help us"), ("How the dickens did you get in?", "how the dickens"),
+    ("where in the dickens is it", "where in the dickens"),
+    ("It scared the dickens out of me", "the dickens out of"),
+    ("It hurts like the dickens", "like the dickens"), ("Oh dickens!", "oh dickens"),
+    ("Oh, the dickens", "oh the dickens")])
+def test_cleanview_1_18_11_still_caught(text, word):
+    w = words(text)
+    assert word in [" ".join(w[i:j]) for i, j, _ in E.find_language(w, EVERY)]
+
+
+def test_sex_meaning_men_or_women_isnt_sex_talk():
+    # My Fair Lady: "the others of my sex", "we are a marvelous sex"
+    base = words("naked and thrust")
+    assert E.sex_score(words("my sex") + base) == E.sex_score(base)
+    assert E.sex_score(words("marvelous sex") + base) == E.sex_score(base)
+    assert E.sex_score(words("had sex") + base) > E.sex_score(base)
+
+
+def test_gods_name_phrases_dont_cross_a_full_stop():
+    w = words("Help me, Lord. Help me now")
+    assert E.find_language(w, ["deity"]) == [(2, 5, "deity")]          # without the sentences
+    assert E.find_language(w, ["deity"], breaks={3}) == []
+    assert E.find_language(words("Oh, Lord help me now"), ["deity"], breaks={0})
+
+
+def test_sod_meaning_turf_may_be_left_in():
+    assert "sod" in E.INNOCENT_WORDS
