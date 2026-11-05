@@ -177,9 +177,13 @@ def test_both_ais_look_at_once_and_the_final_check_decides(clip, monkeypatch):
     st = E.analyze([audio], work, use_ai=True, use_claude=True, log=lambda *a: None)
     assert [m["on"] for m in st["mutes"] if m["cat"] == "mild"] == [True]
     added = [x for x in st["scenes"] + st["mutes"] if x.get("ai_note", x.get("note")) == "AI on this PC suggests"]
-    assert len(added) == 2 and not any(x.get("cut", x.get("on")) for x in added)
+    # the word comes in unticked; its passage ("Then everyone went home." as a sexual
+    # reference) is left out: the final check read it and the word lists don't back it
+    # (Blue Ridge Sunrise, 2026-11-05: 902 such picks)
+    assert len(added) == 1 and not any(x.get("cut", x.get("on")) for x in added)
+    assert not any("everyone went home" in x.get("text", "") for x in st["scenes"])
     assert sorted(x["id"] for x in st["mutes"]) == list(range(1, len(st["mutes"]) + 1))
-    assert "at the same time" in st["ai_note"]
+    assert "at the same time" in st["ai_note"] and "1 other passages" in st["ai_note"]
 
 
 def test_if_the_final_check_fails_the_ai_on_this_pc_works_as_alone(clip, monkeypatch):

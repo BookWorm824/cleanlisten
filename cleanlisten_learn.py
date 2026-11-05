@@ -159,6 +159,11 @@ def record(st):
     d = load()
     for sc in st.get("scenes", []):
         on = sc.get("cut", True)
+        if not on and not sc.get("by_you") and sc.get("_learned_as") is None:
+            # offered unticked (an AI's or Claude's suggestion, something learned) and left
+            # alone: not a choice of yours. Blue Ridge Sunrise (2026-11-05) had 902 of them,
+            # which filled the "kept" memory and pushed out what you really chose.
+            continue
         for s in _sentences(sc.get("text", "")):
             _remember(d["cut"] if on else d["kept"], s, d["kept"] if on else d["cut"])
             if on and sc.get("kind") and sc.get("kind") != "added":
@@ -166,7 +171,8 @@ def record(st):
         _count(d["kinds"], sc.get("kind", "?"), sc, bool(on), "cut", "kept")
     for m in st.get("mutes", []):
         w = _word(m)
-        if not w:
+        if not w or (not m.get("on", True) and not m.get("by_you")
+                     and m.get("_learned_as") is None):
             continue
         _count(d["words"], w, m, bool(m.get("on", True)), "muted", "kept")
         # words the lists don't know (added by you, Claude/ChatGPT or the AI): remember them
@@ -296,15 +302,16 @@ def told(title=""):
 
 
 def examples(n=12):
-    """Some past choices for the AI readers: yours first, then Claude's, then shared."""
+    """Some past choices for the AI readers: yours first, then the shared ones (from the
+    family's own reports). Not Claude's own past answers: shown as "this family's choices"
+    they only taught Claude to repeat itself ("claude didn't change", 2026-11-05)."""
     d = load()
     sh = shared()
     out = {}
     for k in ("cut", "kept"):
         mine = d[k][-n:][::-1]
-        theirs = [t for t in d["claude_" + k][::-1] if t not in mine][:n - len(mine)]
-        built = [t for t in sh[k][::-1] if t not in mine + theirs]
-        out[k] = (mine + theirs + built)[:n]
+        built = [t for t in sh[k][::-1] if t not in mine]
+        out[k] = (mine + built)[:n]
     return out
 
 

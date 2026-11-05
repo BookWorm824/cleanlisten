@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import cleanlisten as E
@@ -693,6 +694,24 @@ CLEAR_SWEARS = {"strong", "moderate"}
 # ---------------------------------------------------------------------------
 # Applying Claude's answers
 # ---------------------------------------------------------------------------
+RETRY_WAIT = 10       # seconds before a failed section is tried again
+
+
+def _spans(st, asr, a, b):
+    """Sentences a..b as {"part", "s", "e"} times, one per part they're in."""
+    sents = st["sentences"]
+    wa, wb = sents[a][0], sents[b][1]
+    out, i = [], wa
+    while i <= wb:
+        p, j = asr[i]["part"], i
+        while j + 1 <= wb and asr[j + 1]["part"] == p:
+            j += 1
+        s_, e_ = E.span_times(asr, i, j)
+        out.append({"part": p, "s": s_, "e": e_})
+        i = j + 1
+    return out
+
+
 def _add_passage(st, asr, a, b, kind, on, note, reason, src="claude"):
     sents = st["sentences"]
     if not (0 <= a <= b < len(sents)):
@@ -898,7 +917,7 @@ def review(st, asr, progress=None, cancel=None):
     secs = _sections(texts)
     counts = {"agree": 0, "off": 0, "unsure": 0, "on": 0, "found": 0, "suggested": 0, "word": 0,
               "trim": 0}
-    errors = []
+    errors, unread = [], []
     for n, (a, b) in enumerate(secs):
         if cancel and cancel():
             raise KeyboardInterrupt
@@ -916,11 +935,21 @@ def review(st, asr, progress=None, cancel=None):
                   ("\n".join(finds) if finds else "(none)") +
                   "\n\nGive a decision for every finding ID above, then list anything missed in "
                   "sentences S%d to S%d." % (a + 1, b + 1))
-        try:
-            data = run(prompt, system, schema=REVIEW_SCHEMA)["data"]
-        except ClaudeError as ex:
-            errors.append(str(ex))
-            if "signed in" in str(ex) or "limit" in str(ex):
+        data, err = None, ""
+        for attempt in (1, 2):      # once more after a failure ("stopped without an answer")
+            try:
+                data = run(prompt, system, schema=REVIEW_SCHEMA)["data"]
+                break
+            except ClaudeError as ex:
+                err = str(ex)
+                if "signed in" in err or "limit" in err or attempt == 2:
+                    break
+                time.sleep(RETRY_WAIT)
+        if data is None:
+            errors.append(err)
+            unread.append((a, b))
+            if "signed in" in err or "limit" in err:
+                unread += secs[n + 1:]
                 break
             continue
         apply_review(st, data, counts, asr)
@@ -953,8 +982,13 @@ def review(st, asr, progress=None, cancel=None):
             + (f" It trimmed {counts['trim']} long passage(s) down to just the part that needs cutting."
                if counts["trim"] else "")
             + (f" {counts['unsure']} it wasn't sure about are marked “{N} unsure”." if counts["unsure"] else ""))
+    if unread and len(unread) == len(secs):
+        raise ClaudeError(errors[0] if errors else f"{N} couldn't read the book.")
+    # the parts it couldn't read: there the word lists and the AI on this PC decide (_merge_ai)
+    st["claude_unchecked"] = [sp for a, b in unread for sp in _spans(st, asr, a, b)]
     if errors:
-        note += f" Some sections couldn't be checked: {errors[0]}"
+        note += (f" {len(unread)} of {len(secs)} sections couldn't be checked ({errors[0]}); "
+                 "there the word lists and the AI on this PC decide.")
     st["claude_note"] = note
     st["claude_checked"] = True
     st["reviewer"] = N

@@ -24,8 +24,9 @@ HERE = Path(__file__).resolve().parent
 OLLAMA = os.environ.get("CLEANVIEW_OLLAMA", "http://127.0.0.1:11434")
 STARTUP_LINK = (Path(os.environ.get("APPDATA") or Path.home()) / "Microsoft" / "Windows" /
                 "Start Menu" / "Programs" / "Startup" / "Ollama.lnk")
-# a CleanView, CleanListen or CleanRead window, or a CleanListen book worker
-CLEAN_APPS = r"(CleanView|CleanListen|CleanRead)\.pyw|bookrunner\.py"
+# a CleanView, CleanListen or CleanRead window, a CleanListen book worker or a CleanView
+# video worker (videoqueue.py, CleanView 1.18.x: it runs the local AI too)
+CLEAN_APPS = r"(CleanView|CleanListen|CleanRead)\.pyw|bookrunner\.py|videoqueue\.py"
 _NOWIN = 0x08000000 if os.name == "nt" else 0
 
 

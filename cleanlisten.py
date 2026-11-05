@@ -2293,10 +2293,18 @@ def _overlaps(x, items):
 def _merge_ai(st, scene_pairs, mute_pairs, ai_scenes, ai_mutes, claude_ok):
     """Put what the AI on this PC found (in its own copies) into the checked results. After a
     final check, it can't untick anything (the final check decides), and what only it found is
-    added unticked for you to decide. If the final check failed, it works as it does alone.
-    Returns the note for the review screen."""
+    added unticked for you to decide - but only passages the word lists back: in the parts the
+    final check read, its unbacked picks are left out (Blue Ridge Sunrise, 2026-11-05: 902 of
+    them, none real - ordinary man-and-woman scenes as same-sex, "He hasn't." as a relationship).
+    In parts the final check couldn't read (st["claude_unchecked"]), and if it failed, it works
+    as it does alone. Returns the note for the review screen."""
     scenes, mutes = st["scenes"], st["mutes"]
-    n_new = n_sure = n_off = 0
+    n_new = n_sure = n_off = n_left = 0
+    unread = st.get("claude_unchecked") or []
+
+    def read_by_claude(x):
+        return not any(u["part"] == x["part"] and x["s"] < u["e"] and x["e"] > u["s"]
+                       for u in unread)
     if not claude_ok:
         live = {id(x) for x in scenes + mutes}
         for orig, mine in scene_pairs:
@@ -2315,7 +2323,11 @@ def _merge_ai(st, scene_pairs, mute_pairs, ai_scenes, ai_mutes, claude_ok):
         for x in found:
             if id(x) in copies or _overlaps(x, items):
                 continue
-            if claude_ok:
+            if claude_ok and items is scenes and read_by_claude(x) and not _ai_backed(
+                    x.get("kind"), [norm(w) for w in str(x.get("text", "")).split()]):
+                n_left += 1
+                continue
+            if claude_ok and read_by_claude(x):
                 x[key], x[note_key] = False, "AI on this PC suggests"
             n_new += 1
             n_sure += bool(x[key])
@@ -2328,7 +2340,9 @@ def _merge_ai(st, scene_pairs, mute_pairs, ai_scenes, ai_mutes, claude_ok):
         m["id"] = n
     if claude_ok:
         return (f"The AI on this PC looked too, at the same time: it found {n_new} more the final "
-                "check didn't (left unticked for you to decide).")
+                "check didn't (left unticked for you to decide)."
+                + (f" {n_left} other passages it flagged were left out: the final check read them "
+                   "and nothing on the word lists backs them." if n_left else ""))
     return (f"AI helper added {n_sure} it's sure about, suggested {n_new - n_sure} more for you to "
             f"decide (left unticked), and unticked {n_off} it thinks were flagged by mistake.")
 
