@@ -3148,22 +3148,44 @@ def find_cover(parts):
     return ("file", str(best))
 
 
+# An M4B (ffmpeg's "ipod" format) takes only a JPG cover: a PNG one stopped saving with "Could
+# not find tag for codec png" (Nearly Free, 2026-11-05). Every cover is made a JPG first.
+JPG_COVER = ["-c:v", "mjpeg", "-q:v", "2", "-pix_fmt", "yuvj420p"]
+
+
+def is_jpeg(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read(3) == b"\xff\xd8\xff"
+    except OSError:
+        return False
+
+
+def _jpeg_cover(src, workdir):
+    """The picture as a JPG (itself when it already is one)."""
+    if is_jpeg(src):
+        return str(src)
+    dst = Path(workdir) / "cover.jpg"
+    r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(src), "-frames:v", "1", *JPG_COVER,
+             str(dst)], capture_output=True, text=True)
+    return str(dst) if r.returncode == 0 and dst.exists() else None
+
+
 def cover_file(cover, workdir):
-    """A picture file to use as the cover. cover: a picture's path (one they chose), or what
+    """A JPG picture file to use as the cover. cover: a picture's path (one they chose), or what
     find_cover() returned. None if there's no usable picture."""
     if not cover:
         return None
     if isinstance(cover, (str, Path)):
-        return str(cover) if Path(cover).is_file() else None
+        return _jpeg_cover(cover, workdir) if Path(cover).is_file() else None
     kind, p = cover
     if kind == "file":
-        return p if Path(p).is_file() else None
+        return _jpeg_cover(p, workdir) if Path(p).is_file() else None
     s = _cover_stream(p)
     if not s:
         return None
-    png = s.get("codec_name") == "png"
-    dst = Path(workdir) / ("cover.png" if png else "cover.jpg")
-    codec = ["-c:v", "copy"] if png or s.get("codec_name") == "mjpeg" else ["-c:v", "mjpeg", "-q:v", "2"]
+    dst = Path(workdir) / "cover.jpg"
+    codec = ["-c:v", "copy"] if s.get("codec_name") == "mjpeg" else JPG_COVER
     r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(p), "-map", f"0:{s['index']}", *codec,
              "-frames:v", "1", str(dst)], capture_output=True, text=True)
     return str(dst) if r.returncode == 0 and dst.exists() else None
@@ -3344,9 +3366,13 @@ def retag_m4b(path, chapters=None, tags=None, cover=None, workdir=None):
     cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(path), "-i", str(meta)]
     if cover:
         cmd += ["-i", str(cover), "-map", "0:a", "-map", "2:v", "-disposition:v:0", "attached_pic"]
+        jpg = is_jpeg(cover)
     else:
         cmd += ["-map", "0:a", "-map", "0:v?"]
-    cmd += ["-c", "copy", "-map_metadata", "1" if tags else "0",
+        own = _cover_stream(path)
+        jpg = not own or own.get("codec_name") == "mjpeg"
+    # the audio is copied as it is; a cover that isn't a JPG becomes one (JPG_COVER)
+    cmd += ["-c", "copy", *([] if jpg else JPG_COVER), "-map_metadata", "1" if tags else "0",
             "-map_chapters", "1" if chapters is not None else "0",
             "-movflags", "+faststart", "-f", "ipod", str(tmp)]
     r = run(cmd, capture_output=True, text=True)
@@ -3635,7 +3661,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                 say(0.955, "Looking for the cover online…")
                 online = find_cover_online(strip_number(title, series_no),
                                            author or tags.get("artist", ""), work, log=log)
-                pic = online and online["file"]
+                pic = online and cover_file(online["file"], work)
             home = out
             if m4b_dir:
                 home = (abs_folder(m4b_dir, title, author or tags.get("artist", ""), series,

@@ -23,6 +23,9 @@ HERE = Path(__file__).resolve().parent
 RESUME = APP_DATA / "resume.json"     # your review, kept across an update or closing the window
 LEFT = APP_DATA / "left_review.json"  # a review you went "Back to start" from, to pick up again
 QUEUE = APP_DATA / "queue.json"       # the books on the "Your books" page (bookqueue.py)
+# the review list in blocks (Windows draws no window taller than 32,767 px); see _scroll_area
+BLOCK_ITEMS = 40
+WORDS_PER_BOX = 50
 # where the chapter files and the M4B go when not the usual place (kept for the next book)
 PLACES = APP_DATA / "save_places.json"
 
@@ -385,38 +388,104 @@ class App(tk.Tk):
                      wraplength=700, justify="left").pack(anchor="w", pady=(2, 12))
         return self.page
 
-    def _scroll_area(self, parent):
-        """A vertically scrolling area that fills the remaining space."""
+    def _scroll_area(self, parent, stacked=False):
+        """A vertically scrolling area that fills the remaining space. Returns the frame to put
+        things in, or with stacked=True a function that returns the block to put the next thing
+        in (block(new=True) starts a new one). Windows can't draw a window taller than 32,767
+        pixels, so a long review list in one frame went blank part way down (Sweetbriar Cottage,
+        2026-11-05: 290 passages); stacked, it's blocks of at most BLOCK_ITEMS, one under another."""
         wrap = tk.Frame(parent, bg=BG)
         wrap.pack(fill="both", expand=True)
         canvas = tk.Canvas(wrap, bg=BG, highlightthickness=0)
         self._canvas = canvas
         sb = ttk.Scrollbar(wrap, orient="vertical", command=canvas.yview)
-        inner = tk.Frame(canvas, bg=BG)
-        self._inner = inner
-        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+        blocks = []          # (frame, canvas item), top to bottom
+        pending = {}
 
-        def refresh(_=None):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            needs = inner.winfo_reqheight() > canvas.winfo_height() + 2
+        def add_block():
+            f = tk.Frame(canvas, bg=BG)
+            item = canvas.create_window((0, 0), window=f, anchor="nw",
+                                        width=max(1, canvas.winfo_width()))
+            blocks.append((f, item))
+            f.bind("<Configure>", refresh)
+            return f
+
+        last = {}
+
+        def layout():
+            """Put the blocks one under another. Blocks out of view don't say when their size
+            changes, so this also runs whenever the view moves (cheap when nothing changed)."""
+            pending.pop("job", None)
+            if not canvas.winfo_exists():
+                return
+            width, view_h = max(1, canvas.winfo_width()), canvas.winfo_height()
+            pos, y = [], 0
+            for f, _ in blocks:
+                pos.append(y)
+                y += f.winfo_reqheight()
+            if last.get("key") == (pos, y, width, view_h):
+                return
+            last["key"] = (pos, y, width, view_h)
+            for (f, item), top in zip(blocks, pos):
+                canvas.coords(item, 0, top)
+                canvas.itemconfigure(item, width=width)
+            canvas.configure(scrollregion=(0, 0, width, y))
+            # keep the view inside the list: when it gets shorter (the cards settle to their
+            # size), Tk can leave the view past its end, with nothing drawn there
+            if canvas.canvasy(0) > max(0, y - view_h):
+                canvas.yview_moveto(max(0, y - view_h) / max(1, y))
+            needs = y > view_h + 2
             if needs and not sb.winfo_ismapped():
                 sb.pack(side="right", fill="y")
             elif not needs and sb.winfo_ismapped():
                 sb.pack_forget()
 
-        inner.bind("<Configure>", refresh)
-        canvas.bind("<Configure>", lambda e: (canvas.itemconfigure(win, width=e.width), refresh()))
-        canvas.configure(yscrollcommand=sb.set)
+        def refresh(_=None):
+            if "job" not in pending:
+                pending["job"] = canvas.after_idle(layout)
+
+        def scrolled(*a):
+            sb.set(*a)
+            refresh()
+
+        def keep_up():
+            # (sizes change without an event out of view; this catches them)
+            if canvas.winfo_exists():
+                layout()
+                canvas.after(300, keep_up)
+
+        inner = add_block()
+        self._inner = inner
+        canvas.bind("<Configure>", refresh)
+        canvas.configure(yscrollcommand=scrolled)
+        if stacked:
+            canvas.after(300, keep_up)
         canvas.pack(side="left", fill="both", expand=True)
 
         def wheel(delta):
-            if inner.winfo_reqheight() > canvas.winfo_height():
+            if self._list_height() > canvas.winfo_height():
                 canvas.yview_scroll(delta, "units")
 
         self.bind_all("<MouseWheel>", lambda e: wheel(int(-e.delta / 120)))
         self.bind_all("<Button-4>", lambda e: wheel(-2))
         self.bind_all("<Button-5>", lambda e: wheel(2))
-        return inner
+        if not stacked:
+            return inner
+
+        def block(new=False):
+            f = blocks[-1][0]
+            if new and f.winfo_children() or len(f.winfo_children()) >= BLOCK_ITEMS:
+                f = add_block()
+            return f
+        return block
+
+    def _list_height(self):
+        """How tall everything in the scrolling area is (all its blocks)."""
+        try:
+            box = self._canvas.bbox("all")
+            return max(1, box[3] - min(0, box[1])) if box else 1
+        except Exception:
+            return 1
 
     def _card(self, parent, step, heading, note=""):
         outer = tk.Frame(parent, bg=LINE)
@@ -2076,12 +2145,20 @@ class App(tk.Tk):
 
     # ---------- page 3: review everything before saving ----------
     def _y_in_list(self, w):
-        """How far down the review list a card/row sits (pixels from the top)."""
+        """How far down the review list a card/row sits (pixels from the top), across the
+        list's blocks."""
         y = 0
-        inner = getattr(self, "_inner", None)
-        while w is not None and w is not inner:
+        canvas = getattr(self, "_canvas", None)
+        while w is not None and w.master is not None and w.master is not canvas:
             y += w.winfo_y()
             w = w.master
+        if w is not None and canvas is not None:
+            try:
+                item = next(i for i in canvas.find_all() if canvas.type(i) == "window"
+                            and canvas.itemcget(i, "window") == str(w))
+                y += int(canvas.coords(item)[1])
+            except (StopIteration, tk.TclError, IndexError):
+                pass
         return y
 
     def show_review(self, keep_scroll=False, focus=None):
@@ -2090,8 +2167,8 @@ class App(tk.Tk):
         anchor = None
         if keep_scroll and self.page_name == "review" and getattr(self, "_canvas", None):
             try:
-                c, inner = self._canvas, self._inner
-                h = max(1, inner.winfo_height())
+                c = self._canvas
+                h = self._list_height()
                 top = c.yview()[0] * h
                 if focus is not None and id(focus) in getattr(self, "_item_widgets", {}):
                     w = self._item_widgets[id(focus)]
@@ -2113,9 +2190,8 @@ class App(tk.Tk):
 
     def _scroll_back(self, key, offset, frac):
         try:
-            c, inner = self._canvas, self._inner
-            c.configure(scrollregion=c.bbox("all"))
-            h = max(1, inner.winfo_height())
+            c = self._canvas
+            h = self._list_height()
             w = getattr(self, "_item_widgets", {}).get(key)
             if w is not None and w.winfo_exists():
                 c.yview_moveto(max(0.0, (self._y_in_list(w) - offset) / h))
@@ -2244,13 +2320,13 @@ class App(tk.Tk):
         # send it in now, without saving the audiobook first (the ticks as they are now count)
         ttk.Button(row, text="Send what we refined…", style="Plain.TButton",
                    command=self._send_report_now).pack(side="left", padx=(8, 0))
-        body = self._scroll_area(p)
+        body = self._scroll_area(p, stacked=True)     # body(): the block for the next thing
         multi = len(a["parts"]) > 1
         # "at 0:12:34" (how far into the book), so it isn't read as a clock (Jason, 2026-11-03)
         where = lambda x: (f"Part {x['part'] + 1}, " if multi else "") + "at " + engine.fmt_t(x["s"])
 
         def section(title, short, count, var_list):
-            head = tk.Frame(body, bg=BG)
+            head = tk.Frame(body(), bg=BG)
             head.pack(fill="x", pady=(10, 4))
             self._sections.append((short, count, head))
             tk.Label(head, text=f"{title}  ({count})", bg=BG, fg=INK,
@@ -2290,7 +2366,7 @@ class App(tk.Tk):
             group_vars = []
             section(heading, short, len(items), group_vars)
             for sc in items:
-                card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
+                card = tk.Frame(body(), bg=CARD, padx=14, pady=10, highlightbackground=LINE,
                                 highlightthickness=1)
                 self._item_widgets[id(sc)] = card
                 card.pack(fill="x", pady=4)
@@ -2334,9 +2410,11 @@ class App(tk.Tk):
         shown_mutes = [m for m in mutes if shown(m, "on", "note")]
         if shown_mutes:
             section("Words to mute", "Words", len(shown_mutes), self.mute_vars)
-            box = tk.Frame(body, bg=CARD, highlightbackground=LINE, highlightthickness=1)
-            box.pack(fill="x", pady=4)
             for n, m in enumerate(shown_mutes):
+                if n % WORDS_PER_BOX == 0:     # (a box of its own every so many words)
+                    box = tk.Frame(body(new=True), bg=CARD, highlightbackground=LINE,
+                                   highlightthickness=1)
+                    box.pack(fill="x", pady=(4 if n == 0 else 0, 4 if n + WORDS_PER_BOX >= len(shown_mutes) else 0))
                 row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
                 self._item_widgets[id(m)] = row
                 row.pack(fill="x")
@@ -2397,7 +2475,7 @@ class App(tk.Tk):
                 line.pack(side="left", fill="x", expand=True)
                 line.bind("<Configure>", lambda e, t=line: fit(t))
         if not self._sections and (scenes or mutes):
-            tk.Label(body, text="Nothing to show here. Choose “Everything to remove” next to Show.",
+            tk.Label(body(), text="Nothing to show here. Choose “Everything to remove” next to Show.",
                      bg=BG, fg=MUTED, font=(FONT, 10)).pack(anchor="w", pady=20)
 
         # jump straight to a group (long books have hundreds of items)
@@ -2411,9 +2489,16 @@ class App(tk.Tk):
         self._update_summary()
 
     def _jump_to(self, widget):
-        c, inner = self._canvas, self._inner
-        c.update_idletasks()
-        c.yview_moveto(max(0.0, (self._y_in_list(widget) - 4) / max(1, inner.winfo_height())))
+        c = self._canvas
+
+        def go():
+            if widget.winfo_exists() and c.winfo_exists():
+                c.update_idletasks()
+                c.yview_moveto(max(0.0, (self._y_in_list(widget) - 4) / self._list_height()))
+        go()
+        # cards coming into view settle to their size and shift the list: aim again
+        for delay in (120, 400, 900):
+            self.after(delay, go)
 
     def _open_findings(self):
         try:
