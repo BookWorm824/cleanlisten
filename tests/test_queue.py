@@ -33,10 +33,40 @@ def spec(tmp_path, name="Book One", **kw):
 # ---------------------------------------------------------------------------
 def test_threads_are_shared_between_the_books_running_together():
     assert BQ.threads_each(1, cpus=16) == 8          # one book: at most 8
-    assert BQ.threads_each(2, cpus=16) == 8
+    assert BQ.threads_each(2, cpus=16) == 7          # one core left for the window
     assert BQ.threads_each(3, cpus=16) == 5
-    assert BQ.threads_each(4, cpus=16) == 4
+    assert BQ.threads_each(4, cpus=16) == 3
     assert BQ.threads_each(4, cpus=4) == 2           # never fewer than 2
+    # "why is clean listen freezing" (2026-11-05): one book took all 6 cores of a 6-core PC
+    assert BQ.threads_each(1, cpus=6) == 5
+    assert BQ.threads_each(1, cpus=2) == 2
+
+
+def test_book_workers_run_below_normal_priority(tmp_path, monkeypatch):
+    """The window always comes first (2026-11-05: the window seemed frozen while a book was
+    being prepared at normal priority)."""
+    if os.name != "nt":
+        pytest.skip("Windows priority classes")
+    got = {}
+
+    class Proc:
+        pid = 1
+        stdout = iter(())
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+
+    def popen(cmd, **kw):
+        got.update(kw)
+        return Proc()
+    monkeypatch.setattr(BQ.subprocess, "Popen", popen)
+    w = BQ.Workers(lambda key, msg: None)
+    w.start({"key": "k1", "workdir": str(tmp_path / "job")}, "prepare", threads=2)
+    assert got["creationflags"] & 0x00004000                       # BELOW_NORMAL_PRIORITY_CLASS
+    assert got["creationflags"] & 0x08000000                       # and no console window
 
 
 def test_add_run_ready_review_save_done(tmp_path):

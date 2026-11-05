@@ -82,7 +82,8 @@ KIND_RULES = {
            "lying in bed, a couple going to bed or waking up together, beds and sheets are fine - "
            "only sexual content is cut.",
     "ref": "Sexual references: cut sentences that talk about sex, describe sexual desire, or are "
-           "sexual jokes or innuendo, someone being sexy or aroused, one-night stands, talk of oral "
+           "sexual jokes or innuendo, someone being sexy or aroused, one-night stands, "
+           "talk of sex drugs: pills for sex or erections (Viagra, Cialis, 'the little blue pill', erectile dysfunction), aphrodisiacs ('Spanish fly', a love potion meant to make someone want sex) and drugging someone to have sex with them, talk of oral "
            "sex or of touching someone's private parts. Cut only the sentences that are sexual "
            "themselves, not the sentences around a joke; plainly mentioning underwear ('can you "
            "see my underwear?') is fine. A sentence "

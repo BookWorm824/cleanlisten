@@ -863,6 +863,27 @@ def sex_score(words):
     return s if len(explicit) >= 2 else 0
 
 
+# Sex drugs are sexual references (CleanView 1.18.15; Lauren, 2026-11-04: "add sexual drugs to
+# sexual reference filter"). A passage is cut; the words aren't muted on their own (they aren't
+# in the "sexual" word group). Only "little blue pill": "the blue pill" alone is The Matrix.
+SEX_DRUG_WORDS = {"viagra", "cialis", "levitra", "aphrodisiac", "aphrodisiacs"}
+SEX_DRUG_PHRASES = [("erectile", "dysfunction"), ("little", "blue", "pill"),
+                    ("little", "blue", "pills"), ("boner", "pill"), ("boner", "pills"),
+                    ("sex", "pill"), ("sex", "pills"), ("spanish", "fly")]
+
+
+def sex_drug_spans(words):
+    """(i, j) word ranges that talk of sex drugs, in normalised words."""
+    out = []
+    for i, w in enumerate(words):
+        if w in SEX_DRUG_WORDS:
+            out.append((i, i + 1))
+        for ph in SEX_DRUG_PHRASES:
+            if tuple(words[i:i + len(ph)]) == ph:
+                out.append((i, i + len(ph)))
+    return out
+
+
 def is_explicit(words):
     return any(p.match(w) for w in words for p in SEX_C[3])
 
@@ -1668,7 +1689,8 @@ def span_times(asr, i, j):
 # lists miss, and gives a second opinion on what they flagged.
 # ---------------------------------------------------------------------------
 AI_TYPES = {
-    "ref": "a sexual reference, sexual joke or innuendo, or talk about sex, including talk of oral "
+    "ref": "a sexual reference, sexual joke or innuendo, or talk about sex, including "
+           "talk of sex drugs: pills for sex or erections (Viagra, Cialis, 'the little blue pill', erectile dysfunction), aphrodisiacs ('Spanish fly', a love potion meant to make someone want sex) and drugging someone to have sex with them, talk of oral "
            "sex or of touching someone's private parts, bragging about sleeping with women, or "
            "brothel talk; only the sentences that are sexual themselves, not the ones around a joke, "
            "but a follow-up that carries the joke on or calls back to it counts (a reply that only "
@@ -2579,8 +2601,9 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         # any sentence that talks about sex, even in passing
         say(0.99, "Looking for sexual references\u2026")
         refs = []
-        for i, j, _ in find_language(asr_n, ["sexual"]) + [
-                (x, x + 1, "") for x in range(len(asr)) if is_explicit([asr_n[x]])]:
+        for i, j, _ in sorted(find_language(asr_n, ["sexual"]) + [
+                (x, x + 1, "") for x in range(len(asr)) if is_explicit([asr_n[x]])] + [
+                (a, b, "") for a, b in sex_drug_spans(asr_n)]):
             a_, b_ = to_sentences(i, j - 1)
             if refs and refs[-1][0] == asr[a_]["part"] and a_ <= refs[-1][2] + 1:
                 refs[-1][2] = max(refs[-1][2], b_)

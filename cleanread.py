@@ -681,8 +681,11 @@ def rel_hit(words, old_style=False):
 
 def _ref_hit(words):
     """A sexual reference: a sexual word or phrase ("sexy", "make love", "slept with him"),
-    or two explicit words together. One "breast", "naked" or "pleasure" on its own
+    or two explicit words together, or sex drugs (Viagra, "the little blue pill", Spanish
+    fly...; CleanView 1.18.15). One "breast", "naked" or "pleasure" on its own
     doesn't count ("the Tin Woodman's breast", "a thrill of pleasure")."""
+    if E.sex_drug_spans(words):
+        return True
     for i, j, _ in E.find_language(words, ["sexual"]):
         if not words[i].startswith("arous"):
             return True
@@ -1000,7 +1003,8 @@ SCAN = [
     ("romance", 2, "Romance, crushes & kissing", "kissing, crushes, dating, boyfriends and girlfriends",
      romance_spans),
     ("flirt", 2, "Flirting", "flirting, winking at, hitting on someone", _fn(E.flirt_hit)),
-    ("ref", 2, "Sexual references", "sentences that mention sex or sexual body parts", None),
+    ("ref", 2, "Sexual references", "sentences that mention sex, sexual body parts or sex drugs",
+     None),
     ("sex", 2, "Sexual or sensual scenes", "whole passages heavy with sexual or sensual description", None),
     ("sleeping", 2, "Sleeping around, affairs & living together",
      "unmarried couples sleeping or living together, affairs, cheating", SLEEPING_ALL),

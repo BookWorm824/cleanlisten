@@ -94,9 +94,12 @@ class Busy(Exception):
 
 def threads_each(at_once, cpus=None):
     """Speech-recognition threads for each book, so the books running together share the
-    PC's cores. One book uses at most 8 (more doesn't help one book much)."""
+    PC's cores. One book uses at most 8 (more doesn't help one book much). One core is left
+    for the window and everything else on the PC: on a 6-core PC one book used all 6 and the
+    window seemed frozen (2026-11-05)."""
     cpus = cpus or os.cpu_count() or 2
-    return max(2, min(8, cpus // max(1, at_once)))
+    spare = cpus - 1 if cpus > 2 else cpus
+    return max(2, min(8, spare // max(1, at_once)))
 
 
 class BookQueue:
@@ -315,6 +318,15 @@ def _no_window():
     return getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 
+def _worker_flags():
+    """A book's worker: no console window, and below normal priority, so the window (and
+    the rest of the PC) always comes first; the book only slows down while you're using the
+    PC. Its ffmpeg runs inherit that priority."""
+    if os.name != "nt":
+        return 0
+    return _no_window() | getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0x00004000)
+
+
 def kill_tree(proc):
     """Stop a worker and everything it started (ffmpeg, Claude...)."""
     if proc.poll() is not None:
@@ -358,9 +370,14 @@ class Workers:
         try:
             proc = subprocess.Popen([self.python, self.runner, str(spec_path)], cwd=str(HERE),
                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err,
-                                    env=env, creationflags=_no_window())
+                                    env=env, creationflags=_worker_flags())
         finally:
             err.close()
+        if os.name != "nt":
+            try:
+                os.setpriority(os.PRIO_PROCESS, proc.pid, 10)
+            except (AttributeError, OSError):
+                pass
         proc.stop_file = stop_file
         self.procs[key] = proc
         threading.Thread(target=self._read, args=(key, proc), daemon=True,
