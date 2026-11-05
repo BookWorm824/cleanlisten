@@ -67,6 +67,45 @@ def run(cmd, **kw):
     return _start(subprocess.run, cmd, kw)
 
 
+# AAC with ffmpeg's "fast" coder: its default ("twoloop") looped forever on two seconds of
+# Vermilion (mono 24 kHz), and the book sat on "Saving..." for 10 hours (2026-11-05)
+AAC = ["-c:a", "aac", "-aac_coder", "fast"]
+# a save whose file hasn't grown for this long has stopped making progress
+STALL_SECONDS = 900
+
+
+def run_watched(cmd, watch, stall=None, every=2.0):
+    """run() for a long ffmpeg job writing the file `watch`: if that file hasn't grown for
+    `stall` seconds, ffmpeg is stopped and the result says so (returncode -9), instead of
+    waiting forever. Returns a CompletedProcess with stderr text."""
+    import tempfile
+    stall = STALL_SECONDS if stall is None else stall
+    with tempfile.TemporaryFile() as err:
+        p = popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
+        size, since = None, time.time()
+        stuck = False
+        while p.poll() is None:
+            time.sleep(every)
+            try:
+                now = os.path.getsize(watch)
+            except OSError:
+                now = -1
+            if now != size:
+                size, since = now, time.time()
+            elif time.time() - since > stall:
+                stuck = True
+                p.kill()
+                p.wait()
+                break
+        err.seek(0)
+        text = err.read().decode("utf-8", "replace")
+    if stuck:
+        return subprocess.CompletedProcess(cmd, -9, "", text + f"\nffmpeg stopped making progress "
+                                           f"(nothing written for {stall // 60} minutes), so it was "
+                                           "stopped.")
+    return subprocess.CompletedProcess(cmd, p.returncode, "", text)
+
+
 def popen(cmd, **kw):
     return _start(subprocess.Popen, cmd, kw)
 
@@ -3471,8 +3510,8 @@ def make_m4b(pieces, titles, dst, tags=None, cover=None, bitrate=None, workdir=N
         enc = [tmpdir / f"{i:04d}.m4a" for i in range(len(pieces))]
 
         def one(i):
-            r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(pieces[i]), "-map", "0:a:0",
-                     "-vn", "-c:a", "aac", "-b:a", br, str(enc[i])], capture_output=True, text=True)
+            r = run_watched([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(pieces[i]), "-map",
+                             "0:a:0", "-vn", *AAC, "-b:a", br, str(enc[i])], enc[i])
             if r.returncode != 0:
                 raise RuntimeError(f"Couldn't make the M4B ({Path(pieces[i]).name}):\n{ffmpeg_says(r.stderr)}")
 
@@ -3589,7 +3628,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                  capture_output=True, text=True).stdout.strip()
         br = br if br.isdigit() else "96000"
         if ext in (".m4b", ".m4a", ".mp4", ".aac"):
-            codec, out_ext = ["-c:a", "aac", "-b:a", br], ext
+            codec, out_ext = [*AAC, "-b:a", br], ext
         else:
             codec, out_ext = ["-c:a", "libmp3lame", "-b:a", br], ".mp3"
         # books split into Disc 1, Disc 2... folders: keep the disc in the name so
@@ -3619,7 +3658,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         for fopt in fopts:
             base = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(src), *fopt]
             for extra in extras:
-                r = run(base + extra + codec + [str(tmp)], capture_output=True, text=True)
+                r = run_watched(base + extra + codec + [str(tmp)], tmp)
                 if r.returncode == 0:
                     break
                 errors.append((" ".join(fopt[:1] + extra), r.stderr.strip()))
