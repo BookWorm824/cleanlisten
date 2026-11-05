@@ -65,3 +65,46 @@ def test_a_png_cover_chosen_for_mp3_parts(tmp_path, mp3_book):
     res = E.render(work, tmp_path / "Clean", m4b=True, cover=str(png(tmp_path / "mine.png", "red")),
                    log=lambda m: None)
     assert has_cover(res["m4b"]["file"]) and cover_codec(res["m4b"]["file"]) == "mjpeg"
+
+
+def _odd_m4b(tmp_path, attached):
+    """A 2-minute M4B with a PNG picture and a JPG one; attached: their "cover" marks."""
+    pic, jpg = png(tmp_path / "a.png"), tmp_path / "b.jpg"
+    ff("-f", "lavfi", "-i", "color=c=red:s=200x200", "-frames:v", "1", jpg)
+    src = tmp_path / "Book" / "Molly Black - Nearly Free.m4b"
+    src.parent.mkdir(exist_ok=True)
+    ff("-f", "lavfi", "-i", "sine=f=440:d=120", "-i", pic, "-i", jpg, "-map", "0:a", "-map", "1:v",
+       "-map", "2:v", "-c:a", "aac", "-b:a", "64k", "-c:v", "copy",
+       "-disposition:v:0", "attached_pic" if attached[0] else "0",
+       "-disposition:v:1", "attached_pic" if attached[1] else "0", "-f", "mp4", src)
+    return src
+
+
+def covers(path):
+    return [(s["codec_name"], s.get("disposition", {}).get("attached_pic"))
+            for s in probe(path)["streams"] if s["codec_type"] == "video"]
+
+
+@pytest.mark.parametrize("attached", [(True, False), (False, False), (True, True)])
+def test_a_png_cover_with_another_picture(tmp_path, attached):
+    # (True, False) is Nearly Free on 1.15.4: "codec not currently supported in container"
+    src = _odd_m4b(tmp_path, attached)
+    E.retag_m4b(src, [(0, "Chapter 1"), (60, "Chapter 2")], workdir=tmp_path)
+    assert covers(src) == [("mjpeg", 1)]                       # one cover, a JPG
+    assert [t for _, t in chapters(src)] == ["Chapter 1", "Chapter 2"]
+    assert not list(tmp_path.glob("~*"))
+
+
+def test_saving_a_book_with_a_png_cover_and_another_picture(tmp_path):
+    src = _odd_m4b(tmp_path, (True, False))
+    work = job(tmp_path, [src])
+    res = E.render(work, tmp_path / "Clean", cuts=[{"part": 0, "s": 10.0, "e": 20.0}], m4b=True,
+                   log=lambda m: None)
+    assert covers(res["m4b"]["file"]) == [("mjpeg", 1)]
+
+
+def test_the_error_shows_ffmpegs_reason_first():
+    err = ("[ipod @ 0x1] Could not find tag for codec mjpeg in stream #2, codec not currently "
+           "supported in container\n[out#0/ipod] Could not write header\n[vf#0:2] Error sending "
+           "frames\n[vf#0:2] Task finished with error\n[out#0/ipod] Nothing was written")
+    assert E.ffmpeg_says(err).startswith("[ipod @ 0x1] Could not find tag for codec mjpeg")

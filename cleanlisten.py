@@ -3041,10 +3041,26 @@ def own_chapters(path):
     return out if len(out) >= 2 else []
 
 
+PICTURE_CODECS = ("mjpeg", "png", "bmp", "gif", "webp", "tiff")
+
+
 def _cover_stream(path):
-    return next((s for s in probe_info(path).get("streams") or []
-                 if s.get("codec_type") == "video" and (s.get("disposition") or {}).get("attached_pic")),
-                None)
+    """The book's own cover picture: one marked as its cover, else a picture stored as a
+    track (some books do; Nearly Free, 2026-11-05)."""
+    streams = [s for s in probe_info(path).get("streams") or [] if s.get("codec_type") == "video"]
+    return (next((s for s in streams if (s.get("disposition") or {}).get("attached_pic")), None) or
+            next((s for s in streams if s.get("codec_name") in PICTURE_CODECS), None))
+
+
+def _picture_to_jpeg(path, dst):
+    """The book's own cover picture as a JPG file. True if it was made."""
+    s = _cover_stream(path)
+    if not s:
+        return False
+    codec = ["-c:v", "copy"] if s.get("codec_name") == "mjpeg" else JPG_COVER
+    r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(path), "-map", f"0:{s['index']}", *codec,
+             "-frames:v", "1", str(dst)], capture_output=True, text=True)
+    return r.returncode == 0 and Path(dst).exists()
 
 
 def safe_name(text, default="Audiobook"):
@@ -3148,6 +3164,37 @@ def find_cover(parts):
     return ("file", str(best))
 
 
+def book_pictures(parts, folder, most=12):
+    """Every picture that could be the cover, to choose from (Lauren, 2026-11-05: "I need to be
+    able to choose the picture if 2 accidentally got placed"): each picture inside the first
+    book file (saved as JPGs in `folder`), then the pictures in the book's folder.
+    [{"file", "label"}]."""
+    out = []
+    if not parts:
+        return out
+    folder = Path(folder)
+    streams = [s for s in probe_info(parts[0]).get("streams") or []
+               if s.get("codec_type") == "video" and s.get("codec_name") in PICTURE_CODECS]
+    for n, s in enumerate(streams, 1):
+        folder.mkdir(parents=True, exist_ok=True)
+        dst = folder / f"picture {n} in the book.jpg"
+        codec = ["-c:v", "copy"] if s.get("codec_name") == "mjpeg" else JPG_COVER
+        r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(parts[0]), "-map",
+                 f"0:{s['index']}", *codec, "-frames:v", "1", str(dst)], capture_output=True, text=True)
+        if r.returncode == 0 and dst.exists():
+            out.append({"file": str(dst), "label": "In the book" + (f" ({n})" if len(streams) > 1 else "")})
+    dirs = {Path(p).parent for p in parts}
+    if len(dirs) > 1:
+        dirs |= {d.parent for d in dirs}
+    for d in sorted(dirs):
+        try:
+            pics = sorted(f for f in d.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTS)
+        except OSError:
+            continue
+        out += [{"file": str(f), "label": f.name} for f in pics]
+    return out[:most]
+
+
 # An M4B (ffmpeg's "ipod" format) takes only a JPG cover: a PNG one stopped saving with "Could
 # not find tag for codec png" (Nearly Free, 2026-11-05). Every cover is made a JPG first.
 JPG_COVER = ["-c:v", "mjpeg", "-q:v", "2", "-pix_fmt", "yuvj420p"]
@@ -3181,14 +3228,8 @@ def cover_file(cover, workdir):
     kind, p = cover
     if kind == "file":
         return _jpeg_cover(p, workdir) if Path(p).is_file() else None
-    s = _cover_stream(p)
-    if not s:
-        return None
     dst = Path(workdir) / "cover.jpg"
-    codec = ["-c:v", "copy"] if s.get("codec_name") == "mjpeg" else JPG_COVER
-    r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(p), "-map", f"0:{s['index']}", *codec,
-             "-frames:v", "1", str(dst)], capture_output=True, text=True)
-    return str(dst) if r.returncode == 0 and dst.exists() else None
+    return str(dst) if _picture_to_jpeg(p, dst) else None
 
 
 # ---------------------------------------------------------------------------
@@ -3360,33 +3401,51 @@ def retag_m4b(path, chapters=None, tags=None, cover=None, workdir=None):
     """Give an M4B new chapter marks, tags or cover without re-encoding it (a quick copy).
     chapters: [(start_seconds, title)]; None keeps its own. tags: None keeps its own."""
     path = Path(path)
-    meta = Path(workdir or path.parent) / "~chapters.txt"
+    work = Path(workdir or path.parent)
+    meta = work / "~chapters.txt"
     write_ffmeta(meta, tags or {}, chapters or [], probe_duration(path))
     tmp = path.with_name("~saving~ " + path.name)
-    cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(path), "-i", str(meta)]
+    made = []                     # pictures made here, removed after
+    # One cover, as a JPG file, and nothing else but the audio: an M4B takes no other picture
+    # or data tracks (Nearly Free, 2026-11-05: a PNG cover plus a second picture track failed
+    # with "codec not currently supported in container"). Its own picture is kept as its cover,
+    # however the book stored it.
+    pic = None
     if cover:
-        cmd += ["-i", str(cover), "-map", "0:a", "-map", "2:v", "-disposition:v:0", "attached_pic"]
-        jpg = is_jpeg(cover)
+        pic = cover if is_jpeg(cover) else _jpeg_cover(cover, work)
+    elif _cover_stream(path):
+        own = work / "~own cover.jpg"
+        if _picture_to_jpeg(path, own):
+            pic = str(own)
+            made.append(own)
+    cmd = [_tool("ffmpeg"), "-y", "-v", "error", "-i", str(path), "-i", str(meta)]
+    if pic:
+        cmd += ["-i", str(pic), "-map", "0:a", "-map", "2:v", "-disposition:v:0", "attached_pic"]
     else:
-        cmd += ["-map", "0:a", "-map", "0:v?"]
-        own = _cover_stream(path)
-        jpg = not own or own.get("codec_name") == "mjpeg"
-    # the audio is copied as it is; a cover that isn't a JPG becomes one (JPG_COVER)
-    cmd += ["-c", "copy", *([] if jpg else JPG_COVER), "-map_metadata", "1" if tags else "0",
+        cmd += ["-map", "0:a"]
+    cmd += ["-c", "copy", "-map_metadata", "1" if tags else "0",
             "-map_chapters", "1" if chapters is not None else "0",
             "-movflags", "+faststart", "-f", "ipod", str(tmp)]
     r = run(cmd, capture_output=True, text=True)
-    try:
-        meta.unlink()
-    except OSError:
-        pass
+    for f in [meta] + made:
+        try:
+            f.unlink()
+        except OSError:
+            pass
     if r.returncode != 0:
         try:
             tmp.unlink()
         except OSError:
             pass
-        raise RuntimeError(f"Couldn't set the chapters of {path.name}:\n{r.stderr[-500:]}")
+        raise RuntimeError(f"Couldn't set the chapters of {path.name}:\n{ffmpeg_says(r.stderr)}")
     _replace(tmp, path)
+
+
+def ffmpeg_says(stderr, most=500):
+    """ffmpeg's own words about what went wrong: its first lines (which say why; the last ones
+    only say that it stopped), shortened."""
+    lines = [l.strip() for l in (stderr or "").splitlines() if l.strip()]
+    return "\n".join(lines[:4])[:most]
 
 
 def m4b_bitrate(path):
@@ -3415,7 +3474,7 @@ def make_m4b(pieces, titles, dst, tags=None, cover=None, bitrate=None, workdir=N
             r = run([_tool("ffmpeg"), "-y", "-v", "error", "-i", str(pieces[i]), "-map", "0:a:0",
                      "-vn", "-c:a", "aac", "-b:a", br, str(enc[i])], capture_output=True, text=True)
             if r.returncode != 0:
-                raise RuntimeError(f"Couldn't make the M4B ({Path(pieces[i]).name}):\n{r.stderr[-400:]}")
+                raise RuntimeError(f"Couldn't make the M4B ({Path(pieces[i]).name}):\n{ffmpeg_says(r.stderr)}")
 
         workers = max(2, min(8, (os.cpu_count() or 4) // 2))
         with ThreadPoolExecutor(max_workers=workers) as ex:
@@ -3450,7 +3509,7 @@ def make_m4b(pieces, titles, dst, tags=None, cover=None, bitrate=None, workdir=N
                 tmp.unlink()
             except OSError:
                 pass
-            raise RuntimeError(f"Couldn't make the M4B:\n{r.stderr[-500:]}")
+            raise RuntimeError(f"Couldn't make the M4B:\n{ffmpeg_says(r.stderr)}")
         _replace(tmp, dst)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

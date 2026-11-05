@@ -31,8 +31,15 @@ PLACES = APP_DATA / "save_places.json"
 
 
 def cover_thumbnail(pic, size=72):
-    """A small PNG of a cover picture for the start page (tkinter shows PNG, not JPG)."""
-    dst = Path(pic).with_name(Path(pic).stem + " small.png")
+    """A small PNG of a cover picture (tkinter shows PNG, not JPG), kept in CleanListen's own
+    folder (never next to the picture: that may be the book's folder)."""
+    try:
+        st = Path(pic).stat()
+        key = hashlib.sha1(f"{pic}|{st.st_size}|{st.st_mtime}|{size}".encode()).hexdigest()[:16]
+    except OSError:
+        return None
+    dst = APP_DATA / "covers" / "small" / f"{key}.png"
+    dst.parent.mkdir(parents=True, exist_ok=True)
     if not dst.exists():
         engine.run([engine._tool("ffmpeg"), "-y", "-v", "error", "-i", str(pic), "-vf",
                     f"scale={size}:{size}:force_original_aspect_ratio=decrease", "-frames:v", "1",
@@ -923,6 +930,89 @@ class App(tk.Tk):
             lbl.config(image="")
             lbl.image = None
             lbl.pack_forget()
+
+    def choose_cover(self, parts, workdir, on_pick, now=""):
+        """A window with every picture that could be the cover: each one inside the book (when
+        two got in by accident, both show), the ones in its folder, or another (Choose, or drag
+        it here). Clicking one calls on_pick(path)."""
+        win = tk.Toplevel(self)
+        win.title("Choose the cover")
+        win.configure(bg=BG, padx=16, pady=12)
+        win.transient(self)
+        tk.Label(win, text="Choose the cover", bg=BG, fg=INK,
+                 font=(FONT, 14, "bold")).pack(anchor="w")
+        tk.Label(win, text=(f"Now: {now}.  " if now else "") + "Click a picture to use it, or drag "
+                 "one here from a folder.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=560,
+                 justify="left").pack(anchor="w", pady=(2, 8))
+        grid = tk.Frame(win, bg=BG)
+        grid.pack(fill="both", expand=True)
+        status = tk.Label(grid, text="Looking for pictures\u2026", bg=BG, fg=MUTED, font=(FONT, 10))
+        status.grid(row=0, column=0, sticky="w")
+        found = {}
+
+        def pick(f):
+            if win.winfo_exists():
+                win.destroy()
+            on_pick(f)
+
+        def dropped(files):
+            pics = [f for f in files if Path(f).suffix.lower() in engine.IMAGE_EXTS and Path(f).is_file()]
+            if pics:
+                pick(pics[0])
+            else:
+                messagebox.showinfo("CleanListen", "That isn't a picture CleanListen can use for "
+                                    "the cover. Drop a JPG or PNG picture.", parent=win)
+
+        def work():
+            try:
+                pics = engine.book_pictures(parts, Path(workdir) / "pictures")
+                for p in pics:
+                    p["thumb"] = cover_thumbnail(p["file"], 120)
+            except Exception:
+                pics = []
+            found["pics"] = pics
+
+        def show():
+            if not win.winfo_exists():
+                return
+            if "pics" not in found:
+                win.after(200, show)
+                return
+            status.destroy()
+            if not found["pics"]:
+                tk.Label(grid, text="There are no pictures in the book or its folder. Choose one, "
+                         "or drag one here.", bg=BG, fg=MUTED, font=(FONT, 10)).grid(row=0, column=0)
+            for i, p in enumerate(found["pics"]):
+                img = None
+                if p.get("thumb"):
+                    try:
+                        img = tk.PhotoImage(file=p["thumb"])
+                    except tk.TclError:
+                        img = None
+                b = tk.Button(grid, text=p["label"], image=img, compound="top", wraplength=130,
+                              bg=CARD, activebackground=CARD, relief="flat", cursor="hand2",
+                              font=(FONT, 9), padx=6, pady=6,
+                              command=lambda f=p["file"]: pick(f))
+                b.image = img
+                b.grid(row=i // 4, column=i % 4, padx=6, pady=6, sticky="n")
+                dropfiles.accept(b, dropped)
+        threading.Thread(target=work, daemon=True, name="cover pictures").start()
+        win.after(200, show)
+        row = tk.Frame(win, bg=BG)
+        row.pack(fill="x", pady=(10, 0))
+
+        def other():
+            f = filedialog.askopenfilename(parent=win, title="Choose the cover picture",
+                                           filetypes=[("Pictures", "*.jpg *.jpeg *.png"),
+                                                      ("All files", "*.*")])
+            if f:
+                pick(f)
+        ttk.Button(row, text="Choose another picture\u2026", style="Plain.TButton",
+                   command=other).pack(side="left")
+        ttk.Button(row, text="Cancel", style="Plain.TButton", command=win.destroy).pack(side="right")
+        for w in (win, grid, status):
+            dropfiles.accept(w, dropped)
+        return win
 
     def pick_cover(self):
         f = filedialog.askopenfilename(title="Choose the cover picture",
@@ -1931,6 +2021,10 @@ class App(tk.Tk):
         elif step in (BQ.FAILED, BQ.STOPPED):
             ttk.Button(btns, text="Try again", style="Go.TButton",
                        command=lambda: self._retry(key)).pack(side="left")
+            if job.get("m4b") and job.get("task") == "save":
+                ttk.Button(btns, text="Change cover\u2026", style="Plain.TButton",
+                           command=lambda: self._change_job_cover(key)).pack(side="left",
+                                                                            padx=(8, 0))
         if step in (BQ.WAITING, BQ.PREPARING, BQ.SAVE_WAITING, BQ.SAVING):
             ttk.Button(btns, text="Cancel", style="Plain.TButton",
                        command=lambda: self._cancel_book(key)).pack(side="left", padx=(8, 0))
@@ -1994,6 +2088,8 @@ class App(tk.Tk):
             lines.append("Saves to: " + os.path.normpath(job["outdir"])
                          + (f"  (and {' and '.join(also)})" if also else ""))
         res = job.get("result") or {}
+        if not res and job.get("m4b") and job.get("cover"):
+            lines.append("M4B cover: " + self._cover_name(job["cover"]))
         if not res and job.get("split") and job.get("chapters_dir"):
             lines.append("Chapter files go in: " + os.path.normpath(job["chapters_dir"]))
         if not res and job.get("m4b") and job.get("m4b_dir"):
@@ -2306,6 +2402,17 @@ class App(tk.Tk):
         jump = tk.Frame(p, bg=BG)
         jump.pack(fill="x", pady=(2, 0))
 
+        if getattr(self, "make_m4b", False):
+            # choose the M4B's cover here too, without starting over (2026-11-05)
+            crow = tk.Frame(self.footer, bg=BG)
+            crow.pack(side="top", fill="x", pady=(0, 4))
+            self.review_cover_lbl = tk.Label(crow, text="", bg=BG, fg=MUTED, font=(FONT, 10))
+            self.review_cover_lbl.pack(side="left")
+            ch = tk.Label(crow, text="Change cover\u2026", bg=BG, fg=ACCENT,
+                          font=(FONT, 10, "underline"), cursor="hand2")
+            ch.pack(side="left", padx=(8, 0))
+            ch.bind("<Button-1>", lambda e: self._change_review_cover())
+            self._show_review_cover()
         self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=INK, font=(FONT, 10))
         self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
         row = tk.Frame(self.footer, bg=BG)
@@ -2777,6 +2884,49 @@ class App(tk.Tk):
                             "Claude." + (" Your review screen is still here." if from_screen else ""))
         self.last_export = out
 
+    def _cover_name(self, path):
+        if not path:
+            return "the book's own picture (or one found for it)"
+        name = Path(path).name
+        if name.startswith("online cover"):
+            return "the picture found online"
+        m = re.match(r"picture (\d+) in the book", Path(path).stem)
+        if m:
+            return f"picture {m.group(1)} in the book"
+        return name
+
+    def _show_review_cover(self):
+        lbl = getattr(self, "review_cover_lbl", None)
+        if lbl and lbl.winfo_exists():
+            lbl.config(text="M4B cover: " + self._cover_name(getattr(self, "cover_pick", None)))
+
+    def _change_review_cover(self):
+        parts = list(self.audio or (self.analysis or {}).get("parts", []))
+
+        def picked(f):
+            self.cover_pick = f
+            job = self.books.find(getattr(self, "review_key", None) or "")
+            if job is not None:
+                job["cover"] = f
+                self.books.save()
+            self._show_review_cover()
+        self.choose_cover(parts, self.workdir, picked,
+                          now=self._cover_name(getattr(self, "cover_pick", None)))
+
+    def _change_job_cover(self, key):
+        """A book whose saving stopped: choose its cover, then Try again (nothing is listened
+        to or checked again)."""
+        job = self.books.find(key)
+        if not job:
+            return
+
+        def picked(f):
+            job["cover"] = f
+            self.books.save()
+            self.show_queue()
+        self.choose_cover(job.get("audio") or [], job["workdir"], picked,
+                          now=self._cover_name(job.get("cover")))
+
     def _save_from_review(self):
         """Save: the ticks go into the book's analysis, and saving waits its turn on "Your
         books" (bookrunner.save reads them), so you can review the next book meanwhile."""
@@ -2788,6 +2938,8 @@ class App(tk.Tk):
             messagebox.showinfo("CleanListen", "This book is being checked again right now. Wait "
                                 "for that to finish, then review it again.")
             return
+        if getattr(self, "make_m4b", False) and getattr(self, "cover_pick", None):
+            job["cover"] = self.cover_pick       # (chosen on the review page)
         self.books.reviewed(job["key"])
         self._leave_review()
         self._run_queue()
