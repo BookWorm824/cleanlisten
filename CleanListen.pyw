@@ -2784,6 +2784,31 @@ def _make_shortcut():
             pass
 
 
+def _ollama_off_at_startup():
+    # Ollama only while the apps are open (2026-11-05): not started with Windows (the installed
+    # copy only, so a test copy never changes the PC)
+    try:
+        import ollama_care
+        import shortcuts
+        if shortcuts.installed_copy():
+            ollama_care.autostart_off()
+    except Exception:
+        pass
+
+
+def _ollama_stop_later():
+    # closing: stop Ollama once no CleanView, CleanListen or CleanRead uses it
+    try:
+        import ollama_care
+        import shortcuts
+        if shortcuts.installed_copy():
+            ollama_care.stop_later()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     threading.Thread(target=_make_shortcut, daemon=True).start()
+    threading.Thread(target=_ollama_off_at_startup, daemon=True).start()
     App().mainloop()
+    _ollama_stop_later()
