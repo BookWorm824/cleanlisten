@@ -28,6 +28,13 @@ def chime():
 
 
 APP = "CleanRead"
+
+
+def app_version():
+    try:
+        return json.loads((HERE / "version.json").read_text())["version"]
+    except Exception:
+        return "?"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 SETTINGS = APP_DATA / "cleanread_settings.json"
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
@@ -162,7 +169,84 @@ class App(tk.Tk):
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
                      wraplength=740, justify="left").pack(anchor="w", pady=(2, 12))
+        # the version and "Check for updates" on every page, as in CleanListen (Jason,
+        # 2026-11-06: "Clean read doesn't have anything on top that says current version")
+        self._page_title = title
+        self._upd_lbl = tk.Label(self.page, text=f"v{app_version()} \u00b7 Check for updates",
+                                 bg=BG, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
+        self._upd_lbl.place(relx=1.0, y=2, anchor="ne")
+        self._upd_lbl.bind("<Button-1>", lambda e: self.check_updates())
         return self.page
+
+    # ---------- updates (CleanRead is updated with CleanListen, by the launcher) ----------
+    def _launcher(self):
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader("cr_launcher", str(HERE / "launcher.pyw"))
+        spec = importlib.util.spec_from_loader("cr_launcher", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        return mod
+
+    def _busy(self):
+        return bool(getattr(self, "pb", None) and self.pb.winfo_exists())
+
+    def check_updates(self):
+        if getattr(self, "_updating", False):
+            return
+        if self._busy():
+            messagebox.showinfo(APP, "Let it finish first (or press Cancel), then check for updates.")
+            return
+        self._updating = True
+        self._upd_lbl.config(text="Checking for updates\u2026")
+
+        def work():
+            try:
+                L = self._launcher()
+                import urllib.request
+                with urllib.request.urlopen(L.RAW + "version.json", timeout=10) as r:
+                    remote = json.loads(r.read().decode("utf8"))
+                if L._ver(remote["version"]) <= L._ver(app_version()):
+                    self.q.put(("update_none", app_version()))
+                    return
+                self.q.put(("update_progress", f"Updating to {remote['version']}\u2026"))
+                new = L.update()
+                self.q.put(("updated", new or remote["version"]))
+            except Exception as ex:
+                self.q.put(("update_fail", str(ex)))
+        threading.Thread(target=work, daemon=True, name="check for updates").start()
+
+    def _update_msg(self, kind, val):
+        self._updating = kind == "update_progress"
+        lbl = getattr(self, "_upd_lbl", None)
+        here = lbl is not None and lbl.winfo_exists()
+        if kind == "update_progress" and here:
+            lbl.config(text=val)
+        elif kind == "update_none" and here:
+            lbl.config(text=f"v{val} \u00b7 \u2713 You have the latest version")
+        elif kind == "update_fail":
+            if here:
+                lbl.config(text=f"v{app_version()} \u00b7 Check for updates")
+            messagebox.showerror(APP, f"Couldn't update right now ({val[:200]}). Try again in a "
+                                 "few minutes.")
+        elif kind == "updated":
+            if getattr(self, "_page_title", APP) != APP and not messagebox.askyesno(
+                    APP, f"CleanRead {val} is ready. It opens again on the first page. "
+                    "Open it now?\n\n(Press No to keep working; it's used next time you open "
+                    "CleanRead.)"):
+                if here:
+                    lbl.config(text=f"v{val} is ready \u00b7 opens next time")
+                return
+            env = dict(os.environ, CLEANLISTEN_UPDATED=f"CleanRead was updated to version {val}.",
+                       CLEANLISTEN_UPDATE_DONE="1")
+            try:
+                subprocess.Popen([sys.executable, str(HERE / "launcher.pyw"), "read"], cwd=str(HERE),
+                                 env=env)
+            except Exception as ex:
+                messagebox.showinfo(APP, f"Updated to {val}. Close CleanRead and open it again to "
+                                    f"finish ({ex}).")
+                return
+            self.destroy()
 
     def _scroll_area(self, parent):
         wrap = tk.Frame(parent, bg=BG)
@@ -238,6 +322,9 @@ class App(tk.Tk):
         self.start_btn = ttk.Button(self.footer, text="", style="Main.TButton",
                                     command=self.start, state="disabled")
         self.start_btn.pack(side="right")
+        # as in CleanView (Jason, 2026-11-06: "No check for update button like clean view")
+        ttk.Button(self.footer, text="\u21bb Check for updates", style="Plain.TButton",
+                   command=self.check_updates).pack(side="left")
         body = self._scroll_area(p)
 
         b1 = self._card(body, "1", "Ebook", "EPUB, PDF or TXT — not copy-protected")
@@ -319,7 +406,9 @@ class App(tk.Tk):
         if self.book_path:
             self.book_lbl.config(text=Path(self.book_path).name, fg=INK)
             self.start_btn.config(state="normal")
-        self.start_btn.config(text="Check this book" if self.mode.get() == "check" else "Find what to remove")
+        # the same words as CleanView and CleanListen (Jason, 2026-11-06: "The other 2 say
+        # start cleaning"); checking only makes a report, so it says that
+        self.start_btn.config(text="Start checking" if self.mode.get() == "check" else "Start cleaning")
         if self.mode.get() == "clean" and getattr(self, "out_lbl", None) and self.out_lbl.winfo_exists():
             if self.outdir:
                 self.out_lbl.config(text=os.path.normpath(self.outdir), fg=INK)
@@ -477,6 +566,9 @@ class App(tk.Tk):
 
     def _handle(self, msg):
         kind = msg[0]
+        if kind in ("update_none", "update_fail", "update_progress", "updated"):
+            self._update_msg(kind, msg[1])
+            return
         if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
             self.pb["value"] = int(msg[1] * 1000)
             self.status.config(text=msg[2])

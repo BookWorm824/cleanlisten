@@ -184,7 +184,8 @@ KIND_RULES = {
                "(valentines, Cupid), Easter (the Easter bunny, Easter eggs and egg hunts, Easter "
                "baskets) or St. Patrick's Day (leprechauns, a pot of gold, wearing green or "
                "shamrocks for the day, its parades). Thanksgiving is fine, and so are ordinary "
-               "eggs or rabbits, Easter Island, Ireland or Irish people in general, and a church "
+               "eggs or rabbits, a place named Santa something (Santa Anita, Santa Monica), "
+               "Christmas Island, Easter Island, Ireland or Irish people in general, and a church "
                "or school named St. Patrick's.",
     "birthday": "Birthday candles: cut only candles on a birthday cake - lit candles on a cake, "
                 "blowing them out, making a wish over them. Birthdays, parties, cake, presents "

@@ -1283,12 +1283,17 @@ def disrespect_hit(words):
 # young kids; all off unless ticked). Only phrases that are hard to mistake; the AI helper and Claude catch the rest.
 # The same lists as CleanView's LINE_WORDS, matched on the normalised words (so "x-mas" is
 # "xmas" and "jack-o'-lantern" is "jacko'lantern"). Thanksgiving is fine (Lauren).
+# "Santa" before a place name isn't Christmas (CleanView 1.18.20; Jason, That Thing You Do:
+# "Santa Anita", "Santa Monica"), nor is "Christmas Island"
+SANTA_PLACES = (r"(anita|monica|barbara|fe|cruz|clara|clarita|rosa|ana|maria|catalina|ynez|"
+                r"paula|teresa|lucia|marta|isabel|elena|cecilia)")
 TOPIC_WORDS = {
     # Christmas, Halloween, Valentine's Day, Easter and St. Patrick's Day: one tick box
     # (not "elves", "stockings" or "make a wish": too often something else; not "Rudolph" on its
     # own: a name in one of Lauren's books)
     "holiday": re.compile(
-        r"\b(christmas|xmas|santa( claus)?|saint nick|north pole|reindeer|rudolph the|"
+        r"\b(christmas(?! island)|xmas|santa(?! " + SANTA_PLACES + r"\b)( claus)?|saint nick|"
+        r"north pole|reindeer|rudolph the|"
         r"rudolph's (red )?nose|mistletoe|"
         r"yuletide|jingle bells|"
         r"hallowe'?en|trick ?or ?treat\w*|jack ?o'?lanterns?|all hallows|"
@@ -1805,6 +1810,7 @@ AI_TYPES = {
                "Day (valentines, Cupid), Easter (the Easter bunny, Easter eggs or egg hunts, Easter "
                "baskets) or St. Patrick's Day (leprechauns, a pot of gold, wearing green or "
                "shamrocks for the day, its parades) (Thanksgiving, ordinary eggs or rabbits, "
+               "a place named Santa something (Santa Anita, Santa Monica), Christmas Island, "
                "Easter Island, Ireland or Irish people in general, or a church or school named "
                "St. Patrick's are NOT this)",
     "birthday": "candles on a birthday cake: lit candles on a cake, blowing them out, or making a "
