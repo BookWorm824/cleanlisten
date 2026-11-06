@@ -156,11 +156,44 @@ def job_key(files):
                         .encode()).hexdigest()[:16]
 
 
+# folders that hold all sorts of things, never one book (a book sitting straight in Downloads
+# was called "Downloads": Jason, 2026-11-06)
+NOT_BOOK_FOLDERS = {"downloads", "desktop", "documents", "my documents", "music", "audiobooks",
+                    "audible", "onedrive", "temp", "tmp"}
+
+
 def book_title(files):
-    """A readable name for a book: its folder, or the folder above the discs."""
-    parents = {str(Path(f).parent) for f in files}
-    first = Path(files[0])
-    return (first.parent.parent.name if len(parents) > 1 else first.parent.name) or first.stem
+    """A readable name for a book: the file's own name for one file ("My Book" for My Book.m4b),
+    the folder's name for a folder of chapter files, the folder above Disc 1, Disc 2..."""
+    files = [Path(f) for f in files]
+    first = files[0]
+    parents = {str(f.parent) for f in files}
+    if len(files) == 1:
+        return first.stem
+    if len(parents) > 1 and first.parent.parent.name.lower() not in NOT_BOOK_FOLDERS:
+        return first.parent.parent.name or first.stem
+    if len(parents) == 1 and first.parent.name.lower() not in NOT_BOOK_FOLDERS:
+        return first.parent.name or first.stem
+    # chapter files loose in Downloads: "My Book - Part 01.mp3" -> "My Book"
+    bare = {re.sub(r"[\s_-]*(part|pt|disc|cd|chapter|ch)?[\s_.-]*\d+$", "", f.stem, flags=re.I).strip()
+            for f in files}
+    return bare.pop() if len(bare) == 1 and "" not in bare else first.stem
+
+
+def fix_title(title, files):
+    """A name saved by 1.16.1 or older, which called a book "Downloads" (or "Desktop"...) because
+    it sat straight in that folder: the right name instead. Any other name is kept as it is."""
+    try:
+        files = [Path(f) for f in files or []]
+        if not files:
+            return title
+        old = (files[0].parent.parent.name if len({str(f.parent) for f in files}) > 1
+               else files[0].parent.name)
+        if title and title == old and old.lower() in NOT_BOOK_FOLDERS and title != book_title(files):
+            return book_title(files)
+    except Exception:
+        pass
+    return title
 
 
 def past_books():
@@ -190,7 +223,8 @@ def past_books():
                         if (d / n).exists())
             ebook = info.get("ebook")
             out.append({"audio": parts, "ebook": ebook if ebook and Path(ebook).exists() else None,
-                        "outdir": info.get("outdir"), "title": info.get("title") or book_title(parts),
+                        "outdir": info.get("outdir"),
+                        "title": fix_title(info.get("title"), parts) or book_title(parts),
                         "when": stamp, "dir": d})
         except Exception:
             continue
@@ -243,6 +277,8 @@ class App(tk.Tk):
         # the books being prepared, ready to review or saving (the "Your books" page); each
         # runs in its own worker process, so one book's trouble never stops the window
         self.books = BQ.BookQueue(QUEUE)
+        for j in self.books.jobs:   # names saved by 1.16.1 and older ("Downloads")
+            j["title"] = fix_title(j.get("title"), j.get("audio"))
         self.books.resume()
         self.workers = BQ.Workers(lambda key, msg: self.q.put(("job", key, msg)))
         self.review_key = None   # the book in the queue whose review is open
