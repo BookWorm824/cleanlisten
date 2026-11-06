@@ -1,5 +1,5 @@
 {
- "version": "1.15.6",
+ "version": "1.16.0",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -25,6 +25,7 @@
   "update.json",
   "readaloud.py",
   "ReadAloud.pyw",
-  "readaloud.ico"
+  "readaloud.ico",
+  "readaloud_ai.py"
  ]
 }

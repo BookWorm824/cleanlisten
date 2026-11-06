@@ -25,6 +25,16 @@ GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt *.docx"), ("All files", "*.*")]
 VOICE_LABELS = [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.VOICES]
+AI_NAMES = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
+
+
+def _saved_ai():
+    """The online AI chosen in CleanListen (Claude unless they picked another)."""
+    try:
+        import cleanlisten_claude as cc
+        return cc.saved_provider()
+    except Exception:
+        return "claude"
 
 
 def chime():
@@ -300,14 +310,46 @@ class App(tk.Tk):
                                    bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640, justify="left")
         self.sample_lbl.pack(anchor="w", pady=(6, 0))
 
-        # 3. the chapters
-        b3 = self._card(body, "3", "What to read")
+        # 3. the reading director (readaloud_ai): Claude / ChatGPT / Gemini go through the book first
+        bd = self._card(body, "3", "Reading director", "optional, uses your own Claude or ChatGPT plan")
+        row = tk.Frame(bd, bg=CARD)
+        row.pack(anchor="w")
+        self.director_var = tk.BooleanVar(value=st.get("director", True))
+        ttk.Checkbutton(row, text="Have", variable=self.director_var,
+                        command=self._director_changed).pack(side="left")
+        self.ai_box = ttk.Combobox(row, state="readonly", width=9, values=list(AI_NAMES.values()))
+        saved = st.get("ai") if st.get("ai") in AI_NAMES else _saved_ai()
+        self.ai_box.current(list(AI_NAMES).index(saved))
+        self.ai_box.pack(side="left", padx=4)
+        self.ai_box.bind("<<ComboboxSelected>>", lambda e: self._director_changed())
+        tk.Label(row, text="go through the book first and direct the reading", bg=CARD, fg=INK,
+                 font=(FONT, 10)).pack(side="left")
+        self._note(bd, "It takes out what shouldn't be read aloud (page numbers, headings at the top of "
+                       "pages, jacket text, scanning mistakes), works out who is speaking and how each part "
+                       "should be read (slower, faster, pauses), and how to say unusual names. It adds "
+                       "about 10 minutes before the reading starts, and you get a list of everything it "
+                       "changed.", pad=22)
+        self.cast_var = tk.BooleanVar(value=st.get("cast", False))
+        self.cast_check = ttk.Checkbutton(bd, text="Give the characters their own voices  (men and women "
+                                          "in the story; the narrator keeps the voice above)",
+                                          variable=self.cast_var, command=self._remember)
+        self.cast_check.pack(anchor="w", pady=(8, 0))
+        srow = tk.Frame(bd, bg=CARD)
+        srow.pack(anchor="w", pady=(6, 0))
+        self.ai_status = tk.Label(srow, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
+        self.ai_status.pack(side="left")
+        self.ai_btn = ttk.Button(srow, text="Set up / sign in", style="Small.TButton", command=self._sign_in)
+        self.ai_ok = None
+        self._director_changed(check=True)
+
+        # 4. the chapters
+        b3 = self._card(body, "4", "What to read")
         self.ch_host = tk.Frame(b3, bg=CARD)
         self.ch_host.pack(fill="x")
         tk.Label(self.ch_host, text="Choose a book first.", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(anchor="w")
 
         # 4. where it goes
-        b4 = self._card(body, "4", "Save to")
+        b4 = self._card(body, "5", "Save to")
         row = tk.Frame(b4, bg=CARD)
         row.pack(fill="x")
         ttk.Button(row, text="Change…", style="Plain.TButton", command=self.pick_folder).pack(side="right")
@@ -336,6 +378,43 @@ class App(tk.Tk):
         if self.book:
             self._show_book()
 
+    def _director_changed(self, check=True):
+        on = self.director_var.get()
+        self.cast_check.config(state="normal" if on else "disabled")
+        self.ai_box.config(state="readonly" if on else "disabled")
+        self._remember()
+        self.ai_btn.pack_forget()
+        if not on:
+            self.ai_status.config(text="")
+            return
+        ai = list(AI_NAMES)[self.ai_box.current()]
+        self.ai_status.config(text=f"Checking that {AI_NAMES[ai]} is set up…", fg=MUTED)
+        self.ai_ok = None
+
+        def go():
+            try:
+                import cleanlisten_claude as cc
+                st = cc.status(ai)
+            except Exception:
+                st = "missing"
+            self.q.put(("ai_status", ai, st))
+        if check:
+            threading.Thread(target=go, daemon=True).start()
+
+    def _sign_in(self):
+        ai = list(AI_NAMES)[self.ai_box.current()]
+        self.ai_status.config(text=f"Setting up {AI_NAMES[ai]}… (a window or your browser may open)", fg=INK)
+
+        def go():
+            try:
+                import cleanlisten_claude as cc
+                cc.install(provider=ai)
+                cc.open_sign_in(ai)
+                self.q.put(("ai_status", ai, "signing_in"))
+            except Exception as ex:
+                self.q.put(("ai_status", ai, "error:" + str(ex)[:200]))
+        threading.Thread(target=go, daemon=True).start()
+
     def _abs_changed(self):
         if self.abs_var.get():
             self.abs_row.pack(anchor="w", pady=(6, 0), before=self.mp3_check)
@@ -351,6 +430,9 @@ class App(tk.Tk):
             st["speed"] = self.speed_box.get()
             st["abs"] = self.abs_var.get()
             st["mp3"] = self.mp3_var.get()
+            st["director"] = self.director_var.get()
+            st["ai"] = list(AI_NAMES)[self.ai_box.current()]
+            st["cast"] = self.cast_var.get()
         except (tk.TclError, AttributeError, IndexError):
             pass
         if self.folder:
@@ -383,6 +465,8 @@ class App(tk.Tk):
         def go():
             try:
                 book = engine.load_book(f)
+                if not book.get("cover"):
+                    engine.cover_online(book)
                 cover = self._cover_png(book)
                 self.q.put(("book", f, book, cover))
             except engine.BookError as ex:
@@ -527,6 +611,15 @@ class App(tk.Tk):
         voice = engine.VOICES[self.voice_box.current()][0]
         speed = engine.SPEEDS.get(self.speed_box.get(), 1.0)
         extra = {"mp3": self.mp3_var.get()}
+        if self.director_var.get():
+            ai = list(AI_NAMES)[self.ai_box.current()]
+            if self.ai_ok is False:
+                chime()
+                if not messagebox.askyesno(APP, f"{AI_NAMES[ai]} isn't set up on this computer, so it can't go "
+                                                "through the book.\n\nMake the audiobook without it?"):
+                    return
+            else:
+                extra.update(director=ai, cast=self.cast_var.get())
         try:
             jobdir = engine.start_job(b, voice, speed, ids, out, extra)
         except OSError as ex:
@@ -603,6 +696,11 @@ class App(tk.Tk):
                  bg=BG, fg=INK, font=(FONT, 12), justify="left").pack(anchor="w", pady=(12, 4))
         tk.Label(p, text=os.path.normpath(str(f.parent)), bg=BG, fg=MUTED, font=(FONT, 10),
                  wraplength=740, justify="left").pack(anchor="w")
+        if res.get("report"):
+            row0 = tk.Frame(p, bg=BG)
+            row0.pack(anchor="w", pady=(8, 0))
+            self._link(row0, "See what the reading director left out and changed",
+                       lambda: open_path(res["report"]), bg=BG).pack(side="left")
         if res.get("mp3_dir"):
             tk.Label(p, text=f"MP3 chapter files: {os.path.normpath(res['mp3_dir'])}", bg=BG, fg=MUTED,
                      font=(FONT, 10), wraplength=740, justify="left").pack(anchor="w", pady=(6, 0))
@@ -654,6 +752,31 @@ class App(tk.Tk):
                 self.book_lbl.config(text="No book chosen yet" if not self.book else self.book_lbl.cget("text"),
                                      fg=MUTED)
             messagebox.showerror(APP, msg[1])
+        elif kind == "ai_status":
+            if not (getattr(self, "ai_status", None) and self.ai_status.winfo_exists()):
+                return
+            ai, st = msg[1], msg[2]
+            if ai != list(AI_NAMES)[self.ai_box.current()]:
+                return
+            name = AI_NAMES[ai]
+            self.ai_btn.pack_forget()
+            if st == "ok":
+                self.ai_ok = True
+                self.ai_status.config(text=f"✓ {name} is ready.", fg=ACCENT_DK)
+            elif st == "signing_in":
+                self.ai_ok = None
+                self.ai_status.config(text=f"Sign in to {name} in the window that opened, then come back here.",
+                                      fg=INK)
+                self.after(20000, lambda: self._director_changed())
+            elif st.startswith("error:"):
+                self.ai_ok = False
+                self.ai_status.config(text=f"Couldn't set up {name}: {st[6:]}", fg="#9A2F1F")
+                self.ai_btn.pack(side="left", padx=8)
+            else:
+                self.ai_ok = False
+                self.ai_status.config(text=f"{name} isn't set up on this computer yet." if st == "missing"
+                                      else f"{name} isn't signed in.", fg="#9A2F1F")
+                self.ai_btn.pack(side="left", padx=8)
         elif kind == "sample_msg":
             if self.sample_lbl.winfo_exists():
                 self.sample_lbl.config(text=msg[1], fg=INK)

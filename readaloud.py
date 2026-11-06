@@ -398,6 +398,245 @@ def _read_docx(path):
     return (html.unescape(t.group(1)).strip() if t else "", html.unescape(a.group(1)).strip() if a else "", paras)
 
 
+# ---------------------------------------------------------------------------
+# PDFs: pages, not a story. Lauren's Vermilion.pdf (a 1981 book scanned by the Internet Archive)
+# came out with "Vermilion" and "Phyllis A. Whitney" read at the top of every page, every page
+# number, and every printed line as its own paragraph ("the woman who" / pause / "hadn't wanted
+# me"), so it sounded stilted. Read page by page instead: drop the running heads and page
+# numbers, join lines into real paragraphs, mend words split at the end of a line, and find the
+# chapters (a short page with no running head starts one).
+# ---------------------------------------------------------------------------
+_WORDS = None
+
+
+def known_words():
+    """Every word the voice knows (its own pronouncing lists, 178,000 words), for telling a word
+    split at a line end ("know-" "ing") from a real hyphen ("high-" "heeled")."""
+    global _WORDS
+    if _WORDS is None:
+        words = set()
+        for name in ("lexicon-us-en.txt", "lexicon-gb-en.txt"):
+            try:
+                with open(model_dir() / name, encoding="utf8") as f:
+                    for line in f:
+                        words.add(line.split(" ", 1)[0].lower())
+            except OSError:
+                pass
+        _WORDS = words
+    return _WORDS
+
+
+def join_lines(a, b):
+    """Two lines of print as one text: "know-" + "ing gone" -> "knowing gone", "high-" +
+    "heeled" -> "high-heeled" (both are words), "hol- lowness" -> "hollowness"."""
+    m = re.search(r"([A-Za-z]+)[-­]$", a)
+    n = re.match(r"([a-z]+)", b)
+    if m and n:
+        whole = (m.group(1) + n.group(1)).lower()
+        words = known_words()
+        if not words or whole in words or not (m.group(1).lower() in words and n.group(1) in words):
+            return a[:-1] + b
+        return a + b
+    return a + " " + b
+
+
+SPLIT_WORD = re.compile(r"\b([A-Za-z]+)-\s+([a-z]+)\b")
+
+
+def mend_words(text):
+    """Words split by a line end inside a paragraph: "know- ing" -> "knowing"."""
+    words = known_words()
+
+    def fix(m):
+        # the voice's lists lack many -ed/-ing forms ("waited"), so join unless both halves are
+        # words and the whole isn't ("guest-house")
+        whole = (m.group(1) + m.group(2)).lower()
+        if words and whole not in words and m.group(1).lower() in words and m.group(2) in words:
+            return m.group(1) + "-" + m.group(2)
+        return m.group(1) + m.group(2)
+    return SPLIT_WORD.sub(fix, text)
+
+
+# Scanned books glue short words onto their neighbours ("inmy", "ofthat", "butnow", "she'dbeen").
+# A word the voice doesn't know is split when it's one of these little words plus a known word.
+GLUE = {"a", "an", "the", "of", "in", "on", "at", "to", "and", "but", "or", "my", "me", "he", "she",
+        "we", "it", "is", "was", "with", "for", "from", "that", "this", "not", "now", "had", "been",
+        "his", "her", "him", "you", "your", "i", "i'd", "she'd", "he'd", "i'm", "i've", "i'll", "as",
+        "be", "by", "so", "no", "if", "up", "out", "all", "into", "were", "have", "has", "did", "would",
+        "could", "there", "they", "them", "then", "than", "what", "when", "who", "how", "our", "its"}
+GLUED = re.compile(r"(?<![\w'’-])([a-z]+(?:'[a-z]+)?[a-z]*)(?![\w'’-])")
+
+
+def unglue(text):
+    words = known_words()
+    if not words:
+        return text
+
+    def fix(m):
+        w = m.group(1)
+        if w in words or len(w) < 4:
+            return w
+        for k in range(1, len(w)):
+            a, b = w[:k], w[k:]
+            if (a in GLUE and b in words and len(b) >= 2) or (b in GLUE and a in words and len(a) >= 2):
+                return f"{a} {b}"
+        return w
+    text = GLUED.sub(fix, text)
+    return re.sub(r"(?:(?<=^)|(?<=[\s\"(]))/(?=\s+[a-z])", "I", text)     # "/ was" is "I was"
+
+
+def _letters(s):
+    return re.sub(r"[^a-z]", "", s.lower())
+
+
+PAGE_NO = re.compile(r"^[\dIVXLCivxlc .\-–—|]{1,9}$")
+END_PUNCT = re.compile(r"[.!?…:\"'”’)\]]$")
+CHAPTER_LINE = re.compile(r"^(chapter|part|book)\s+([\dIVXLC]+|one|two|three|four|five|six|seven|eight|nine|"
+                          r"ten|eleven|twelve|[a-z]+teen|twenty[\w-]*|thirty[\w-]*)\b.{0,50}$|^(prologue|epilogue)\b.{0,40}$",
+                          re.I)
+
+
+def _pdf_author(a):
+    """"Whitney, Phyllis A., 1903-2008" -> "Phyllis A. Whitney"."""
+    a = re.sub(r",?\s*\d{4}\s*-\s*(\d{4})?\.?\s*$", "", " ".join(str(a or "").split())).strip(" ,")
+    m = re.fullmatch(r"([^,]+),\s*([^,]+)", a)
+    return f"{m.group(2)} {m.group(1)}" if m else a
+
+
+def read_pdf(path):
+    """(title, author, cover bytes or None, chapters [{"title", "paras", "read"}])."""
+    try:
+        from pypdf import PdfReader
+        r = PdfReader(str(path))
+        if r.is_encrypted and not r.decrypt(""):
+            raise BookError("This PDF is locked with a password, so it can't be read.")
+        pages = [[" ".join(l.split()) for l in (pg.extract_text() or "").split("\n") if l.strip()]
+                 for pg in r.pages]
+    except BookError:
+        raise
+    except Exception as ex:
+        raise BookError(f"This PDF couldn't be opened ({ex}).")
+    meta = r.metadata or {}
+    title = " ".join(str(meta.get("/Title") or "").split()) or Path(path).stem
+    author = _pdf_author(meta.get("/Author"))
+    n = len(pages)
+    # running heads: the same words at the top or bottom of many pages ("Phyllis A. Whitney 11")
+    seen = {}
+    for lines in pages:
+        for line in set(lines[:3] + lines[-2:]):
+            k = _letters(line)
+            if 3 <= len(k) <= 60 and len(line.split()) <= 8:
+                seen[k] = seen.get(k, 0) + 1
+    heads = {k for k, c in seen.items() if c >= max(4, 0.06 * n)}
+
+    def is_head(line):
+        k = _letters(line)
+        if not k:
+            return bool(PAGE_NO.match(line))
+        if len(line.split()) > 8:
+            return False
+        import difflib
+        return k in heads or any(difflib.SequenceMatcher(None, k, h).ratio() >= 0.8 for h in heads)
+
+    body, had_head = [], []
+    for lines in pages:
+        lines, top, head = list(lines), 0, False
+        while lines and top < 4 and is_head(lines[0]):
+            head |= bool(_letters(lines.pop(0)))
+            top += 1
+        bottom = 0
+        while lines and bottom < 3 and is_head(lines[-1]):
+            head |= bool(_letters(lines.pop()))
+            bottom += 1
+        body.append(lines)
+        had_head.append(head)
+    long_lines = sorted(len(l) for lines in body for l in lines if len(l) > 20)
+    if not long_lines:
+        raise BookError("No text was found in this PDF. (A scanned PDF needs its text recognized "
+                        "first; this one has only pictures of the pages.)")
+    full = long_lines[len(long_lines) * 3 // 4]      # a full line of print
+    counts = sorted(len(b) for b in body if len(b) > 5)
+    usual = counts[len(counts) // 2] if counts else 30
+
+    def prose(lines):
+        return len(lines) >= 4 and sum(len(l) > 0.6 * full for l in lines) >= 3
+
+    # where chapters start: a "Chapter 3" line, or a short page without the running head whose
+    # next page with text has it again (the story carrying on). Not when no page has a head.
+    starts = {}
+    any_heads = any(had_head)
+    nxt = [None] * n
+    following = None
+    for i in range(n - 1, -1, -1):
+        nxt[i] = following
+        if body[i]:
+            following = i
+    for i, lines in enumerate(body):
+        if lines and CHAPTER_LINE.match(lines[0]) and len(lines[0]) < 60:
+            starts[i] = title_case(lines[0]) if lines[0].isupper() else lines[0]
+            body[i] = lines[1:]
+        elif (any_heads and not had_head[i] and prose(lines) and len(lines) <= 0.75 * usual
+              and nxt[i] is not None and had_head[nxt[i]]):
+            starts[i] = ""
+    first = min(starts) if starts else None
+    # the back of the jacket after the story ("(continued from front flap)")
+    jacket = next((i for i, lines in enumerate(body) if i > (first or 0)
+                   and any(re.search(r"continued\s*(from|on)\s*(the\s*)?(front|back)\s*flap", l, re.I)
+                           for l in lines)), None)
+
+    chapters = []
+
+    def new(name, read=True):
+        chapters.append({"title": name, "paras": [], "read": read, "_cur": ""})
+
+    def flush():
+        ch = chapters[-1]
+        t = " ".join(ch["_cur"].split())
+        if t:
+            ch["paras"].append(["p", t])
+        ch["_cur"] = ""
+
+    new("Front matter (jacket, title page, copyright)" if first else "Beginning", read=not first)
+    k = 0
+    for i, lines in enumerate(body):
+        if jacket is not None and i == jacket and i > (first or 0):
+            flush()
+            new("Book jacket", read=False)
+        elif i in starts:
+            flush()
+            k += 1
+            new(starts[i] or f"Chapter {k}")
+        for line in lines:
+            ch = chapters[-1]
+            ch["_cur"] = join_lines(ch["_cur"], line) if ch["_cur"] else line
+            if END_PUNCT.search(line) and len(line) < 0.85 * full:
+                flush()
+    flush()
+    for ch in chapters:
+        ch.pop("_cur", None)
+    cover = None
+    try:            # a scanned book's first page is often its cover (when it's a JPEG)
+        for img in r.pages[0].images[:1]:
+            if img.data[:3] == b"\xff\xd8\xff":
+                cover = img.data
+    except Exception:
+        pass
+    return title, author, cover, [c for c in chapters if c["paras"]]
+
+
+def mend_paragraphs(paras):
+    """Join a paragraph that stops mid-sentence to the next one when that starts in lower case
+    (a line break from a PDF or a converted file, not a real paragraph)."""
+    out = []
+    for kind, text in paras:
+        if (out and kind == "p" and out[-1][0] == "p" and text[:1].islower()
+                and not END_PUNCT.search(out[-1][1])):
+            out[-1] = ["p", join_lines(out[-1][1], text)]
+        else:
+            out.append([kind, text])
+    return out
+
+
 def load_book(path):
     """The book as {"title", "author", "series", "number", "cover" (bytes), "cover_ext", "path",
     "chapters": [{"title", "paras": [[kind, text]], "words", "read"}]}, kind = "h" heading,
@@ -407,7 +646,10 @@ def load_book(path):
     fmt = path.suffix.lower()
     chapters = []
     title, author, series, number, cover, cover_ext = path.stem, "", "", "", None, ""
-    if fmt == ".docx":
+    if fmt == ".pdf":
+        title, author, cover, chapters = read_pdf(path)
+        cover_ext = ".jpg" if cover else ""
+    elif fmt == ".docx":
         t, a, paras = _read_docx(path)
         title, author = t or title, a
         for heading, text in paras:
@@ -436,7 +678,7 @@ def load_book(path):
     out = []
     for ch in chapters:
         paras = []
-        for kind, text in ch["paras"]:
+        for kind, text in mend_paragraphs(ch["paras"]):
             raw = " ".join(str(text).split())
             if not raw:
                 continue
@@ -444,7 +686,7 @@ def load_book(path):
                 if paras and paras[-1][0] != "b":
                     paras.append(["b", ""])
                 continue
-            s = speakable(raw)
+            s = speakable(unglue(mend_words(raw)) if fmt == ".pdf" else mend_words(raw))
             if s:
                 paras.append([kind, s])
         while paras and paras[-1][0] == "b":
@@ -459,7 +701,7 @@ def load_book(path):
         # (only short ones: a whole story once sat under "List of Illustrations")
         skip = bool(SKIP_TITLES.search(name or "")) and (words < 1500 or bool(LICENSE.search(name)))
         out.append({"title": name or f"Part {len(out) + 1}", "paras": paras, "words": words,
-                    "read": not skip})
+                    "read": ch.get("read", True) and not skip})
     # a "chapter" that is only a heading ("Part One") is read with the chapter after it
     merged = []
     for ch in out:
@@ -474,6 +716,23 @@ def load_book(path):
                         "rather than text, so it can't be read.)")
     return {"title": title, "author": author, "series": series, "number": number, "cover": cover,
             "cover_ext": cover_ext, "path": str(path), "chapters": merged}
+
+
+def cover_online(book):
+    """A cover from the internet for a book without one (a scanned PDF's is often a format the
+    M4B can't hold), the way CleanListen finds one: only the title and author are sent, and only
+    a sure match is taken. Sets book["cover"]; True if one was found."""
+    try:
+        sys.path.insert(0, str(HERE))
+        import cleanlisten as E
+        found = E.find_cover_online(book["title"], book.get("author", ""), APP_DATA / "covers", log=lambda m: None)
+        if found:
+            data = Path(found["file"]).read_bytes()
+            book["cover"], book["cover_ext"] = data, Path(found["file"]).suffix.lower()
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def sample_text(book, words=45):
@@ -567,6 +826,7 @@ def speak_chapter(jobdir, i, threads=4, report=None):
     ch = json.loads((jobdir / "chapters.json").read_text(encoding="utf8"))[i]
     v = VOICE.get(job["voice"]) or VOICE[DEFAULT_VOICE]
     tts = voice_engine(v[4], threads)
+    pron = job.get("pronounce") or {}
     stopfile = jobdir / "stop"
 
     def stop():
@@ -585,14 +845,24 @@ def speak_chapter(jobdir, i, threads=4, report=None):
     try:
         put(_silence(LEAD_IN))
         prev = None
-        for kind, text in ch["paras"]:
+        for item in ch["paras"]:
+            # [kind, text] or, directed (readaloud_ai), [kind, text, {"v": voice, "s": pace, "g": pause}]
+            kind, text = item[0], item[1]
+            o = item[2] if len(item) > 2 else {}
             if kind == "b":
                 put(_silence(GAP_BREAK))
                 prev = "b"
                 continue
-            if prev in ("p", "h"):
+            if "g" in o and prev:
+                put(_silence(o["g"]))
+            elif prev in ("p", "h"):
                 put(_silence(GAP_HEADING if prev == "h" or kind == "h" else GAP_PARA))
-            put(say_text(tts, text, v[1], job.get("speed", 1.0), stop))
+            sv = VOICE.get(o.get("v")) or v
+            speaker = voice_engine(sv[4], threads) if sv[4] != v[4] else tts
+            if pron:
+                import readaloud_ai
+                text = readaloud_ai.pronounce(text, pron)
+            put(say_text(speaker, text, sv[1], job.get("speed", 1.0) * o.get("s", 1.0), stop))
             prev = kind
             done += len(text.split())
             if report:
@@ -620,7 +890,7 @@ def speak_chapter(jobdir, i, threads=4, report=None):
 # ---------------------------------------------------------------------------
 # A job: one book, one voice
 # ---------------------------------------------------------------------------
-def job_key(book_path, voice, speed, chapter_ids):
+def job_key(book_path, voice, speed, chapter_ids, director="", cast=False):
     p = Path(book_path)
     try:
         st = p.stat()
@@ -628,13 +898,17 @@ def job_key(book_path, voice, speed, chapter_ids):
     except OSError:
         ident = str(p)
     ident += f"|{voice}|{speed}|{','.join(map(str, chapter_ids))}"
+    if director:
+        ident += f"|{director}|{bool(cast)}"
     return hashlib.sha1(ident.encode("utf8")).hexdigest()[:16]
 
 
 def start_job(book, voice, speed, chapter_ids, out_file, extra=None):
     """Make (or find again) the job folder for this book, voice and chapters. Chapters already
-    read in an earlier run are kept."""
-    key = job_key(book["path"], voice, speed, chapter_ids)
+    read in an earlier run are kept. extra: {"mp3", "director" ("claude"/"chatgpt"/"gemini" to
+    have it go through the book first, readaloud_ai), "cast" (characters get their own voices)}."""
+    extra = extra or {}
+    key = job_key(book["path"], voice, speed, chapter_ids, extra.get("director", ""), extra.get("cast"))
     jobdir = JOBS / key
     jobdir.mkdir(parents=True, exist_ok=True)
     chosen = [book["chapters"][i] for i in chapter_ids]
@@ -646,10 +920,12 @@ def start_job(book, voice, speed, chapter_ids, out_file, extra=None):
            "series": book.get("series", ""), "number": book.get("number", ""),
            "voice": voice, "speed": speed, "chapters": chapter_ids, "out": str(out_file),
            "bitrate": BITRATE, "started": time.strftime("%Y-%m-%d %H:%M")}
-    job.update(extra or {})
+    job.update(extra)
     (jobdir / "job.json").write_text(json.dumps(job, indent=1), encoding="utf8")
     (jobdir / "stop").unlink(missing_ok=True)
     (jobdir / "done.json").unlink(missing_ok=True)
+    # the chapters were just written undirected: the directions are put back from their cache
+    (jobdir / "directed.json").unlink(missing_ok=True)
     return jobdir
 
 
@@ -721,8 +997,16 @@ class Maker:
 
     def run(self):
         """Read every chapter not read yet, then make the audiobook. Returns assemble()'s result."""
+        # "Stop for now" left a stop note; carrying on must clear it, or every worker stops at
+        # once and the book is put together with chapters missing (Lauren's first try, 1.15.0)
+        (self.jobdir / "stop").unlink(missing_ok=True)
         if not have_model():
             get_model(lambda f, m: self.say(f * 0.02, m), self._stop)
+        job = json.loads((self.jobdir / "job.json").read_text(encoding="utf8"))
+        if job.get("director") and not (self.jobdir / "directed.json").exists():
+            import readaloud_ai
+            readaloud_ai.direct(self.jobdir, lambda f, m: self.say(0.02 + 0.08 * f, m, None), self._stop)
+        base = 0.1 if job.get("director") else 0.02
         chapters = json.loads((self.jobdir / "chapters.json").read_text(encoding="utf8"))
         words = [c["words"] for c in chapters]
         total = max(1, sum(words))
@@ -766,12 +1050,15 @@ class Maker:
             if first and time.time() - first[0] > 45 and now - first[1] > 0.02 * total:
                 rate = (now - first[1]) / (time.time() - first[0])
                 left = (total - now) / rate
-            self.say(0.02 + 0.93 * now / total,
+            self.say(base + (0.95 - base) * now / total,
                      f"Reading the book aloud… {len(chapters) - left_ch} of {len(chapters)} chapters done", left)
         if errors:
             raise errors[0]
         if self._stop.is_set():
             raise Stopped()
+        missing = [i + 1 for i in range(len(chapters)) if not chapter_file(self.jobdir, i).exists()]
+        if missing:
+            raise RuntimeError(f"Chapter {missing[0]} wasn't read aloud. Press Carry on to try again.")
         return assemble(self.jobdir, lambda f, m: self.say(0.95 + 0.05 * f, m, None))
 
     def _one(self, i, partial, lock):
@@ -893,8 +1180,17 @@ def assemble(jobdir, progress=None):
                             "-metadata", f"title={titles[i]}", "-metadata", f"album={job['title']}",
                             "-metadata", f"artist={job.get('author', '')}", "-metadata", f"track={i + 1}",
                             str(mp3_dir / name)], capture_output=True, **_NOWIN)
+    report = None
+    if (jobdir / "report.txt").exists():    # what the reading director changed (readaloud_ai)
+        try:
+            report = APP_DATA / "readaloud_reports" / (E.safe_name(job["title"]) + " - what was changed.txt")
+            report.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(jobdir / "report.txt", report)
+        except OSError:
+            report = None
     result = {"file": str(dst), "chapters": n_ch, "hours": round(at / 3600, 2),
-              "mp3_dir": str(mp3_dir) if mp3_dir else None, "finished": time.strftime("%Y-%m-%d %H:%M")}
+              "mp3_dir": str(mp3_dir) if mp3_dir else None, "finished": time.strftime("%Y-%m-%d %H:%M"),
+              "report": str(report) if report else None}
     (jobdir / "done.json").write_text(json.dumps(result, indent=1), encoding="utf8")
     for f in (lst, meta):
         f.unlink(missing_ok=True)

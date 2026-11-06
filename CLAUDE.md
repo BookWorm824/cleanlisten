@@ -38,7 +38,8 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `dropfiles.py` | Dropping files from File Explorer on a widget (the M4B cover box, 1.14.6): Windows' own WM_DROPFILES through ctypes (subclassing the widget's window), so nothing to install. The window procedure must not call tkinter (Tk holds its lock there): it only notes the files and an `after` loop hands them over. Tested with a real posted drop (`tests/test_dropfiles.py`). |
 | `ollama_care.py` | Ollama only while CleanView, CleanListen or CleanRead are open (1.15.2; Lauren, 2026-11-05: it started with Windows and held ~4 GB once it had loaded a model). `autostart_off()` removes Ollama's Startup-folder shortcut every time the installed CleanListen or CleanRead opens (Ollama's own updates put it back). When either window closes, `stop_later()` starts a small detached helper (`stop_when_idle`): after 8 s, if no CleanView/CleanListen/CleanRead window or book worker is running (`other_apps`, a `Win32_Process` command-line query) and no model is loaded (`/api/ps`, waiting up to 7 min for one to be let go of), it stops `ollama app.exe` and `ollama.exe`. If Windows can't say, or a model stays loaded (something else using Ollama), it's left alone. The apps start Ollama themselves when needed (`cleanview_ai.start_ollama`). No numpy, so the helper starts fast. CleanView can use the same file. |
 | `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
-| `readaloud.py` | ReadAloud's engine (§11): ebook -> chapters -> Kokoro voice (sherpa-onnx) in worker processes -> one M4B with chapters, tags and cover. CLI: `info`, `make`, `speak` (one worker). |
+| `readaloud.py` | ReadAloud's engine (§11): ebook (PDFs page by page) -> chapters -> Kokoro voice (sherpa-onnx) in worker processes -> one M4B with chapters, tags and cover. CLI: `info`, `make`, `speak` (one worker). |
+| `readaloud_ai.py` | ReadAloud's reading director (§11): Claude / ChatGPT / Gemini go through the book first (what not to read, scanning fixes, who speaks, pace, pauses, pronunciations). |
 | `ReadAloud.pyw` | ReadAloud's window: choose ebook, voice (▶ Hear it), what to read, where to save; working page; done page. Launcher arg `aloud`. |
 | `shortcuts.py` | Creates the CleanRead and ReadAloud desktop icons; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
@@ -472,9 +473,43 @@ install (own icon, launcher arg `aloud`, own name in Task Manager), like CleanRe
   (`E.abs_folder`), series and number editable.
 - Checked by listening back with Parakeet: a whole chapter matched the book's words 98% (the
   rest: names, dialect, "lunch basket").
-- Ideas: a queue of several books; different voices for dialogue; a pronunciation list for
-  names; "clean it first" straight from CleanRead's filters (for now: clean in CleanRead, then
-  choose the clean copy).
+- **PDFs** (1.16.0; Lauren's Vermilion.pdf, an Internet Archive scan of a 1981 book: "it reads
+  things its not supposed too, and its very stilted"): `read_pdf` reads page by page with pypdf.
+  Running heads ("Phyllis A. Whitney 11", "12 Vermilion": the same letters on 6%+ of pages, fuzzy
+  for scan errors) and page numbers go; lines join into paragraphs (a paragraph ends on a short
+  line ending in punctuation; every printed line had been its own paragraph, read as a fragment
+  with a pause: that was the stilted sound); words split at a line end are joined (`join_lines`,
+  `mend_words`; the voice's lexicon, 178k words but missing many -ed/-ing forms, tells "guest-
+  house" from "know- ing"); glued words are split (`unglue`: "inmy", "she'dbeen", "/ was").
+  Chapters: a "Chapter 3" line, or a short page with no running head whose next page has one
+  (found all 16 of Vermilion's). Before the first chapter = "Front matter", after "(continued
+  from front flap)" = "Book jacket", both unticked. Title/author from the PDF's metadata
+  (`_pdf_author`: "Whitney, Phyllis A., 1903-2008"). `mend_paragraphs` joins mid-sentence breaks
+  in every format. No cover in the file (Vermilion's is JPEG 2000) -> `cover_online` (CleanListen's
+  `find_cover_online`). The sample ("Hear it") joins sentences, so it never showed the problem.
+- **Reading director** (`readaloud_ai.py`, 1.16.0; Lauren: "have claude or chat go through the book -
+  remove anything that shouldn't be read, look at the context of the book and give the reading
+  directions"): optional card 3, Claude / ChatGPT / Gemini through `cleanlisten_claude.run` (the
+  family's own plan; `PROVIDER` set for the book only, not saved as CleanListen's choice). A cast
+  pass on the opening (first person? who; characters with gender/age; names to pronounce; tone),
+  then ~2500-word parts, 3 at a time, listing only paragraphs that need something: skip, fix (only
+  taken when `same_words`: same words, scanning repairs only), speakers of each quoted speech,
+  pace (slower 0.92 / faster 1.07) and pause (short / long / scene). Answers are cached per book +
+  chapters + provider (`readaloud/direction/<key>`), so another voice or Carry on never asks again.
+  `apply` writes directed items `[kind, text, {"v": voice, "s": pace, "g": pause}]`; with "Give
+  the characters their own voices" quotes are split (`split_quotes`, an open quote runs to the
+  paragraph end) and cast by gender within the narrator's accent; a first-person narrator's own
+  speech keeps the narrator's voice. Never skips a paragraph over 150 words. Respellings only for
+  words the voice doesn't know ("Sybil" -> "sib-ul" sounded worse). A report of everything left
+  out / fixed / not taken goes to `APP_DATA\readaloud_reports\<title> - what was changed.txt`
+  (link on the done page). Vermilion chapter 1: 41 s with Opus; a novel ~10 minutes. Kokoro can't
+  act an emotion on request, so mood only sets the pace.
+- **Carry on after "Stop for now"** (fixed in 1.16.0): the stop note stayed, so every worker
+  stopped at once and the book was put together with chapters missing ("Impossible to open
+  ch0000.m4a"). `Maker.run` clears it, and refuses to assemble with a chapter missing.
+- Ideas: a queue of several books; "clean it first" straight from CleanRead's filters (for now:
+  clean in CleanRead, then choose the clean copy); an expressive GPU voice that can act out the
+  director's moods.
 
 ## 10. Working with Lauren
 
