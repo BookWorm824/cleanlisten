@@ -175,12 +175,14 @@ class _ToneVoice:
         return self._Audio(0.3 * np.sin(2 * np.pi * (200 + 10 * sid) * t))
 
 
-def voice_engine(accent="us", threads=4):
-    """The speech engine for an accent (American or British pronunciations), made once."""
+def voice_engine(accent="us", threads=4, names=""):
+    """The speech engine for an accent (American or British pronunciations), made once. names: a
+    book's own list of how to say its names (readaloud_ai), read before the voice's own list."""
     if os.environ.get("READALOUD_FAKE_VOICE"):
         return _ToneVoice()
     import sherpa_onnx as so
-    key = (accent, threads)
+    names = names if names and Path(names).exists() else ""
+    key = (accent, threads, names)
     with _TTS_LOCK:
         if key not in _TTS:
             d = model_dir()
@@ -191,7 +193,7 @@ def voice_engine(accent="us", threads=4):
                     kokoro=so.OfflineTtsKokoroModelConfig(
                         model=str(d / "model.onnx"), voices=str(d / "voices.bin"),
                         tokens=str(d / "tokens.txt"), data_dir=str(d / "espeak-ng-data"),
-                        lexicon=str(d / lex), lang=lang),
+                        lexicon=(names + "," if names else "") + str(d / lex), lang=lang),
                     num_threads=threads, provider="cpu"),
                 max_num_sentences=1)
             _TTS[key] = so.OfflineTts(cfg)
@@ -825,7 +827,8 @@ def speak_chapter(jobdir, i, threads=4, report=None):
     job = json.loads((jobdir / "job.json").read_text(encoding="utf8"))
     ch = json.loads((jobdir / "chapters.json").read_text(encoding="utf8"))[i]
     v = VOICE.get(job["voice"]) or VOICE[DEFAULT_VOICE]
-    tts = voice_engine(v[4], threads)
+    names = job.get("lexicon") or ""
+    tts = voice_engine(v[4], threads, names)
     pron = job.get("pronounce") or {}
     stopfile = jobdir / "stop"
 
@@ -858,7 +861,7 @@ def speak_chapter(jobdir, i, threads=4, report=None):
             elif prev in ("p", "h"):
                 put(_silence(GAP_HEADING if prev == "h" or kind == "h" else GAP_PARA))
             sv = VOICE.get(o.get("v")) or v
-            speaker = voice_engine(sv[4], threads) if sv[4] != v[4] else tts
+            speaker = voice_engine(sv[4], threads, names) if sv[4] != v[4] else tts
             if pron:
                 import readaloud_ai
                 text = readaloud_ai.pronounce(text, pron)
@@ -890,7 +893,7 @@ def speak_chapter(jobdir, i, threads=4, report=None):
 # ---------------------------------------------------------------------------
 # A job: one book, one voice
 # ---------------------------------------------------------------------------
-def job_key(book_path, voice, speed, chapter_ids, director="", cast=False):
+def job_key(book_path, voice, speed, chapter_ids, director="", cast=False, reader="kokoro"):
     p = Path(book_path)
     try:
         st = p.stat()
@@ -900,15 +903,18 @@ def job_key(book_path, voice, speed, chapter_ids, director="", cast=False):
     ident += f"|{voice}|{speed}|{','.join(map(str, chapter_ids))}"
     if director:
         ident += f"|{director}|{bool(cast)}"
+    if reader and reader != "kokoro":
+        ident += f"|{reader}"
     return hashlib.sha1(ident.encode("utf8")).hexdigest()[:16]
 
 
 def start_job(book, voice, speed, chapter_ids, out_file, extra=None):
     """Make (or find again) the job folder for this book, voice and chapters. Chapters already
-    read in an earlier run are kept. extra: {"mp3", "director" ("claude"/"chatgpt"/"gemini" to
+    read in an earlier run are kept. extra: {"mp3", "reader" (kokoro/acting/steady/chatterbox, readaloud_gpu), "director" ("claude"/"chatgpt"/"gemini" to
     have it go through the book first, readaloud_ai), "cast" (characters get their own voices)}."""
     extra = extra or {}
-    key = job_key(book["path"], voice, speed, chapter_ids, extra.get("director", ""), extra.get("cast"))
+    key = job_key(book["path"], voice, speed, chapter_ids, extra.get("director", ""), extra.get("cast"),
+                  extra.get("reader", "kokoro"))
     jobdir = JOBS / key
     jobdir.mkdir(parents=True, exist_ok=True)
     chosen = [book["chapters"][i] for i in chapter_ids]
@@ -1000,9 +1006,15 @@ class Maker:
         # "Stop for now" left a stop note; carrying on must clear it, or every worker stops at
         # once and the book is put together with chapters missing (Lauren's first try, 1.15.0)
         (self.jobdir / "stop").unlink(missing_ok=True)
-        if not have_model():
-            get_model(lambda f, m: self.say(f * 0.02, m), self._stop)
         job = json.loads((self.jobdir / "job.json").read_text(encoding="utf8"))
+        gpu = job.get("reader") in ("acting", "steady", "chatterbox")
+        if gpu:
+            import readaloud_gpu as G
+            if not G.ready(job["reader"]):
+                raise RuntimeError(f"The {G.READERS[job['reader']][0]} voice isn't set up on this computer "
+                                   "yet. Choose it on the first page and press Set up.")
+        elif not have_model():
+            get_model(lambda f, m: self.say(f * 0.02, m), self._stop)
         if job.get("director") and not (self.jobdir / "directed.json").exists():
             import readaloud_ai
             readaloud_ai.direct(self.jobdir, lambda f, m: self.say(0.02 + 0.08 * f, m, None), self._stop)
@@ -1033,7 +1045,19 @@ class Maker:
                     errors.append(ex)
                     return
 
-        threads = [threading.Thread(target=worker_loop, daemon=True) for _ in range(self.n_workers)]
+        self.status = None
+
+        def gpu_loop():
+            # one worker on the graphics card: it loads the voice once and reads the chapters in turn
+            try:
+                self._gpu(list(todo), partial, lock)
+            except Stopped:
+                return
+            except Exception as ex:
+                errors.append(ex)
+
+        threads = ([threading.Thread(target=gpu_loop, daemon=True)] if gpu else
+                   [threading.Thread(target=worker_loop, daemon=True) for _ in range(self.n_workers)])
         for t in threads:
             t.start()
         while any(t.is_alive() for t in threads):
@@ -1050,8 +1074,10 @@ class Maker:
             if first and time.time() - first[0] > 45 and now - first[1] > 0.02 * total:
                 rate = (now - first[1]) / (time.time() - first[0])
                 left = (total - now) / rate
-            self.say(base + (0.95 - base) * now / total,
-                     f"Reading the book aloud… {len(chapters) - left_ch} of {len(chapters)} chapters done", left)
+            msg = f"Reading the book aloud… {len(chapters) - left_ch} of {len(chapters)} chapters done"
+            if self.status and now == start_words:
+                msg = self.status
+            self.say(base + (0.95 - base) * now / total, msg, left)
         if errors:
             raise errors[0]
         if self._stop.is_set():
@@ -1060,6 +1086,52 @@ class Maker:
         if missing:
             raise RuntimeError(f"Chapter {missing[0]} wasn't read aloud. Press Carry on to try again.")
         return assemble(self.jobdir, lambda f, m: self.say(0.95 + 0.05 * f, m, None))
+
+    def _gpu(self, order, partial, lock):
+        import readaloud_gpu as G
+        logf = self.jobdir / "worker_gpu.log"
+        log = open(logf, "w", encoding="utf8")
+        try:
+            flags = {"creationflags": 0x08000000 | 0x00004000} if os.name == "nt" else {}
+            p = subprocess.Popen(G.worker_cmd(self.jobdir, order), stdout=subprocess.PIPE, stderr=log,
+                                 stdin=subprocess.DEVNULL, text=True, encoding="utf8", errors="replace",
+                                 cwd=str(HERE), env=G.worker_env(), **flags)
+        except OSError:
+            log.close()
+            raise
+        self.procs["gpu"] = p
+        try:
+            for line in p.stdout:
+                try:
+                    msg = json.loads(line)
+                except ValueError:
+                    continue
+                with lock:
+                    if "w" in msg:
+                        partial[msg["i"]] = msg["w"]
+                        self.status = None
+                    elif "done" in msg:
+                        partial.pop(msg["done"], None)
+                    elif "m" in msg:
+                        self.status = msg["m"]
+            code = p.wait()
+        finally:
+            self.procs.pop("gpu", None)
+            log.close()
+        if self._stop.is_set() or (self.jobdir / "stop").exists():
+            raise Stopped()
+        missing = [i for i in order if not chapter_file(self.jobdir, i).exists()]
+        if code != 0 or missing:
+            text = logf.read_text(encoding="utf8", errors="ignore")
+            if "out of memory" in text.lower() or "OutOfMemoryError" in text:
+                raise RuntimeError("The graphics card ran out of memory. Close other programs (games, "
+                                   "video editors) and press Carry on: it carries on where it stopped.")
+            if "MemoryError" in text or "1455" in text:
+                raise RuntimeError("The computer ran low on memory. Close other programs and press "
+                                   "Carry on: it carries on where it stopped.")
+            lines = [ln for ln in text.strip().splitlines() if not ln.startswith("read again")]
+            raise RuntimeError("The book couldn't be read aloud.\n\n" + "\n".join(lines)[-600:])
+        logf.unlink(missing_ok=True)
 
     def _one(self, i, partial, lock):
         cmd = [sys.executable, str(Path(__file__).resolve()), "speak", str(self.jobdir), str(i), str(self.threads)]
@@ -1135,7 +1207,7 @@ def assemble(jobdir, progress=None):
         "file '" + f.resolve().as_posix().replace("'", "'\\''") + "'\n" for f in files), encoding="utf8")
     meta = jobdir / "meta.txt"
     tags = E.m4b_tags(job["title"], job.get("author", ""))
-    tags["comment"] = f"Read aloud by ReadAloud ({VOICE.get(job['voice'], ('', 0, job['voice']))[2]} voice)"
+    tags["comment"] = f"Read aloud by ReadAloud ({voice_label(job)})"
     if job.get("series"):
         tags["grouping"] = job["series"] + (f" #{job['number']}" if job.get("number") else "")
     titles = [c["title"] for c in chapters]
@@ -1196,6 +1268,19 @@ def assemble(jobdir, progress=None):
         f.unlink(missing_ok=True)
     say(1.0, "Done")
     return result
+
+
+def voice_label(job):
+    """ "Heart voice" or "Grace voice, Qwen acting" """
+    v = job.get("voice", "")
+    if v in VOICE:
+        return f"{VOICE[v][2]} voice"
+    try:
+        import readaloud_gpu as G
+        name = (G.GPU_VOICES.get(v) or (v,))[0].split(" - ")[0]
+        return f"{name} voice, {G.READERS.get(job.get('reader'), ('',))[0]}".rstrip(", ")
+    except Exception:
+        return f"{v} voice"
 
 
 def clean_up(jobdir):

@@ -1,5 +1,5 @@
 {
- "version": "1.16.1",
+ "version": "1.17.0",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -26,6 +26,26 @@
   "readaloud.py",
   "ReadAloud.pyw",
   "readaloud.ico",
-  "readaloud_ai.py"
+  "readaloud_ai.py",
+  "readaloud_gpu.py",
+  "readaloud_gpu_req.txt",
+  "rv_grace.flac",
+  "rv_daniel.flac",
+  "rv_eleanor.flac",
+  "rv_oliver.flac",
+  "rv_june.flac",
+  "rv_ruth.flac",
+  "rv_edna.flac",
+  "rv_clara.flac",
+  "rv_kayla.flac",
+  "rv_lily.flac",
+  "rv_jack.flac",
+  "rv_ben.flac",
+  "rv_walter.flac",
+  "rv_hank.flac",
+  "rv_tyler.flac",
+  "rv_sam.flac",
+  "rv_harriet.flac",
+  "rv_arthur.flac"
  ]
 }

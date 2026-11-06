@@ -40,7 +40,8 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
 | `readaloud.py` | ReadAloud's engine (§11): ebook (PDFs page by page) -> chapters -> Kokoro voice (sherpa-onnx) in worker processes -> one M4B with chapters, tags and cover. CLI: `info`, `make`, `speak` (one worker). |
 | `readaloud_ai.py` | ReadAloud's reading director (§11): Claude / ChatGPT / Gemini go through the book first (what not to read, scanning fixes, who speaks, pace, pauses, pronunciations). |
-| `ReadAloud.pyw` | ReadAloud's window: choose ebook, voice (▶ Hear it), what to read, where to save; working page; done page. Launcher arg `aloud`. |
+| `readaloud_gpu.py`, `readaloud_gpu_req.txt`, `rv_*.flac` | ReadAloud's graphics-card readers (§11): Qwen acting, Qwen steady, Chatterbox; their one-time setup, the 18 voice clips, listening back to every line. |
+| `ReadAloud.pyw` | ReadAloud's window: choose ebook, reader and voice (▶ Hear it, Set up), what to read, where to save; working page; done page. Launcher arg `aloud`. |
 | `shortcuts.py` | Creates the CleanRead and ReadAloud desktop icons; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
 | `version.json` | Version + **the list of files the launcher downloads**. Anything not listed never reaches users. |
@@ -507,9 +508,54 @@ install (own icon, launcher arg `aloud`, own name in Task Manager), like CleanRe
 - **Carry on after "Stop for now"** (fixed in 1.16.0): the stop note stayed, so every worker
   stopped at once and the book was put together with chapters missing ("Impossible to open
   ch0000.m4a"). `Maker.run` clears it, and refuses to assemble with a chapter missing.
+- **Four readers, chosen per book** (`readaloud_gpu.py`, 1.17.0; Lauren: "our choice of voices is
+  still cheap", then after four test clips: "I do like the qwen acting better....could we have all 4
+  versions? let me choose by book"). `job["reader"]`: `kokoro` (Quick, above), `acting` (Qwen3-TTS
+  1.7B VoiceDesign: every line gets the voice's description + the director's acting note +
+  pace words as its `instruct`), `steady` (Qwen3-TTS 1.7B Base, copies the voice clip: never
+  drifts, no acting), `chatterbox` (Resemble AI, MIT: copies the clip, `feel` -> exaggeration
+  0.4/0.5/0.7). All Apache/MIT. The three new ones need an NVIDIA card with 6 GB+ and driver 570+
+  (`gpu_check`, CUDA 12.8 PyTorch; the RTX 5070 Laptop is Blackwell, sm_120, so cu128 or newer, and
+  its driver 572.97 can't run cu130). They live in their own venv, `APP_DATA\gpu\venv`, made by
+  `install()` from the "Set up" button (the base Python of CleanListen's venv; pip with
+  `readaloud_gpu_req.txt`, the exact versions tested together, ~3 GB; then the reader's model from
+  Hugging Face into `APP_DATA\gpu\hf`, ~4 GB each). Qwen and Chatterbox share the venv only with
+  transformers 4.57.3 and numpy 1.26.4 (Chatterbox alone pulls transformers 5). Markers:
+  `software.ready` (holds the req file's text, so changing it sets the software up again) and
+  `<reader>.ready`.
+  - Voices: 18 clips `rv_<id>.flac` (shipped, in `version.json`), designed once with VoiceDesign
+    from `GPU_VOICES` descriptions (best of 3 takes by listening back); `steady`/Chatterbox copy the
+    clip, `acting` gets the same description, so a voice sounds alike in all three. "Hear it" plays
+    the clip (the models take ~60 s to load). Characters are cast by gender + age + accent
+    (`readaloud_ai.gpu_pool`: Marilla, 9 -> Lily).
+  - Reading: `Maker` runs one worker in the gpu venv (`readaloud_gpu.py speak <job> <chapters>`)
+    that loads the model once and reads the chapters in turn, a few paragraphs per batch (acting 4
+    lines at once: 7 at once was 0.8x real time but needed 10 GB). Speed = ffmpeg `atempo`.
+    Every line is listened to with CleanListen's Parakeet and read again (3 tries, best kept) when
+    `check()` finds a doubled word, a dropped word in a short line, extra words, or mostly
+    different words; respelled names, spelling ("racetracks", "Lindsey") and numbers ("25") don't
+    count (`_alike`; before that, good lines were read three times). Re-reads are logged in the
+    job's `relisten.txt`. Careful when checking by ear with `cleanlisten.transcribe` on a whole
+    file: its 30 s chunks with 2 s overlap double a word at every seam (29 s, 57 s, 85 s...), which
+    first looked like the voices doubling words ("knew knew"); listen with two chunk sizes.
+  - Speed on the owner's laptop, end to end (model load, listening back): acting 0.85x real time
+    (4 lines at once), Chatterbox ~1x, steady ~0.45x; a 10-hour book is ~10-24 hours: "start it
+    at night".
+  - Names for these voices: a lowercase respelling only for names the lookup marks `tricky`
+    (Tlaquepaque); "Marilla" respelled "muh-ril-uh" came out "Mafrilla", and as written it's right.
+- **Director 2** (1.17.0, `DIRECTION_VERSION` "2", so 1.16 answers are asked again): every
+  paragraph is listed with an acting note (`delivery`, `speech_delivery` per quote) and `feel`
+  (calm / warm / strong); characters get a `manner` ("deep, steady"). Items carry `"m"` (note),
+  `"x"` (feel), `"who"`; Kokoro ignores them. Names are looked up in their own pass (`names()`,
+  with WebSearch for Claude; 45 for Vermilion in 57 s: Tlaquepaque, Oraibi, Coconino, "Manila" =
+  Marilla): Kokoro gets the sounds in its own symbols through a per-book lexicon read before its
+  own (`names-lexicon.txt`; sherpa-onnx keeps the first entry for a word, and its diphthongs are
+  capitals: A I O W Y), the Qwen/Chatterbox voices get a lowercase respelling (`job["respell"]`)
+  for words not in the dictionary. Pieces of a paragraph in the same voice ("I'm all right," I
+  said... "I'm listening.") are read in one go, not three.
 - Ideas: a queue of several books; "clean it first" straight from CleanRead's filters (for now:
-  clean in CleanRead, then choose the clean copy); an expressive GPU voice that can act out the
-  director's moods.
+  clean in CleanRead, then choose the clean copy); flash-attention on Windows for the Qwen voices
+  (2x); a narrator voice designed by the director to fit the book.
 
 ## 10. Working with Lauren
 

@@ -13,6 +13,7 @@ from tkinter import filedialog, messagebox, ttk
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import readaloud as engine  # noqa: E402
+import readaloud_gpu as gpu  # noqa: E402  (the graphics-card voices)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanListen)
 
 APP = "ReadAloud"
@@ -25,6 +26,7 @@ GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt *.docx"), ("All files", "*.*")]
 VOICE_LABELS = [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.VOICES]
+GPU_LABELS = [gpu.GPU_VOICES[v][0].replace(" - ", "  ·  ") for v in gpu.NARRATORS]
 AI_NAMES = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
 
 
@@ -127,6 +129,9 @@ class App(tk.Tk):
         self._cover = None
         self.done_jobdir = None
         self.busy_sample = False
+        self.gpu_ok = None            # (ok, message) once checked
+        self.installing = None        # the reader being set up
+        threading.Thread(target=lambda: self.q.put(("gpu_check", gpu.gpu_check())), daemon=True).start()
         self._style()
         self.page = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -141,6 +146,8 @@ class App(tk.Tk):
         s.theme_use("clam")
         s.configure(".", background=BG, foreground=INK, font=(FONT, 10))
         s.configure("TCheckbutton", background=CARD, font=(FONT, 10))
+        s.configure("Card.TRadiobutton", background=CARD, font=(FONT, 10))
+        s.map("Card.TRadiobutton", background=[("active", CARD)])
         s.map("TCheckbutton", background=[("active", CARD)])
         s.configure("Main.TButton", background=GO, foreground="white",
                     font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
@@ -263,7 +270,7 @@ class App(tk.Tk):
         for jobdir, job, got, n in engine.unfinished_jobs()[:2]:
             c = self._card(body, "", f"Carry on with “{job.get('title', 'your book')}”?")
             self._note(c, f"{got} of {n} chapters were read aloud before it stopped "
-                          f"({engine.VOICE.get(job.get('voice'), ('', 0, 'a'))[2]} voice).")
+                          f"({engine.voice_label(job)}).")
             row = tk.Frame(c, bg=CARD)
             row.pack(anchor="w", pady=(8, 0))
             ttk.Button(row, text="Carry on", style="Go.TButton",
@@ -286,13 +293,24 @@ class App(tk.Tk):
         self._note(b1, "Want it clean? Make a clean copy in CleanRead first, then choose that copy here. "
                        "Kindle books are copy-protected and can't be read.")
 
-        # 2. the voice
+        # 2. the voice: which reader (Lauren chooses by book), then which voice
         b2 = self._card(body, "2", "Voice")
+        self.reader_var = tk.StringVar(value=st.get("reader") if st.get("reader") in gpu.READERS else "acting")
+        for r in gpu.READER_ORDER:
+            name, desc = gpu.READERS[r][:2]
+            hint = "" if r == "kokoro" else "  (graphics card)"
+            ttk.Radiobutton(b2, text=f"{name}{'  (best)' if r == 'acting' else ''}  —  {desc}{hint}",
+                            value=r, variable=self.reader_var, command=self._reader_changed,
+                            style="Card.TRadiobutton").pack(anchor="w")
+        self.reader_row = tk.Frame(b2, bg=CARD)
+        self.reader_row.pack(fill="x", pady=(4, 6), padx=(22, 0))
+        self.reader_lbl = tk.Label(self.reader_row, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
+                                   wraplength=560, justify="left")
+        self.reader_lbl.pack(side="left")
+        self.setup_btn = ttk.Button(self.reader_row, text="Set up", style="Go.TButton", command=self.set_up_reader)
         row = tk.Frame(b2, bg=CARD)
         row.pack(fill="x")
         self.voice_box = ttk.Combobox(row, state="readonly", width=46, values=VOICE_LABELS)
-        keys = [v[0] for v in engine.VOICES]
-        self.voice_box.current(keys.index(st.get("voice")) if st.get("voice") in keys else 0)
         self.voice_box.pack(side="left")
         self.voice_box.bind("<<ComboboxSelected>>", lambda e: self._remember())
         self.hear_btn = ttk.Button(row, text="▶ Hear it", style="Go.TButton", command=self.hear)
@@ -309,6 +327,7 @@ class App(tk.Tk):
         self.sample_lbl = tk.Label(b2, text="Press ▶ Hear it to listen to a few sentences of your book.",
                                    bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640, justify="left")
         self.sample_lbl.pack(anchor="w", pady=(6, 0))
+        self._reader_changed(remember=False)
 
         # 3. the reading director (readaloud_ai): Claude / ChatGPT / Gemini go through the book first
         bd = self._card(body, "3", "Reading director", "optional, uses your own Claude or ChatGPT plan")
@@ -326,9 +345,9 @@ class App(tk.Tk):
                  font=(FONT, 10)).pack(side="left")
         self._note(bd, "It takes out what shouldn't be read aloud (page numbers, headings at the top of "
                        "pages, jacket text, scanning mistakes), works out who is speaking and how each part "
-                       "should be read (slower, faster, pauses), and how to say unusual names. It adds "
-                       "about 10 minutes before the reading starts, and you get a list of everything it "
-                       "changed.", pad=22)
+                       "should be read (the feeling of each line for the Qwen acting voice, slower, "
+                       "faster, pauses), and looks up how to say the names. It adds about 10 minutes "
+                       "before the reading starts, and you get a list of everything it changed.", pad=22)
         self.cast_var = tk.BooleanVar(value=st.get("cast", False))
         self.cast_check = ttk.Checkbutton(bd, text="Give the characters their own voices  (men and women "
                                           "in the story; the narrator keeps the voice above)",
@@ -378,6 +397,72 @@ class App(tk.Tk):
         if self.book:
             self._show_book()
 
+    # ---------- which reader ----------
+    def _reader(self):
+        try:
+            return self.reader_var.get()
+        except (tk.TclError, AttributeError):
+            return "kokoro"
+
+    def _voice_id(self):
+        i = max(0, self.voice_box.current())
+        return gpu.NARRATORS[i] if gpu.is_gpu(self._reader()) else engine.VOICES[i][0]
+
+    def _reader_changed(self, remember=True):
+        r = self._reader()
+        st = self.settings
+        if gpu.is_gpu(r):
+            self.voice_box.config(values=GPU_LABELS)
+            v = st.get("gpu_voice")
+            self.voice_box.current(gpu.NARRATORS.index(v) if v in gpu.NARRATORS else 0)
+        else:
+            self.voice_box.config(values=VOICE_LABELS)
+            keys = [v[0] for v in engine.VOICES]
+            self.voice_box.current(keys.index(st.get("voice")) if st.get("voice") in keys else 0)
+        if remember:
+            self._remember()
+        self._show_reader()
+        self._book_text()
+
+    def _show_reader(self):
+        if not (getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists()):
+            return
+        r = self._reader()
+        self.setup_btn.pack_forget()
+        if not gpu.is_gpu(r):
+            self.reader_lbl.config(text="The quickest: about 2 hours for a 10-hour book.", fg=MUTED)
+            return
+        speed = f"About {10 / gpu.READERS[r][2]:.0f} hours for a 10-hour book (start it at night)."
+        if self.installing:
+            return                                          # the setup is showing its progress
+        if self.gpu_ok is None:
+            self.reader_lbl.config(text="Checking the graphics card…", fg=MUTED)
+        elif not self.gpu_ok[0]:
+            self.reader_lbl.config(text=self.gpu_ok[1], fg="#9A2F1F")
+        elif gpu.ready(r):
+            self.reader_lbl.config(text="✓ Ready.  " + speed, fg=ACCENT_DK)
+        else:
+            self.reader_lbl.config(text=f"Needs a one-time download of about {gpu.setup_size_gb(r):.0f} GB "
+                                        f"before its first book.  {speed}", fg=INK)
+            self.setup_btn.pack(side="left", padx=10)
+
+    def set_up_reader(self):
+        r = self._reader()
+        if self.installing:
+            return
+        self.installing = r
+        self.setup_btn.pack_forget()
+        self.reader_lbl.config(text="Starting the setup… (you can choose the book meanwhile)", fg=INK)
+        self.start_btn.config(state="disabled")
+
+        def go():
+            try:
+                gpu.install(r, lambda f, m: self.q.put(("setup_msg", r, f, m)))
+                self.q.put(("setup_done", r, ""))
+            except Exception as ex:
+                self.q.put(("setup_done", r, str(ex)))
+        threading.Thread(target=go, daemon=True).start()
+
     def _director_changed(self, check=True):
         on = self.director_var.get()
         self.cast_check.config(state="normal" if on else "disabled")
@@ -426,7 +511,11 @@ class App(tk.Tk):
     def _remember(self):
         st = self.settings
         try:
-            st["voice"] = engine.VOICES[self.voice_box.current()][0]
+            st["reader"] = self._reader()
+            if gpu.is_gpu(st["reader"]):
+                st["gpu_voice"] = gpu.NARRATORS[self.voice_box.current()]
+            else:
+                st["voice"] = engine.VOICES[self.voice_box.current()][0]
             st["speed"] = self.speed_box.get()
             st["abs"] = self.abs_var.get()
             st["mp3"] = self.mp3_var.get()
@@ -549,12 +638,13 @@ class App(tk.Tk):
             return
         words = sum(b["chapters"][i]["words"] for i in self._chosen())
         hrs = engine.estimate_hours(words, engine.SPEEDS.get(self.speed_box.get(), 1.0))
+        make = gpu.hours_to_make(hrs, self._reader())
         by = f"\nby {b['author']}" if b.get("author") else ""
         series = f"\n{b['series']}" + (f", book {b['number']}" if b.get("number") else "") if b.get("series") else ""
-        self.book_lbl.config(text=f"{b['title']}{by}{series}\n\nAbout {hours_text(hrs)} of listening"
-                             if words else f"{b['title']}{by}\n\nNothing ticked to read.", fg=INK,
+        self.book_lbl.config(text=f"{b['title']}{by}{series}\n\nAbout {hours_text(hrs)} of listening; "
+                                  f"about {hours_text(make)} to make" if words else f"{b['title']}{by}\n\nNothing ticked to read.", fg=INK,
                              font=(FONT, 10))
-        self.start_btn.config(state="normal" if words else "disabled")
+        self.start_btn.config(state="normal" if words and not self.installing else "disabled")
         if getattr(self, "ch_summary", None) and self.ch_summary.winfo_exists():
             n, chosen = len(b["chapters"]), len(self._chosen())
             off = [c["title"] for c, v in zip(b["chapters"], self.chapter_vars) if not v.get()]
@@ -571,8 +661,22 @@ class App(tk.Tk):
         if self.busy_sample:
             return
         self._remember()
-        voice = engine.VOICES[self.voice_box.current()][0]
+        voice = self._voice_id()
         speed = engine.SPEEDS.get(self.speed_box.get(), 1.0)
+        if gpu.is_gpu(self._reader()):
+            # the new voices take a minute to start: play the voice's own clip straight away
+            stop_playing()
+            dst = APP_DATA / "readaloud_sample.wav"
+            try:
+                subprocess.run([engine.tool("ffmpeg"), "-y", "-v", "error", "-i", str(gpu.voice_clip(voice)),
+                                "-filter:a", f"atempo={speed}", str(dst)], capture_output=True, timeout=30,
+                               **engine._NOWIN)
+                self.sample_lbl.config(text=f"Playing {gpu.GPU_VOICES[voice][0].split(' - ')[0]}. In the book, "
+                                            "this voice reads with the feeling of each line.", fg=MUTED)
+                play_wav(dst)
+            except Exception as ex:
+                self.sample_lbl.config(text=f"Couldn't play the voice: {ex}", fg="#9A2F1F")
+            return
         text = engine.sample_text(self.book) if self.book else engine.sample_text({"chapters": []})
         self.busy_sample = True
         self.hear_btn.config(state="disabled")
@@ -608,9 +712,15 @@ class App(tk.Tk):
         if out.exists() and not messagebox.askyesno(
                 APP, f"“{out.name}” is already in that folder.\n\nReplace it with the new one?"):
             return
-        voice = engine.VOICES[self.voice_box.current()][0]
+        voice = self._voice_id()
         speed = engine.SPEEDS.get(self.speed_box.get(), 1.0)
-        extra = {"mp3": self.mp3_var.get()}
+        reader = self._reader()
+        if gpu.is_gpu(reader) and not gpu.ready(reader):
+            chime()
+            messagebox.showinfo(APP, f"The {gpu.READERS[reader][0]} voice needs setting up first: press "
+                                     "Set up under Voice (once). Or choose the Quick voice.")
+            return
+        extra = {"mp3": self.mp3_var.get(), "reader": reader}
         if self.director_var.get():
             ai = list(AI_NAMES)[self.ai_box.current()]
             if self.ai_ok is False:
@@ -652,8 +762,15 @@ class App(tk.Tk):
         self.left_lbl = tk.Label(box, text="Working out how long it will take…", bg=BG, fg=MUTED,
                                  font=(FONT, 11))
         self.left_lbl.pack(anchor="w", pady=(4, 0))
-        tk.Label(box, text=f"Reading {n} chapter{'s' if n > 1 else ''} at a time.", bg=BG, fg=MUTED,
-                 font=(FONT, 9)).pack(anchor="w", pady=(16, 0))
+        try:
+            reader = json.loads((Path(jobdir) / "job.json").read_text(encoding="utf8")).get("reader", "kokoro")
+        except Exception:
+            reader = "kokoro"
+        how = (f"Reading with the {gpu.READERS[reader][0]} voice on the graphics card. Each line is "
+               "listened to and read again if a word came out wrong." if gpu.is_gpu(reader) else
+               f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
+        tk.Label(box, text=how, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                 justify="left").pack(anchor="w", pady=(16, 0))
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
         self.job_title = title
@@ -677,6 +794,11 @@ class App(tk.Tk):
             threading.Thread(target=self.maker.stop, daemon=True).start()
 
     def on_close(self):
+        if self.installing and not self.maker:
+            chime()
+            if not messagebox.askyesno(APP, "The new voice is still being set up. Close anyway? (It starts "
+                                            "again next time you press Set up.)"):
+                return
         if self.maker:
             chime()
             if not messagebox.askyesno(APP, "Stop making the audiobook for now?\n\nWhat's been read "
@@ -777,6 +899,31 @@ class App(tk.Tk):
                 self.ai_status.config(text=f"{name} isn't set up on this computer yet." if st == "missing"
                                       else f"{name} isn't signed in.", fg="#9A2F1F")
                 self.ai_btn.pack(side="left", padx=8)
+        elif kind == "gpu_check":
+            self.gpu_ok = msg[1]
+            # no graphics card for the new voices (Lauren's sister?): start on the Quick one, unless
+            # a reader was chosen before
+            if not self.gpu_ok[0] and not self.settings.get("reader") and getattr(self, "reader_var", None):
+                try:
+                    self.reader_var.set("kokoro")
+                    self._reader_changed(remember=False)
+                except tk.TclError:
+                    pass
+            self._show_reader()
+        elif kind == "setup_msg":
+            if getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists() and self._reader() == msg[1]:
+                self.reader_lbl.config(text=f"Setting up ({int(msg[2] * 100)}%): {msg[3]}", fg=INK)
+        elif kind == "setup_done":
+            self.installing = None
+            if msg[2]:
+                self._poll_error(msg[2])
+                chime()
+                messagebox.showerror(APP, "The voice couldn't be set up:" + chr(10) * 2 + msg[2][:700])
+            else:
+                chime()
+            if getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists():
+                self._show_reader()
+                self._book_text()
         elif kind == "sample_msg":
             if self.sample_lbl.winfo_exists():
                 self.sample_lbl.config(text=msg[1], fg=INK)

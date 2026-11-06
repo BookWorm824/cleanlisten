@@ -163,22 +163,30 @@ class FakeAI:
 
     def run(self, prompt, system, schema=None, timeout=0, **kw):
         self.asked.append(prompt)
+        self.tools = kw.get("tools", "")
+        if "words" in schema["properties"]:
+            return {"data": {"words": [
+                {"word": "Tlaquepaque", "sounds": "t l ˌ ɑ k ə p ˈ ɑ k A", "say": "tlah-kuh-PAH-kay",
+                 "looked_up": True, "tricky": True, "note": "a town near Guadalajara"},
+                {"word": "Sybil", "sounds": "s ˈ ɪ b ə l", "say": "SIB-ul", "looked_up": False, "tricky": False, "note": ""}]}}
         if "first_person" in schema["properties"]:
             return {"data": {"first_person": True, "narrator_name": "Lindsay", "notes": "Quiet suspense.",
-                             "characters": [{"name": "Lindsay", "gender": "female", "age": "adult"},
-                                            {"name": "Rick", "gender": "male", "age": "adult"}],
+                             "characters": [{"name": "Lindsay", "gender": "female", "age": "adult", "manner": "quiet"},
+                                            {"name": "Rick", "gender": "male", "age": "adult",
+                                             "manner": "deep, steady"}],
                              "pronounce": [{"word": "Tlaquepaque", "say": "tlah-keh-pah-keh"},
                                            {"word": "Sybil", "say": "sib-ul"}]}}
         out = []
         for n, text in re.findall(r"^\[(\d+)\](?: \(heading\))? (.*)$", prompt, re.M):
             d = {"n": int(n), "skip": False, "fix": "", "pause": "normal", "pace": "normal", "mood": "",
-                 "speakers": []}
+                 "speakers": [], "delivery": "natural storytelling", "speech_delivery": [], "feel": "warm"}
             if "Whitney 11" in text or text.startswith("The story went on"):
                 d["skip"] = True
             elif "Tlaquepaque" in text:
-                d.update(pause="scene", pace="slower", mood="sad")
+                d.update(pause="scene", pace="slower", mood="sad", delivery="sad, slow", feel="calm")
             elif "all right" in text:
-                d.update(fix='"Are you all right?" Rick asked. "I am," I said.', speakers=["Rick", "Lindsay"])
+                d.update(fix='"Are you all right?" Rick asked. "I am," I said.', speakers=["Rick", "Lindsay"],
+                         speech_delivery=["gentle, worried", "holding back tears"])
             else:
                 continue
             out.append(d)
@@ -201,13 +209,22 @@ def test_the_director_marks_how_to_read(tmp_path, monkeypatch):
     paras = json.loads((jobdir / "chapters.json").read_text(encoding="utf8"))[0]["paras"]
     assert "Phyllis A. Whitney 11" not in [p[1] for p in paras]          # page furniture left out
     sad = next(p for p in paras if p[1].startswith("She went"))
-    assert sad[2] == {"s": A.PACE["slower"], "g": A.PAUSE["scene"]}
+    assert sad[2] == {"s": A.PACE["slower"], "g": A.PAUSE["scene"], "x": "calm", "m": "sad, slow"}
     rick = next(p for p in paras if p[1] == '"Are you all right?"')
     assert R.VOICE[rick[2]["v"]][3].startswith("American man")          # Rick: a man's voice
-    me = next(p for p in paras if p[1] == '"I am,"')
-    assert "v" not in (me[2] if len(me) > 2 else {})                     # the narrator's own line
+    assert rick[2]["m"] == "gentle, worried" and rick[2]["who"] == "rick"   # acting notes per speech
+    # the narrator's own line and the narration around it are read in one go, in her voice
+    me = next(p for p in paras if p[1] == 'Rick asked. "I am," I said.')
+    assert "v" not in (me[2] if len(me) > 2 else {})
     job = json.loads((jobdir / "job.json").read_text(encoding="utf8"))
-    assert job["pronounce"] == {"Tlaquepaque": "tlah-keh-pah-keh"}        # not "Sybil": the voice knows it
+    # names looked up (on the web, for Claude) are said exactly, from the book's names list read
+    # before the voice's own; not "Sybil": the voice knows it
+    assert "WebSearch" in fake.tools or any("Tlaquepaque (used" in a for a in fake.asked)
+    lex = (jobdir / "names-lexicon.txt").read_text(encoding="utf8")
+    assert "tlaquepaque t l ˌ ɑ k ə p ˈ ɑ k A" in lex.splitlines() and "sybil " not in lex
+    assert job["lexicon"].endswith("names-lexicon.txt") and job["pronounce"] == {}
+    assert job["respell"] == {"Tlaquepaque": "tlah-kuh-pah-kay"}         # the new voices: tricky ones only
+    assert "Tlaquepaque: tlah-kuh-PAH-kay" in (jobdir / "report.txt").read_text(encoding="utf8")
     assert "Left out (1)" in (jobdir / "report.txt").read_text(encoding="utf8")
     # asked once: starting again (another voice, or Carry on) uses the kept answers
     n = len(fake.asked)
@@ -246,3 +263,46 @@ def test_a_directed_book_is_read_with_its_voices(tmp_path, monkeypatch):
 def test_the_director_ships():
     files = json.loads((Path(R.__file__).parent / "version.json").read_text())["files"]
     assert "readaloud_ai.py" in files
+
+
+def test_the_names_to_look_up(monkeypatch):
+    monkeypatch.setattr(R, "_WORDS", {"she", "went", "to", "the", "rain", "in", "said", "and", "sybil",
+                                      "her", "sister", "came", "it", "was"})
+    chapters = [{"title": "One", "paras": [
+        ["p", "She went to Tlaquepaque in the rain, and Sybil said it was Marilla's turn."],
+        ["p", "Marilla came. Her sister Sybil came. It was the rain."]]}]
+    c = A.name_candidates(chapters)
+    assert c["Marilla"][0] == 2 and "Tlaquepaque" in c and "Sybil" in c       # names, possessive too
+    assert "She" not in c and "Her" not in c and "It" not in c                 # sentence starts
+
+
+def test_only_good_sounds_go_in_the_names_list(monkeypatch, tmp_path):
+    monkeypatch.setattr(A, "_voice_sounds", lambda: set("ˈˌ") | {"m", "ə", "ɹ", "ɪ", "l", "s", "b", "O", "p", "i", "h", "z"})
+    monkeypatch.setattr(A, "_base_sounds", lambda: {"sybil": "s ˈ ɪ b ə l", "hopi": "h ˈ O p i"})
+    lex = A.names_lexicon({"words": [
+        {"word": "Marilla", "sounds": "m ə ɹ ˈ ɪ l ə", "looked_up": False},
+        {"word": "Sybil", "sounds": "s ˈ ɪ b ɪ l", "looked_up": False},     # the voice knows it: a guess won't do
+        {"word": "Hopi", "sounds": "h ˈ O p i", "looked_up": True},         # the same as the voice's
+        {"word": "Keams", "sounds": "k ˈ i m z", "looked_up": True},        # "k" isn't one of its sounds here
+        {"word": "Pima", "sounds": "p i m ə", "looked_up": True},           # no stress mark
+        {"word": "Big Sur", "sounds": "b ˈ ɪ ɡ", "looked_up": True}]})
+    assert lex == {"marilla": "m ə ɹ ˈ ɪ l ə", "marilla's": "m ə ɹ ˈ ɪ l ə z"}
+    f = A.write_lexicon(tmp_path, lex)
+    assert f.read_text(encoding="utf8").splitlines()[0] == "marilla m ə ɹ ˈ ɪ l ə"
+    assert A.write_lexicon(tmp_path, {}) is None and not f.exists()
+
+
+def test_graphics_card_voices_are_cast_by_age_and_gender():
+    job = {"voice": "grace"}
+    cast = {"first_person": True, "narrator_name": "Lindsay", "characters": [
+        {"name": "Lindsay", "gender": "female", "age": "adult"},
+        {"name": "Rick", "gender": "male", "age": "adult"},
+        {"name": "Marilla", "gender": "female", "age": "child"},
+        {"name": "Jed", "gender": "male", "age": "older"},
+        {"name": "Nan", "gender": "female", "age": "adult"}]}
+    v = A.cast_voices(job, cast, {"lindsay": 9, "rick": 8, "marilla": 5, "jed": 3, "nan": 2})
+    import readaloud_gpu as G
+    assert v["lindsay"] == "grace"                                   # the narrator's own lines
+    assert v["marilla"] == "lily" and G.GPU_VOICES[v["jed"]][3] in ("older", "elderly")
+    assert G.GPU_VOICES[v["rick"]][2] == "male" and G.GPU_VOICES[v["nan"]][2] == "female"
+    assert len({v["rick"], v["jed"]}) == 2 and v["nan"] != "grace"
