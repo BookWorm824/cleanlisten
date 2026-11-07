@@ -95,6 +95,22 @@ def stop_playing():
         pass
 
 
+def logo_png(px=128):
+    """ReadAloud's logo as PNG bytes, the size nearest px, taken from readaloud.ico (its pictures
+    are PNGs, which tk can show without PIL; as CleanView does). None if it can't be read."""
+    import struct
+    try:
+        d = (HERE / "readaloud.ico").read_bytes()
+        found = []
+        for i in range(struct.unpack("<H", d[4:6])[0]):
+            w, _, _, _, _, _, size, off = struct.unpack("<BBBBHHII", d[6 + 16 * i:22 + 16 * i])
+            if d[off:off + 4] == b"\x89PNG":
+                found.append((abs((w or 256) - px), d[off:off + size]))
+        return min(found)[1] if found else None
+    except (OSError, struct.error):
+        return None
+
+
 def hours_text(h):
     m = int(round(h * 60))
     if m < 60:
@@ -191,6 +207,21 @@ class App(tk.Tk):
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
                      wraplength=740, justify="left").pack(anchor="w", pady=(2, 12))
         return self.page
+
+    def _logo(self, parent):
+        """The logo in the middle of the empty space below (Jason: "a lot of dead space")."""
+        import base64
+        png = logo_png(128)
+        try:
+            img = tk.PhotoImage(data=base64.b64encode(png).decode()) if png else None
+        except tk.TclError:
+            img = None
+        if img is None:
+            return
+        self._logo_img = img
+        mid = tk.Frame(parent, bg=BG)
+        mid.pack(fill="both", expand=True)
+        tk.Label(mid, image=img, bg=BG).place(relx=0.5, rely=0.45, anchor="center")
 
     def _scroll_area(self, parent):
         wrap = tk.Frame(parent, bg=BG)
@@ -306,7 +337,7 @@ class App(tk.Tk):
         self.reader_row.pack(fill="x", pady=(4, 6), padx=(22, 0))
         self.reader_lbl = tk.Label(self.reader_row, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
                                    wraplength=560, justify="left")
-        self.reader_lbl.pack(side="left")
+        self.reader_lbl.pack(anchor="w")
         self.setup_btn = ttk.Button(self.reader_row, text="Set up", style="Go.TButton", command=self.set_up_reader)
         row = tk.Frame(b2, bg=CARD)
         row.pack(fill="x")
@@ -444,7 +475,7 @@ class App(tk.Tk):
         else:
             self.reader_lbl.config(text=f"Needs a one-time download of about {gpu.setup_size_gb(r):.0f} GB "
                                         f"before its first book.  {speed}", fg=INK)
-            self.setup_btn.pack(side="left", padx=10)
+            self.setup_btn.pack(anchor="w", pady=(6, 0))
 
     def set_up_reader(self):
         r = self._reader()
@@ -717,8 +748,17 @@ class App(tk.Tk):
         reader = self._reader()
         if gpu.is_gpu(reader) and not gpu.ready(reader):
             chime()
-            messagebox.showinfo(APP, f"The {gpu.READERS[reader][0]} voice needs setting up first: press "
-                                     "Set up under Voice (once). Or choose the Quick voice.")
+            name = gpu.READERS[reader][0]
+            if self.installing:
+                why = f"The {name} voice is still being set up. Wait for it to finish (it shows under 2. Voice)."
+            elif self.gpu_ok is None:
+                why = "ReadAloud is still checking the graphics card. Try again in a moment."
+            elif not self.gpu_ok[0]:
+                why = f"The {name} voice can't be used yet:\n\n{self.gpu_ok[1]}"
+            else:
+                why = (f"The {name} voice needs a one-time setup first: press the green Set up button "
+                       "under 2. Voice.")
+            messagebox.showinfo(APP, why + "\n\nOr choose the Quick voice, which works on any computer.")
             return
         extra = {"mp3": self.mp3_var.get(), "reader": reader}
         if self.director_var.get():
@@ -749,7 +789,7 @@ class App(tk.Tk):
 
     def run_job(self, jobdir, title):
         n, threads = engine.workers_for_pc()
-        p = self._new_page("Making the audiobook…",
+        p = self._new_page("Narrating the book…",
                            "You can keep using your computer while it reads. If you need to stop, "
                            "it carries on from where it was next time you open ReadAloud.", name=title)
         box = tk.Frame(p, bg=BG)
@@ -771,6 +811,7 @@ class App(tk.Tk):
                f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
         tk.Label(box, text=how, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
                  justify="left").pack(anchor="w", pady=(16, 0))
+        self._logo(p)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
         self.job_title = title
@@ -833,6 +874,7 @@ class App(tk.Tk):
                    command=lambda: show_in_folder(f)).pack(side="left", padx=10)
         ttk.Button(self.footer, text="Make another", style="Main.TButton",
                    command=self.another).pack(side="right")
+        self._logo(p)
         try:   # the chapter files aren't needed once the audiobook is made
             engine.clean_up(Path(self.done_jobdir))
         except Exception:

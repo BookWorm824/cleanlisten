@@ -1026,7 +1026,8 @@ class Maker:
             import readaloud_gpu as G
             if not G.ready(job["reader"]):
                 raise RuntimeError(f"The {G.READERS[job['reader']][0]} voice isn't set up on this computer "
-                                   "yet. Choose it on the first page and press Set up.")
+                                   "yet. Choose it under 2. Voice on the first page and press the green "
+                                   "Set up button.")
         elif not have_model():
             get_model(lambda f, m: self.say(f * 0.02, m), self._stop)
         if job.get("director") and not (self.jobdir / "directed.json").exists():

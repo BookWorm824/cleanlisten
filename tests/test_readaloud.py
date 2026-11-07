@@ -259,3 +259,23 @@ def test_a_pdf_title_without_the_program_that_made_it():
     assert R._pdf_title("Vermilion", "x.pdf") == "Vermilion"
     assert R._pdf_title("", "C:/b/My_Book.pdf") == "My Book"
     assert R._pdf_title("Untitled", "C:/b/Vermilion.pdf") == "Vermilion"
+
+
+def test_the_logo_shows_on_the_empty_pages():
+    # Jason: "a lot of dead space"; the logo comes out of readaloud.ico as a PNG tk can show
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ReadAloudWindow", REPO / "ReadAloud.pyw")
+    win = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(win)
+    png = win.logo_png(128)
+    assert png and png[:4] == b"\x89PNG"
+    src = (REPO / "ReadAloud.pyw").read_text("utf8")
+    assert '"Narrating the book…"' in src and src.count("self._logo(p)") == 2
+
+
+def test_the_set_up_message_never_points_at_a_hidden_button():
+    # Jason (old graphics driver) was told to press Set up, but the button is only shown when the
+    # card is ready for it: the message must say what's really in the way
+    src = (REPO / "ReadAloud.pyw").read_text("utf8")
+    start = src[src.index("    def start(self):"):src.index("    def resume(")]
+    assert "self.gpu_ok[1]" in start and "still being set up" in start and "still checking" in start
