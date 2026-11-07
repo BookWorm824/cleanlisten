@@ -2223,6 +2223,38 @@ can't remember things. Make the change on this list too, and say in your answer 
 remember. Only a plain "keep this one" with no reason needs no rule; otherwise leave \
 "remember" empty when they didn't correct or explain anything."""
 
+# who does what, so the chat can answer "is the AI helper you, or CleanRead?" (Jason, 2026-11-07:
+# "when the AI helper is on is that you doing it or clean read? or does clean read do it and you
+# double check?"; the chat said it couldn't see how CleanRead works)
+HOW_IT_WORKS = """How CleanRead works, so you can answer questions about it (for example "is the \
+AI helper you, or CleanRead?"):
+- CleanRead itself reads every sentence with its word lists (swear words, mild words, God's name \
+and the rest) and its phrase patterns for each filter (sex, violence, magic, holidays and so on). \
+That part runs on the family's own computer, with no internet and no AI.
+- The "AI helper" tick box is a different, smaller AI that runs on their computer (through \
+Ollama). It is not you. When making a clean copy it double-checks every filter: it adds sentences \
+the word lists missed and unticks ones it thinks were flagged by mistake. When checking a book it \
+reads the whole book for things word lists can't spot (a child sneaking out, mocking their \
+parents). Its work shows in findings.txt as notes like "found by AI", "AI agrees", "AI suggests" \
+or "AI thinks this one is fine".
+- CleanRead also follows what the family taught it before: things they unticked, and the rules \
+they gave in earlier chats.
+- You ({who}) are only this chat. You run when they ask something here: you read the book and \
+CleanRead's list, answer, and can change the list right away (they can undo it), and remember \
+rules for later checks. You didn't make the list and you don't go over it unless they ask you to.
+- Nothing in the book is changed until the family has looked over the list and saved; their own \
+ticks are what is used."""
+
+
+def how_it_works(cc=None):
+    """HOW_IT_WORKS with the chat's own name (Claude, ChatGPT or Gemini)."""
+    try:
+        who = cc.name(cc.saved_provider())
+    except Exception:
+        who = "the AI in this chat"
+    return HOW_IT_WORKS.format(who=who)
+
+
 CHAT_SCHEMA = {"type": "object", "properties": {
     "answer": {"type": "string"},
     "changes": {"type": "array", "items": {"type": "object", "properties": {
@@ -2318,7 +2350,7 @@ class Chat:
         f = chat_filters(self.an.get("opts") or {})
         return CHAT_SYSTEM.format(rules=cc.rules_text({"filters": f}),
                                   kinds=", ".join(f["kinds"]) or "(none on)",
-                                  cats=", ".join(f["cats"]) or "(none on)")
+                                  cats=", ".join(f["cats"]) or "(none on)") + "\n\n" + how_it_works(cc)
 
     def _item(self, fid):
         fid = str(fid or "").strip().upper()
@@ -2461,7 +2493,7 @@ class CheckChat(Chat):
         (self.dir / "findings.txt").write_text("\n".join(out) or "(nothing found)", encoding="utf-8")
 
     def _system(self, cc):
-        return CHECK_SYSTEM
+        return CHECK_SYSTEM + "\n\n" + how_it_works(cc)
 
     SCHEMA = CHECK_SCHEMA
 

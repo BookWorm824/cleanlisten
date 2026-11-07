@@ -18,7 +18,9 @@ def test_both_apps_use_the_shared_filters():
     # one list of boxes (filters.py) for CleanListen and CleanRead, so they can't drift apart
     for app in ("CleanListen.pyw", "CleanRead.pyw"):
         src = (ROOT / app).read_text(encoding="utf8")
-        assert "import filters as F" in src and "F.FilterCard(" in src, app
+        # CleanListen's card opens the boxes in a window; CleanRead shows them on its page
+        # (Jason, 2026-11-07); both are built by filters.build_boxes()
+        assert "import filters as F" in src and ("F.FilterCard(" in src or "F.FilterPanel(" in src), app
 
 
 def test_the_filters_are_cleanviews_for_books():

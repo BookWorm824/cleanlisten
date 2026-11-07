@@ -14,6 +14,7 @@ from tkinter import filedialog, messagebox, ttk
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cleanlisten as engine  # noqa: E402
 import filters as F  # noqa: E402  (the filters, shared with CleanRead)
+import logo as LOGO  # noqa: E402  (the logo in a page's empty space)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanRead)
 import bookqueue as BQ  # noqa: E402  (several books at once, each in its own worker)
 import dropfiles  # noqa: E402  (dropping the cover picture on the window)
@@ -1863,6 +1864,7 @@ class App(tk.Tk):
         self.status.pack(anchor="w", pady=(12, 0))
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
         self.cancel_btn.pack(side="right")
+        LOGO.put_logo(p, "icon.ico", BG)          # the empty space (Jason, 2026-11-07)
 
     def cancel(self):
         self.cancel_flag = True
@@ -2386,7 +2388,10 @@ class App(tk.Tk):
         more_btn = ttk.Menubutton(bar, text="More", style="Plain.TMenubutton", width=6)
         menu = tk.Menu(more_btn, tearoff=0, font=(FONT, 10))
         menu.add_command(label=f"Save a list of everything for {N}…", command=self.export_findings)
-        menu.add_command(label=f"Open {N}'s past findings (spreadsheet)", command=self._open_findings)
+        menu.add_command(label=f"Open {N}'s findings for this book (spreadsheet)",
+                         command=lambda: self._open_findings(this_book=True))
+        menu.add_command(label=f"Open {N}'s findings for every book (spreadsheet)",
+                         command=self._open_findings)
         cc = self._cc()
         if cc and cc.PROVIDER == "claude":
             models = tk.Menu(menu, tearoff=0, font=(FONT, 10))
@@ -2643,10 +2648,18 @@ class App(tk.Tk):
         for delay in (120, 400, 900):
             self.after(delay, go)
 
-    def _open_findings(self):
+    def _open_findings(self, this_book=False):
+        """Claude's findings as a spreadsheet: this book's (Jason, 2026-11-07, in CleanView: "it
+        had every movie"), or every book's, newest first."""
         try:
             import cleanlisten_learn as learn
             path = learn.CSV_PATH
+            if this_book:
+                path = learn.book_csv((self.analysis or {}).get("title", ""))
+                if path is None:
+                    messagebox.showinfo("CleanListen", "Nothing saved for this book yet. Findings "
+                                        "are saved each time Claude, ChatGPT or Gemini checks it.")
+                    return
         except Exception:
             path = None
         if path and path.exists():

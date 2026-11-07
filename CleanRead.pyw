@@ -13,7 +13,8 @@ from tkinter import filedialog, messagebox, ttk
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import cleanread as engine  # noqa: E402
-import filters as F  # noqa: E402  (the filters, shared with CleanListen)
+import filters as F
+import logo as LOGO  # noqa: E402  (the filters, shared with CleanListen)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanListen)
 
 
@@ -375,8 +376,9 @@ class App(tk.Tk):
                        "a minute; with it, the check takes longer (20–60 minutes for a novel).")
             return
         b3 = self._card(self.opt_host, "3", "What to take out")
-        # the same filters as CleanListen and CleanView, chosen in their own window (filters.py)
-        self.filter_card = F.FilterCard(b3, wrap=640)
+        # the same filters as CleanListen and CleanView, right here on the page as in CleanView
+        # (Jason, 2026-11-07: "it opens a different screen to see them ... Should it be the same?")
+        self.filter_card = F.FilterPanel(b3, wrap=600)
         row = tk.Frame(b3, bg=CARD)
         row.pack(anchor="w", pady=(10, 0))
         tk.Label(row, text="How marked-out words look:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
@@ -460,7 +462,8 @@ class App(tk.Tk):
             return
         ticks, mywords = self.filter_card.ticks(), self.filter_card.mywords()
         if not F.anything_on(ticks) and not mywords:
-            messagebox.showinfo(APP, "Tick at least one thing to take out (Choose filters\u2026).")
+            messagebox.showinfo(APP, "Tick at least one thing to take out (under \u201cWhat to take "
+                                "out\u201d).")
             return
         opts = F.read_opts(ticks, mywords)
         opts["ai"] = self.ai_var.get()
@@ -489,6 +492,7 @@ class App(tk.Tk):
         self.cancel_flag = False
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
         self.cancel_btn.pack(side="right")
+        LOGO.put_logo(p, "cleanread.ico", BG)     # the empty space (Jason, 2026-11-07)
 
     def cancel(self):
         self.cancel_flag = True
@@ -1291,6 +1295,7 @@ class App(tk.Tk):
             an = self.analysis
             self._link(p, "Help CleanRead get better: send what you changed…",
                        lambda: self.send_marks(an, "clean")).pack(anchor="w", pady=(18, 0))
+        LOGO.put_logo(p, "cleanread.ico", BG)
 
     def reset(self):
         self.chat = None

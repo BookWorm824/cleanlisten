@@ -380,23 +380,59 @@ def record_claude(st, book=""):
         (FINDINGS / f"{name}.json").write_text(json.dumps(
             {"book": book, "date": date.today().isoformat(), "rows": rows,
              "reviewer": st.get("reviewer") or "Claude"}), encoding="utf8")
-        allrows = []
-        for f in sorted(FINDINGS.glob("*.json")):
-            try:
-                j = json.loads(f.read_text("utf8"))
-            except Exception:
-                continue
-            allrows += [[j.get("date", ""), j.get("book", ""), j.get("reviewer", "Claude")] + r
-                        for r in j.get("rows", [])]
-        tmp = CSV_PATH.with_suffix(".tmp")
-        with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
-            w = csv.writer(fh)
-            w.writerow(["Date", "Book", "Reviewer", "Where", "What", "Flagged as", "Text",
-                        "Verdict", "Word", "Why"])
-            w.writerows(allrows)
-        os.replace(tmp, CSV_PATH)
+        write_all_csv()
     except OSError:
         pass
+
+
+CSV_HEAD = ["Date", "Book", "Reviewer", "Where", "What", "Flagged as", "Text", "Verdict", "Word",
+            "Why"]
+
+
+def _book_files():
+    """Each book's saved findings, newest first."""
+    out = []
+    for f in FINDINGS.glob("*.json"):
+        try:
+            j = json.loads(f.read_text("utf8"))
+        except Exception:
+            continue
+        out.append((j.get("date", ""), f.stat().st_mtime, j))
+    out.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [j for _, _, j in out]
+
+
+def _write_csv(path, books):
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
+        w = csv.writer(fh)
+        w.writerow(CSV_HEAD)
+        for j in books:
+            w.writerows([j.get("date", ""), j.get("book", ""), j.get("reviewer", "Claude")] + r
+                        for r in j.get("rows", []))
+    os.replace(tmp, path)
+
+
+def write_all_csv():
+    """The spreadsheet of every book, the newest first (Jason, 2026-11-07, in CleanView)."""
+    _write_csv(CSV_PATH, _book_files())
+
+
+def book_csv(book):
+    """A spreadsheet of just this book's findings (Jason, 2026-11-07, in CleanView: "it had every
+    movie"); None if Claude/ChatGPT/Gemini hasn't checked it yet."""
+    name = re.sub(r"[^A-Za-z0-9._ -]+", "_", book or "") or "book"
+    f = FINDINGS / f"{name}.json"
+    try:
+        j = json.loads(f.read_text("utf8"))
+    except Exception:
+        return None
+    path = FINDINGS / f"{name}.csv"
+    try:
+        _write_csv(path, [j])
+    except OSError:
+        return None
+    return path
 
 
 def export_book(st, title="", dest_dir=None):

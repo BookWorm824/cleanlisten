@@ -57,7 +57,9 @@ def test_tell_claude_whats_not_a_problem_on_the_check_page(book, tmp_path, monke
     chat = R.CheckChat(book, r, tmp_path / "chat")
     ans, changes, kept = chat.ask("The witches are fine")
     assert kept == [("A witch in a fairy tale is fine.", False)]
-    assert asked[0][1] is R.CHECK_SYSTEM and asked[0][2] is R.CHECK_SCHEMA
+    # the check page's rules, then who does what (Jason, 2026-11-07)
+    assert asked[0][1].startswith(R.CHECK_SYSTEM) and "You (Claude) are only this chat" in asked[0][1]
+    assert asked[0][2] is R.CHECK_SCHEMA
     found = (tmp_path / "chat" / "findings.txt").read_text(encoding="utf8")
     assert found.startswith("F1 [found] ") and "of the way through the book" in found
     first = chat.items[0][2]

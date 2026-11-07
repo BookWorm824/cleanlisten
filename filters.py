@@ -251,6 +251,148 @@ class FilterCard:
         self.on_change()
 
 
+def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600):
+    """Every filter's tick box, in a card per section as in CleanView, packed into `parent`.
+    Returns (vars, words box). on_change() is called whenever a tick or a choice changes."""
+    on_change = on_change or (lambda: None)
+    vars_ = {}
+    words = None
+    for heading, cols, items in SECTIONS:
+        card = tk.Frame(parent, bg=CARD, highlightbackground=LINE, highlightthickness=1)
+        card.pack(fill="x", padx=padx, pady=4)
+        tk.Label(card, text=heading, bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(
+            anchor="w", padx=12, pady=(6, 2))
+        grid = tk.Frame(card, bg=CARD)
+        grid.pack(fill="x", padx=12, pady=(0, 8))
+        n = 0
+        for key, label, default in items:
+            if isinstance(default, str):            # a kissing level
+                row = tk.Frame(grid, bg=CARD)
+                row.grid(row=n, column=0, columnspan=cols, sticky="w", pady=1)
+                tk.Label(row, text=label, bg=CARD, fg=INK, font=(FONT, 10), width=20,
+                         anchor="w").pack(side="left")
+                v = tk.StringVar(value=dict(KISS_LEVELS).get(cur.get(key), "Keep"))
+                vars_[key] = v
+                ttk.Combobox(row, textvariable=v, values=[n_ for _, n_ in KISS_LEVELS],
+                             state="readonly", width=22).pack(side="left")
+                n += cols
+                continue
+            v = tk.BooleanVar(value=bool(cur.get(key)))
+            vars_[key] = v
+            ttk.Checkbutton(grid, text=label, variable=v).grid(
+                row=n // cols, column=n % cols, sticky="w", padx=(0, 24), pady=1)
+            n += 1
+            if key == "religion":                   # its parts (Jason)
+                row = tk.Frame(grid, bg=CARD)
+                row.grid(row=n // cols, column=0, columnspan=cols, sticky="w", padx=(24, 0))
+                boxes = []
+                for p, plabel in RELIGION_PARTS:
+                    pv = tk.BooleanVar(value=bool(cur.get("religion_" + p)))
+                    vars_["religion_" + p] = pv
+                    boxes.append(ttk.Checkbutton(row, text=plabel, variable=pv))
+                    boxes[-1].pack(side="left", padx=(0, 10))
+                show = lambda *_, bs=boxes, rv=v: [b.state(["!disabled"] if rv.get() else
+                                                           ["disabled"]) for b in bs]
+                v.trace_add("write", show)
+                show()
+                n += cols
+        if heading == "Language":
+            tk.Label(card, text="Your own words and phrases to mark out or mute  (one per line, "
+                     "for every age)", bg=CARD, fg=INK, font=(FONT, 10)).pack(anchor="w", padx=12)
+            words = tk.Text(card, height=4, font=(FONT, 10), wrap="none", relief="solid",
+                            borderwidth=1, highlightthickness=0, padx=6, pady=4)
+            words.insert("1.0", "\n".join(mywords))
+            words.pack(fill="x", padx=12)
+            words.bind("<KeyRelease>", lambda e: on_change())
+            words.bind("<FocusOut>", lambda e: on_change())
+            tk.Label(card, text="Taken out wherever they come up, the whole phrase: for example "
+                     "\u201cgrow some stones\u201d. Whole words only, so \u201cstones\u201d on "
+                     "its own wouldn't touch \u201cmilestones\u201d.", bg=CARD, fg=MUTED,
+                     font=(FONT, 9), wraplength=wrap, justify="left").pack(anchor="w", padx=12,
+                                                                          pady=(2, 8))
+    for v in vars_.values():
+        v.trace_add("write", lambda *_: on_change())
+    return vars_, words
+
+
+def read_boxes(vars_, words):
+    """(ticks, own words) from build_boxes()' tick boxes."""
+    t = {k: (next(key for key, n in KISS_LEVELS if n == v.get()) if k in LEVELS else v.get())
+         for k, v in vars_.items()}
+    mine = [ln.strip() for ln in words.get("1.0", "end").splitlines() if ln.strip()] if words else []
+    return t, mine
+
+
+class FilterPanel:
+    """Every filter on the page itself, as in CleanView (CleanRead's "What to take out"):
+    "Filtering for" (the ages) and the tick boxes. Every change is kept at once, for the age
+    chosen; CleanListen's "Choose filters" window shows the same ticks."""
+
+    def __init__(self, parent, on_change=None, wrap=600):
+        self.d = load()
+        self.on_change = on_change or (lambda: None)
+        row = tk.Frame(parent, bg=CARD)
+        row.pack(fill="x")
+        tk.Label(row, text="Filtering for:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
+        self.profile = tk.StringVar(value=self.d["profile"])
+        for key, label in PROFILES:
+            tk.Radiobutton(row, text=label, value=key, variable=self.profile, bg=CARD,
+                           activebackground=CARD, font=(FONT, 10),
+                           command=self._profile_changed).pack(side="left", padx=(8, 0))
+        bottom = tk.Frame(parent, bg=CARD)
+        bottom.pack(fill="x", pady=(4, 2))
+        self.std = tk.Label(bottom, text="", bg=CARD, fg=ACCENT, font=(FONT, 9, "underline"),
+                            cursor="hand2")
+        self.std.pack(side="left")
+        self.std.bind("<Button-1>", lambda e: self.standard())
+        tk.Label(bottom, text="Each age remembers its own ticks. CleanListen and CleanRead share "
+                 "them.", bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
+        self.wrap = wrap
+        self.body = tk.Frame(parent, bg=CARD)
+        self.body.pack(fill="x", pady=(4, 0))
+        self._build()
+
+    def _build(self):
+        self._quiet = True
+        for w in self.body.winfo_children():
+            w.destroy()
+        self.vars, self.words = build_boxes(self.body, ticks(self.d), self.d["mywords"],
+                                            self._changed, padx=0, wrap=self.wrap)
+        self.std.config(text=f"Back to the standard ticks for {dict(PROFILES)[self.d['profile']]}")
+        self._quiet = False
+
+    def _changed(self):
+        if self._quiet:
+            return
+        t, mine = read_boxes(self.vars, self.words)
+        self.d["ticks"][self.d["profile"]] = t
+        self.d["mywords"] = mine
+        save(self.d)
+        self.on_change()
+
+    def _profile_changed(self):
+        self.d["profile"] = self.profile.get()
+        save(self.d)
+        self._build()
+        self.on_change()
+
+    def standard(self):
+        std = PRESETS[self.d["profile"]]
+        self._quiet = True
+        for k, v in self.vars.items():
+            v.set(dict(KISS_LEVELS)[std[k]] if k in LEVELS else bool(std[k]))
+        self._quiet = False
+        self._changed()
+
+    def ticks(self):
+        return ticks(self.d)
+
+    def mywords(self):
+        if self.words is not None and self.words.winfo_exists():
+            self._changed()
+        return list(self.d["mywords"])
+
+
 class FiltersWindow(tk.Toplevel):
     """Every filter, grouped as in CleanView. Changes are kept for the age chosen."""
 
@@ -270,7 +412,6 @@ class FiltersWindow(tk.Toplevel):
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.transient(master)
         cur = ticks(d)
-        self.vars = {}
         foot = tk.Frame(self, bg=BG)
         foot.pack(side="bottom", fill="x", padx=16, pady=10)
         ttk.Button(foot, text="Done", style="Main.TButton", command=self._done).pack(side="right")
@@ -282,57 +423,7 @@ class FiltersWindow(tk.Toplevel):
                  "to check before anything is cut.", bg=BG, fg=MUTED, font=(FONT, 9),
                  wraplength=640, justify="left").pack(anchor="w", padx=16, pady=(0, 6))
         body = self._scroll()
-        for heading, cols, items in SECTIONS:
-            card = tk.Frame(body, bg=CARD, highlightbackground=LINE, highlightthickness=1)
-            card.pack(fill="x", padx=16, pady=4)
-            tk.Label(card, text=heading, bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(
-                anchor="w", padx=12, pady=(6, 2))
-            grid = tk.Frame(card, bg=CARD)
-            grid.pack(fill="x", padx=12, pady=(0, 8))
-            n = 0
-            for key, label, default in items:
-                if isinstance(default, str):            # a kissing level
-                    row = tk.Frame(grid, bg=CARD)
-                    row.grid(row=n, column=0, columnspan=cols, sticky="w", pady=1)
-                    tk.Label(row, text=label, bg=CARD, fg=INK, font=(FONT, 10), width=20,
-                             anchor="w").pack(side="left")
-                    v = tk.StringVar(value=dict(KISS_LEVELS).get(cur.get(key), "Keep"))
-                    self.vars[key] = v
-                    ttk.Combobox(row, textvariable=v, values=[n_ for _, n_ in KISS_LEVELS],
-                                 state="readonly", width=22).pack(side="left")
-                    n += cols
-                    continue
-                v = tk.BooleanVar(value=bool(cur.get(key)))
-                self.vars[key] = v
-                ttk.Checkbutton(grid, text=label, variable=v).grid(
-                    row=n // cols, column=n % cols, sticky="w", padx=(0, 24), pady=1)
-                n += 1
-                if key == "religion":                   # its parts (Jason)
-                    row = tk.Frame(grid, bg=CARD)
-                    row.grid(row=n // cols, column=0, columnspan=cols, sticky="w", padx=(24, 0))
-                    boxes = []
-                    for p, plabel in RELIGION_PARTS:
-                        pv = tk.BooleanVar(value=bool(cur.get("religion_" + p)))
-                        self.vars["religion_" + p] = pv
-                        boxes.append(ttk.Checkbutton(row, text=plabel, variable=pv))
-                        boxes[-1].pack(side="left", padx=(0, 10))
-                    show = lambda *_, bs=boxes, rv=v: [b.state(["!disabled"] if rv.get() else
-                                                               ["disabled"]) for b in bs]
-                    v.trace_add("write", show)
-                    show()
-                    n += cols
-            if heading == "Language":
-                tk.Label(card, text="Your own words and phrases to mark out or mute  (one per line, "
-                         "for every age)", bg=CARD, fg=INK, font=(FONT, 10)).pack(anchor="w", padx=12)
-                self.words = tk.Text(card, height=4, font=(FONT, 10), wrap="none", relief="solid",
-                                     borderwidth=1, highlightthickness=0, padx=6, pady=4)
-                self.words.insert("1.0", "\n".join(d["mywords"]))
-                self.words.pack(fill="x", padx=12)
-                tk.Label(card, text="Taken out wherever they come up, the whole phrase: for example "
-                         "“grow some stones”. Whole words only, so “stones” on "
-                         "its own wouldn't touch “milestones”.", bg=CARD, fg=MUTED,
-                         font=(FONT, 9), wraplength=600, justify="left").pack(anchor="w", padx=12,
-                                                                              pady=(2, 8))
+        self.vars, self.words = build_boxes(body, cur, d["mywords"])
         self.protocol("WM_DELETE_WINDOW", self._done)
         self.grab_set()
 
@@ -363,11 +454,7 @@ class FiltersWindow(tk.Toplevel):
             v.set(dict(KISS_LEVELS)[std[k]] if k in LEVELS else bool(std[k]))
 
     def _done(self):
-        t = {}
-        for k, v in self.vars.items():
-            t[k] = next(key for key, n in KISS_LEVELS if n == v.get()) if k in LEVELS else v.get()
-        self.d["ticks"][self.d["profile"]] = t
-        self.d["mywords"] = [ln.strip() for ln in self.words.get("1.0", "end").splitlines() if ln.strip()]
+        self.d["ticks"][self.d["profile"]], self.d["mywords"] = read_boxes(self.vars, self.words)
         self.grab_release()
         self.destroy()
         self.on_done()
