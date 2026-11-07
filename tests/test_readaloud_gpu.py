@@ -198,7 +198,7 @@ def test_an_old_driver_says_the_card_is_fine_and_how_to_update(monkeypatch):
     monkeypatch.setattr(G.subprocess, "run", lambda *a, **k: R())
     ok, why = G.gpu_check()
     assert not ok and "GTX 1660 Ti works with these voices" in why and "466.77" in why
-    assert "570 or newer" in why and "nvidia.com/drivers" in why
+    assert "570 or higher" in why and "not the old GTX 570 card" in why and "nvidia.com/drivers" in why
     R.stdout = "NVIDIA GeForce GTX 1660 Ti, 6144, 581.29\n"
     assert G.gpu_check()[0]
 

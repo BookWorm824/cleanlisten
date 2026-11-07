@@ -160,11 +160,16 @@ def gpu_check():
         major = 999
     if major < 570:
         # Jason (GTX 1660 Ti) read "570" as "270", searched it, and found 270 doesn't support his card:
-        # say plainly that the card is fine and only its driver is old, and how to get the new one
+        # say plainly that the card is fine and only its driver is old, and how to get the new one.
+        # Then (1.17.3) he searched "570 driver", found the old GTX 570 card's legacy drivers and
+        # thought nothing newer fits his: say it's a year and the driver's own number, not a card
         return False, (f"Your {name} works with these voices, but its driver (the software that runs it) "
-                       f"is too old: it's version {drv}, and they need version 570 or newer. Get the newest "
-                       "one from the NVIDIA app (Drivers, then Download), or from nvidia.com/drivers "
-                       f"(choose GeForce and your {name}). Then open ReadAloud again.")
+                       f"is too old: it's version {drv}. They need a driver from 2025 or newer, which is "
+                       "driver version 570 or higher (the driver's own number, not the old GTX 570 card). "
+                       "Get the newest one from the NVIDIA app (Drivers, then Download), or from "
+                       f"nvidia.com/drivers: choose GeForce, your card's series (the Notebooks one on a "
+                       f"laptop) and your {name}. If it won't install on a laptop, get it from the laptop "
+                       "maker's website. Then open ReadAloud again.")
     return True, f"{name}, {mem / 1024:.0f} GB"
 
 

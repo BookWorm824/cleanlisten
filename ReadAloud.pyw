@@ -809,7 +809,7 @@ class App(tk.Tk):
         how = (f"Reading with the {gpu.READERS[reader][0]} voice on the graphics card. Each line is "
                "listened to and read again if a word came out wrong." if gpu.is_gpu(reader) else
                f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
-        tk.Label(box, text=how, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+        tk.Label(box, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=740,     # Jason: "bigger"
                  justify="left").pack(anchor="w", pady=(16, 0))
         self._logo(p)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
