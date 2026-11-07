@@ -303,6 +303,26 @@ def test_graphics_card_voices_are_cast_by_age_and_gender():
     v = A.cast_voices(job, cast, {"lindsay": 9, "rick": 8, "marilla": 5, "jed": 3, "nan": 2})
     import readaloud_gpu as G
     assert v["lindsay"] == "grace"                                   # the narrator's own lines
-    assert v["marilla"] == "lily" and G.GPU_VOICES[v["jed"]][3] in ("older", "elderly")
+    assert G.GPU_VOICES[v["marilla"]][3] == "child" and G.GPU_VOICES[v["jed"]][3] in ("older", "elderly")
     assert G.GPU_VOICES[v["rick"]][2] == "male" and G.GPU_VOICES[v["nan"]][2] == "female"
     assert len({v["rick"], v["jed"]}) == 2 and v["nan"] != "grace"
+
+
+def test_two_children_never_share_a_voice():
+    # Lauren's script: Melissa (10) and Lucy (8) both got Lily
+    cast = {"first_person": False, "characters": [
+        {"name": "Melissa", "gender": "female", "age": "child"}, {"name": "Lucy", "gender": "female", "age": "child"},
+        {"name": "Ava", "gender": "female", "age": "child"}]}
+    v = A.cast_voices({"voice": "daniel"}, cast, {"melissa": 9, "lucy": 8, "ava": 1})
+    assert v["melissa"] != v["lucy"] and v["melissa"] == "rosie" and v["lucy"] == "lily"
+    assert v["ava"] not in (v["melissa"], v["lucy"])                      # a teen voice before sharing
+
+
+def test_taking_out_part_of_a_paragraph():
+    title = ("The Mystery of the Old Schoolhouse Narrator: Roxy Melissa: Meghan Lucy: Holly Mrs. Jenkins: "
+             "Jess Dad: Josh Charlie: Joe Mrs. Palmer: Tammy Narrator:")
+    assert A.only_removed(title, "The Mystery of the Old Schoolhouse").startswith("narrator roxy melissa")
+    assert A.only_removed("Melissa whispered, Melissa:", "Melissa whispered") == "melissa"
+    assert A.only_removed("She ran home.", "She walked home.") == ""          # a change, not a removal
+    assert A.only_removed("She ran home.", "She ran home, fast.") == ""
+    assert A.only_removed("She ran home.", "She ran home.") == ""

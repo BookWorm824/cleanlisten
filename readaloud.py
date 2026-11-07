@@ -505,6 +505,20 @@ def _pdf_author(a):
     return f"{m.group(2)} {m.group(1)}" if m else a
 
 
+def _pdf_title(raw, path):
+    """The title in a PDF's details, without what the program that made it added: "Microsoft Word -
+    The_Mystery_of_the_Old_Schoolhouse" (Lauren's script) -> "The Mystery of the Old Schoolhouse"."""
+    t = " ".join(str(raw or "").split())
+    t = re.sub(r"^(Microsoft (Word|PowerPoint)|Word|Writer|Untitled)\s*-\s*", "", t, flags=re.I)
+    t = re.sub(r"\.(docx?|odt|rtf|pdf|txt)$", "", t, flags=re.I)
+    if t.count("_") >= 1 and " " not in t:
+        t = t.replace("_", " ")
+    t = " ".join(t.split())
+    if not t or t.lower() in ("untitled", "document", "microsoft word"):
+        t = " ".join(Path(path).stem.replace("_", " ").split())
+    return t
+
+
 def read_pdf(path):
     """(title, author, cover bytes or None, chapters [{"title", "paras", "read"}])."""
     try:
@@ -519,7 +533,7 @@ def read_pdf(path):
     except Exception as ex:
         raise BookError(f"This PDF couldn't be opened ({ex}).")
     meta = r.metadata or {}
-    title = " ".join(str(meta.get("/Title") or "").split()) or Path(path).stem
+    title = _pdf_title(meta.get("/Title"), path)
     author = _pdf_author(meta.get("/Author"))
     n = len(pages)
     # running heads: the same words at the top or bottom of many pages ("Phyllis A. Whitney 11")
@@ -1048,13 +1062,25 @@ class Maker:
         self.status = None
 
         def gpu_loop():
-            # one worker on the graphics card: it loads the voice once and reads the chapters in turn
-            try:
-                self._gpu(list(todo), partial, lock)
-            except Stopped:
-                return
-            except Exception as ex:
-                errors.append(ex)
+            # one worker on the graphics card: it loads the voice once and reads the chapters in turn.
+            # Another program can take the card's memory midway (Premiere Pro, once): wait a minute
+            # and start the worker again on what's left, up to 10 times
+            for attempt in range(11):
+                left = [i for i in todo if not chapter_file(self.jobdir, i).exists()]
+                try:
+                    self._gpu(left, partial, lock)
+                    return
+                except Stopped:
+                    return
+                except Exception as ex:
+                    if "ran out of memory" not in str(ex) or attempt == 10:
+                        errors.append(ex)
+                        return
+                with lock:
+                    self.status = ("The graphics card is busy with another program (a game or video "
+                                   "editor?). Waiting for it, then carrying on…")
+                if self._stop.wait(60):
+                    return
 
         threads = ([threading.Thread(target=gpu_loop, daemon=True)] if gpu else
                    [threading.Thread(target=worker_loop, daemon=True) for _ in range(self.n_workers)])
@@ -1075,7 +1101,7 @@ class Maker:
                 rate = (now - first[1]) / (time.time() - first[0])
                 left = (total - now) / rate
             msg = f"Reading the book aloud… {len(chapters) - left_ch} of {len(chapters)} chapters done"
-            if self.status and now == start_words:
+            if self.status:
                 msg = self.status
             self.say(base + (0.95 - base) * now / total, msg, left)
         if errors:

@@ -15,7 +15,7 @@ The three new ones need an NVIDIA card (6 GB or more) and live in their own Pyth
 venv as `python readaloud_gpu.py speak <job> <chapters>`, which loads the model once and reads the
 chapters in turn (one GPU, one worker).
 
-The voices: 18 clips (rv_<id>.flac, shipped with the app) designed once with VoiceDesign from the
+The voices: 20 clips (rv_<id>.flac, shipped with the app) designed once with VoiceDesign from the
 descriptions in GPU_VOICES. "steady" and Chatterbox copy the clip; "acting" is given the same
 description, so the voices match across readers, and "Hear it" just plays the clip.
 
@@ -77,12 +77,14 @@ GPU_VOICES = {
     "edna": ("Edna - elderly American woman", "A kindly American woman in her late seventies with a soft, slightly thin and wavering voice.", "female", "elderly", "us"),
     "clara": ("Clara - Southern American woman", "A gracious American woman in her forties with a soft, warm Southern accent.", "female", "adult", "us"),
     "kayla": ("Kayla - American teenage girl", "An American teenage girl of about fifteen with a quick, expressive voice.", "female", "teen", "us"),
+    "rosie": ("Rosie - American girl, a bit older", "A confident, slightly husky-voiced American girl about eleven years old, with a dry sense of humor.", "female", "child", "us"),
     "lily": ("Lily - American girl", "A sweet, clear-voiced American girl about nine years old.", "female", "child", "us"),
     "jack": ("Jack - deep American man", "A strong American man in his forties with a deep, slightly gruff voice and a steady, confident manner.", "male", "adult", "us"),
     "ben": ("Ben - young American man", "An easygoing American man in his twenties with a clear, friendly tenor voice.", "male", "young", "us"),
     "walter": ("Walter - elderly American man", "An American man in his late seventies with a gravelly, slow, weathered voice.", "male", "elderly", "us"),
     "hank": ("Hank - Southern American man", "A good-natured American man in his fifties with a slow, warm Texas drawl.", "male", "older", "us"),
     "tyler": ("Tyler - American teenage boy", "An American teenage boy of about fifteen with a youthful, slightly breaking voice.", "male", "teen", "us"),
+    "max": ("Max - American boy, a bit older", "A cheerful American boy about eleven years old, with a clear, slightly raspy voice.", "male", "child", "us"),
     "sam": ("Sam - American boy", "A bright, energetic American boy about nine years old.", "male", "child", "us"),
     "harriet": ("Harriet - older British woman", "A brisk, cultured English woman in her sixties with a crisp, refined accent.", "female", "older", "gb"),
     "arthur": ("Arthur - older British man", "A dignified English gentleman in his sixties with a deep, measured voice and a refined accent.", "male", "older", "gb"),
@@ -157,9 +159,12 @@ def gpu_check():
     except ValueError:
         major = 999
     if major < 570:
-        return False, (f"Update the NVIDIA graphics driver first (this one is version {drv}; these voices "
-                       "need 570 or newer). Open the NVIDIA app and choose to update the driver, then "
-                       "come back.")
+        # Jason (GTX 1660 Ti) read "570" as "270", searched it, and found 270 doesn't support his card:
+        # say plainly that the card is fine and only its driver is old, and how to get the new one
+        return False, (f"Your {name} works with these voices, but its driver (the software that runs it) "
+                       f"is too old: it's version {drv}, and they need version 570 or newer. Get the newest "
+                       "one from the NVIDIA app (Drivers, then Download), or from nvidia.com/drivers "
+                       f"(choose GeForce and your {name}). Then open ReadAloud again.")
     return True, f"{name}, {mem / 1024:.0f} GB"
 
 
@@ -363,11 +368,27 @@ def check(expected, heard, skip=()):
     return score, "; ".join(why) or "different words"
 
 
+LIKE_MIN = 0.72      # a line this unlike its voice's clip sounds like someone else: read it again
+
+
 class Ears:
-    """CleanListen's speech recognizer (Parakeet), on the processor."""
+    """CleanListen's speech recognizer (Parakeet), on the processor; and, when Chatterbox is set up,
+    its voice encoder, to hear whether a line still sounds like the same person (good lines: about
+    0.85-0.9 like the clip; a voice that wandered off: 0.66)."""
 
     def __init__(self):
         self.rec = None
+        self.ve, self.refs = None, {}
+        try:
+            f = model_dir("chatterbox") / "ve.safetensors"
+            if f.exists():
+                from chatterbox.models.voice_encoder import VoiceEncoder
+                from safetensors.torch import load_file
+                ve = VoiceEncoder()
+                ve.load_state_dict(load_file(str(f)))
+                self.ve = ve.to("cpu").eval()
+        except Exception:
+            self.ve = None
         try:
             import sherpa_onnx
             d = ASR_MODEL
@@ -379,9 +400,31 @@ class Ears:
         except Exception:
             self.rec = None
 
+    def _emb(self, x, sr):
+        import numpy as np
+        import librosa
+        w = librosa.resample(np.asarray(x, np.float32), orig_sr=sr, target_sr=16000)
+        e = self.ve.embeds_from_wavs([w], sample_rate=16000)[0]
+        return e / np.linalg.norm(e)
+
+    def likeness(self, x, sr, vid):
+        """How much a line sounds like its voice's clip (0-1), or None (short lines are too rough)."""
+        if self.ve is None or len(x) < 3 * sr or not voice_clip(vid).exists():
+            return None
+        try:
+            if vid not in self.refs:
+                import soundfile as sf
+                w, r = sf.read(str(voice_clip(vid)), dtype="float32")
+                self.refs[vid] = self._emb(w, r)
+            return float(self._emb(x, sr) @ self.refs[vid])
+        except Exception:
+            return None
+
     def hear(self, x, sr):
         if self.rec is None:
             return None
+        if len(x) < 0.15 * sr:          # nothing came out (the recognizer can't take an empty clip)
+            return ""
         s = self.rec.create_stream()
         s.accept_waveform(sr, x)
         self.rec.decode_stream(s)
@@ -408,18 +451,24 @@ class Voice:
             self.conds = {}
         else:
             from qwen_tts import Qwen3TTSModel
+            # bfloat16 needs an RTX 30 card or newer; older ones (GTX 16, RTX 20) use float16
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
             self.m = Qwen3TTSModel.from_pretrained(str(model_dir(reader)), device_map="cuda:0",
-                                                   dtype=torch.bfloat16, attn_implementation="sdpa")
+                                                   dtype=dtype, attn_implementation="sdpa")
             self.prompts = {}
-            self.batch = 4 if reader == "acting" else 3
+            # 4 lines at once used 7.5 GB of the owner's 8 GB; a 6 GB card (GTX 1660 Ti) takes 2
+            gb = torch.cuda.get_device_properties(0).total_memory / 2 ** 30
+            self.batch = (4 if gb >= 7.5 else 2 if gb >= 5.5 else 1) if reader == "acting" else \
+                (3 if gb >= 7.5 else 2 if gb >= 5.5 else 1)
+            self.prints = load_prints() if reader == "acting" else {}
 
-    def _instruct(self, u):
+    def _instruct(self, u, with_voice=True):
         v = GPU_VOICES.get(u["voice"]) or GPU_VOICES[DEFAULT_GPU_VOICE]
-        s = v[1]
+        s = v[1] if with_voice else ""
         if u.get("manner"):
             s += " Character: " + u["manner"].rstrip(".") + "."
         s += " Read this " + (u.get("note") or "as natural, engaged audiobook narration").rstrip(".") + "."
-        return s + PACE_WORDS.get(u.get("pace"), "")
+        return (s + PACE_WORDS.get(u.get("pace"), "")).strip()
 
     def _prompt(self, vid):
         if vid not in self.prompts:
@@ -443,6 +492,8 @@ class Voice:
             return [self._cbox(u) for u in units]
         texts = [u["text"] for u in units]
         lang = ["English"] * len(units)
+        if self.reader == "acting" and all(u["voice"] in self.prints for u in units):
+            return self._act(units)
         if self.reader == "acting":
             w, sr = self.m.generate_voice_design(text=texts, language=lang, instruct=[self._instruct(u) for u in units])
         else:
@@ -451,6 +502,44 @@ class Voice:
         self.sr = sr
         return [self._np(x) for x in w]
 
+    def _act(self, units):
+        """The acting note and the voice's own clip together (its fingerprint, readaloud_voices.npz):
+        Qwen's VoiceDesign model takes both, though its wrapper only offers one or the other. The
+        clip keeps a character's voice the same from line to line."""
+        torch, m = self.torch, self.m
+        n = len(units)
+        ids = [m._tokenize_texts([m._build_assistant_text(u["text"])])[0] for u in units]
+        ins = [m._tokenize_texts([m._build_instruct_text(self._instruct(u, with_voice=False))])[0] for u in units]
+        if not hasattr(self, "_ref_ids"):
+            self._ref_ids = m._tokenize_texts([m._build_ref_text(REF_TEXT)])[0]
+        dev = m.model.talker.device
+        # "plain": the voice's fingerprint only, not its whole clip: the last try for a line that
+        # came out silent or wrong (now and then a very short line came out as nothing with the clip)
+        plain = [bool(u.get("plain")) for u in units]
+        codes = [None if p else torch.as_tensor(self.prints[u["voice"]][0], dtype=torch.long, device=dev)
+                 for u, p in zip(units, plain)]
+        spks = [torch.as_tensor(self.prints[u["voice"]][1], device=dev) for u in units]
+        prompt = {"ref_code": codes, "ref_spk_embedding": spks, "x_vector_only_mode": plain,
+                  "icl_mode": [not p for p in plain]}
+        out, _ = m.model.generate(input_ids=ids, instruct_ids=ins,
+                                  ref_ids=[None if p else self._ref_ids for p in plain],
+                                  voice_clone_prompt=prompt, languages=["English"] * n,
+                                  **m._merge_generate_kwargs())
+        full = [c if rc is None else torch.cat([rc.to(c.device), c], 0) for rc, c in zip(codes, out)]
+        wavs, sr = m.model.speech_tokenizer.decode([{"audio_codes": c} for c in full])
+        self.sr = sr
+        res = []
+        for w, rc, f in zip(wavs, codes, full):
+            w = self._np(w)
+            if rc is None:
+                res.append(w)
+                continue
+            # cut a little before the clip's end (it ends in 0.25 s of silence): cut exactly, the
+            # first sound of a short line went with it ("Eight yellow" heard as "A yellow")
+            cut = int(rc.shape[0] / max(1, f.shape[0]) * len(w)) - int(0.2 * sr)
+            res.append(w[max(0, cut):])
+        return res
+
     def _np(self, x):
         import numpy as np
         if hasattr(x, "detach"):
@@ -458,6 +547,11 @@ class Voice:
         return np.asarray(x, dtype=np.float32).reshape(-1)
 
     def say(self, units):
+        # lines of about the same length are read together: a short line ("How many?") read in one
+        # batch with long ones lost words (21 re-reads in Lauren's script; 0 of 36 read with lines
+        # like it), and the batch waits for its longest line anyway
+        order = sorted(range(len(units)), key=lambda k: len(units[k]["text"]))
+        units = [units[k] for k in order]
         out = []
         i = 0
         while i < len(units):
@@ -471,7 +565,20 @@ class Voice:
                     raise RuntimeError("The graphics card ran out of memory. Close other programs "
                                        "(games, video editors) and press Carry on.")
                 self.batch = max(1, self.batch // 2)
-        return out
+        back = [None] * len(out)
+        for k, x in zip(order, out):
+            back[k] = x
+        return back
+
+
+def load_prints():
+    """{voice: (codec codes, speaker embedding)} from readaloud_voices.npz (tools/make_voice_prints.py)."""
+    import numpy as np
+    try:
+        z = np.load(HERE / "readaloud_voices.npz")
+    except OSError:
+        return {}
+    return {k[:-5]: (z[k], z[k[:-5] + ".spk"]) for k in z.files if k.endswith(".code") and k[:-5] + ".spk" in z.files}
 
 
 def _trim(x, sr, level=0.01, keep=0.05):
@@ -492,7 +599,8 @@ def say_checked(voice, ears, units, log=None, skip=()):
     for attempt in range(TRIES):
         if not todo:
             break
-        got = voice.say([units[k] for k in todo])
+        last = attempt == TRIES - 1 and attempt > 0
+        got = voice.say([dict(units[k], plain=True) if last else units[k] for k in todo])
         again = []
         for k, x in zip(todo, got):
             x = _trim(x, voice.sr)
@@ -505,6 +613,9 @@ def say_checked(voice, ears, units, log=None, skip=()):
                 score, why = check(units[k]["text"], heard, skip)
             if words and sec > 1.6 * words + 2:     # a long hum or babble
                 score, why = score + 5, (why + "; too long").strip("; ")
+            like = getattr(ears, "likeness", lambda *a: None)(x, voice.sr, units[k].get("voice", ""))
+            if like is not None and like < LIKE_MIN:
+                score, why = score + 4, (why + f"; sounded like someone else ({like:.2f})").strip("; ")
             if best[k] is None or score < best[k]:
                 best[k], takes[k] = score, x
             if score and attempt < TRIES - 1:
@@ -518,11 +629,39 @@ def say_checked(voice, ears, units, log=None, skip=()):
 # ---------------------------------------------------------------------------
 # Reading a chapter
 # ---------------------------------------------------------------------------
+_ONES = ("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+         "sixteen seventeen eighteen nineteen").split()
+_TENS = "_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()
+
+
+def _num(n):
+    """0-9999 in words (a year like 1924 as "nineteen twenty-four")."""
+    if n < 20:
+        return _ONES[n]
+    if n < 100:
+        return _TENS[n // 10] + ("-" + _ONES[n % 10] if n % 10 else "")
+    if 1100 <= n <= 1999 or 2010 <= n <= 2099:
+        hi, lo = divmod(n, 100)
+        return _num(hi) + " " + ("hundred" if lo == 0 else ("oh " + _ONES[lo] if lo < 10 else _num(lo)))
+    if n < 1000:
+        h, r = divmod(n, 100)
+        return _ONES[h] + " hundred" + (" " + _num(r) if r else "")
+    t, r = divmod(n, 1000)
+    return _num(t) + " thousand" + (" " + _num(r) if r else "")
+
+
+def say_numbers(text):
+    """Numbers in words for the new voices: written as digits, a short line with a number ("Since
+    1924.", "White, 4.") came out wrong three times running in Lauren's script."""
+    text = re.sub(r"#\s?(\d{1,4})\b", lambda m: "number " + _num(int(m.group(1))), text)
+    return re.sub(r"(?<![\d,.])(\d{1,4})(?![\d,.]\d)", lambda m: _num(int(m.group(1))), text)
+
+
 def respell(text, said):
     for w, s in (said or {}).items():
         text = re.sub(r"(?<![\w'])" + re.escape(w) + r"(?![\w'])", s, text)
     # an old book's spaced dots (". . .") read as a pause: Chatterbox said "thank you 2,000 thank you"
-    return re.sub(r"\s*\.(?:\s*\.){2,}", "…", text)
+    return say_numbers(re.sub(r"\s*\.(?:\s*\.){2,}", "…", text))
 
 
 def chapter_units(ch, job):
@@ -582,7 +721,7 @@ def speak_chapter(voice, ears, jobdir, i, report=None, log=None):
 
     skip = set()
     for w, s in (job.get("respell") or {}).items():
-        skip.update(_words(w))
+        skip.update(_words(w) + _words(s))
     done = 0
     try:
         put(silence(R.LEAD_IN))
@@ -591,7 +730,7 @@ def speak_chapter(voice, ears, jobdir, i, report=None, log=None):
         k = 0
         while k < len(paras):
             group, n = [], 0
-            while k < len(paras) and (not group or n < 8):
+            while k < len(paras) and (not group or n < 16):
                 group.append(paras[k])
                 n += len(paras[k][1])
                 k += 1

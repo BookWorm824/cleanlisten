@@ -53,7 +53,10 @@ Rules:
 - Never change the story's words, never summarize, never censor. A fix only repairs scanning
   or typing mistakes; the corrected paragraph must say the same thing word for word.
 - "skip" only for text that is clearly not part of the book's text (page furniture, jacket
-  copy, scanning garbage). Front matter like a dedication is part of the book: keep it.
+  copy, scanning garbage). Front matter like a dedication is part of the book: keep it. When only
+  part of a paragraph shouldn't be read (a script's "Name:" speaker label, a cast list run into
+  the title, a page number in the middle), give the paragraph without it as "fix", taking words
+  out only.
 - Speakers: for each quoted speech in a paragraph ("..." pairs, in order), name who says it,
   using the names from the cast list. If the narrator is a character telling the story in the
   first person, their own speech is spoken by that character's name. If you can't tell, use
@@ -148,6 +151,22 @@ def split_quotes(text):
     if text[k:].strip():
         out.append((False, text[k:].strip()))
     return out or [(False, text)]
+
+
+def only_removed(a, b):
+    """The words taken out, if b is a with words only taken out (nothing added or changed): the cast
+    list at the top of a script, or a stray "Melissa:" label in a line. "" if not."""
+    wa = re.findall(r"[a-z0-9]+", a.lower())
+    wb = re.findall(r"[a-z0-9]+", b.lower())
+    if not wb or len(wb) >= len(wa):
+        return ""
+    gone = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, wa, wb, autojunk=False).get_opcodes():
+        if op == "delete":
+            gone += wa[i1:i2]
+        elif op != "equal":
+            return ""
+    return " ".join(gone) if 0 < len(gone) <= SKIP_MOST else ""
 
 
 def same_words(a, b):
@@ -462,7 +481,7 @@ MEN = {"us": ["am_michael", "am_fenrir", "am_puck", "am_echo"], "gb": ["bm_georg
 def gpu_pool(gender, age, accent, narrator):
     """The graphics-card voices for a character, best match first (readaloud_gpu.GPU_VOICES)."""
     import readaloud_gpu as G
-    want = {"child": ["child"], "teen": ["teen", "child"], "adult": ["adult", "young"],
+    want = {"child": ["child", "teen"], "teen": ["teen", "child"], "adult": ["adult", "young"],
             "older": ["older", "elderly"]}.get(age, ["adult", "young"])
     vs = [(k, v) for k, v in G.GPU_VOICES.items() if v[2] == gender and k != narrator]
     rank = lambda kv: (want.index(kv[1][3]) if kv[1][3] in want else 9, kv[1][4] != accent)
@@ -564,6 +583,11 @@ def apply(jobdir, job, chapters, cast_data, results, names_data=None):
             if fix and fix != text:
                 if same_words(text, fix):
                     report["fixed"].append(f"{c['title']}: {text}\n    -> {fix}")
+                    text = fix
+                elif only_removed(text, fix):
+                    # part of a paragraph that isn't the story (Lauren's script: the cast list in the
+                    # title line, "Melissa whispered, Melissa:"); as much as a whole paragraph may be
+                    report["skipped"].append(f"{c['title']} (from a paragraph): {only_removed(text, fix)}")
                     text = fix
                 else:
                     report["ignored"].append(f"{c['title']} (a change that wasn't only a fix): {fix[:200]}")

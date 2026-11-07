@@ -1,5 +1,5 @@
 {
- "version": "1.17.1",
+ "version": "1.17.2",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -46,6 +46,9 @@
   "rv_tyler.flac",
   "rv_sam.flac",
   "rv_harriet.flac",
-  "rv_arthur.flac"
+  "rv_arthur.flac",
+  "rv_rosie.flac",
+  "rv_max.flac",
+  "readaloud_voices.npz"
  ]
 }

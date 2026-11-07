@@ -250,3 +250,12 @@ def test_every_voice_is_in_the_model():
              "bf_emma,bf_isabella,bf_lily,bm_daniel,bm_fable,bm_george,bm_lewis").split(",")
     for key, sid, *_ in R.VOICES:          # the model's own speaker numbers (its id2speaker)
         assert names[sid] == key
+
+
+def test_a_pdf_title_without_the_program_that_made_it():
+    # Lauren's script: "Microsoft Word - The_Mystery_of_the_Old_Schoolhouse"
+    assert R._pdf_title("Microsoft Word - The_Mystery_of_the_Old_Schoolhouse", "x.pdf") == "The Mystery of the Old Schoolhouse"
+    assert R._pdf_title("Microsoft Word - Vermilion.docx", "x.pdf") == "Vermilion"
+    assert R._pdf_title("Vermilion", "x.pdf") == "Vermilion"
+    assert R._pdf_title("", "C:/b/My_Book.pdf") == "My Book"
+    assert R._pdf_title("Untitled", "C:/b/Vermilion.pdf") == "Vermilion"

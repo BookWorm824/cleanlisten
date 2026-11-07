@@ -40,7 +40,7 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | `filters.py` | The filters both apps offer (CleanView's, for books), the ages, saved ticks (`filters.json`), the "Choose filters" window. |
 | `readaloud.py` | ReadAloud's engine (§11): ebook (PDFs page by page) -> chapters -> Kokoro voice (sherpa-onnx) in worker processes -> one M4B with chapters, tags and cover. CLI: `info`, `make`, `speak` (one worker). |
 | `readaloud_ai.py` | ReadAloud's reading director (§11): Claude / ChatGPT / Gemini go through the book first (what not to read, scanning fixes, who speaks, pace, pauses, pronunciations). |
-| `readaloud_gpu.py`, `readaloud_gpu_req.txt`, `rv_*.flac` | ReadAloud's graphics-card readers (§11): Qwen acting, Qwen steady, Chatterbox; their one-time setup, the 18 voice clips, listening back to every line. |
+| `readaloud_gpu.py`, `readaloud_gpu_req.txt`, `rv_*.flac` | ReadAloud's graphics-card readers (§11): Qwen acting, Qwen steady, Chatterbox; their one-time setup, the 20 voice clips and their fingerprints (`readaloud_voices.npz`), listening back to every line. |
 | `ReadAloud.pyw` | ReadAloud's window: choose ebook, reader and voice (▶ Hear it, Set up), what to read, where to save; working page; done page. Launcher arg `aloud`. |
 | `shortcuts.py` | Creates the CleanRead and ReadAloud desktop icons; points an old CleanView icon at the real CleanView. |
 | `update.json` | `{"repo": "BookWorm824/cleanlisten", "branch": "main"}` |
@@ -543,6 +543,49 @@ install (own icon, launcher arg `aloud`, own name in Task Manager), like CleanRe
     at night".
   - Names for these voices: a lowercase respelling only for names the lookup marks `tricky`
     (Tlaquepaque); "Marilla" respelled "muh-ril-uh" came out "Mafrilla", and as written it's right.
+- **1.17.2** (Lauren's first full book with the new voices, "The Mystery of the Old Schoolhouse",
+  a PDF script for voice actors: "its switching voices even though the same person is speaking"
+  and "it read of things that wern't supposed to be read"):
+  - Acting described the voice afresh for every line, so each line was a slightly different
+    person (Chatterbox's voice encoder: the narrator's lines 0.77 alike, worst pair 0.66).
+    Qwen's VoiceDesign model takes a voice clip and an instruction together (its wrapper offers
+    one or the other; `Voice._act` calls `model.generate` with both): 0.85-0.88 alike, acting
+    still changes the delivery (the angry line louder), and faster (1.2x). The clip's codec codes
+    and speaker embedding (only the Base model has the speaker encoder) are shipped for every
+    voice in `readaloud_voices.npz` (`tools/make_voice_prints.py`; rerun after changing a clip).
+    The clip part is cut 0.2 s early (clips end in 0.25 s of silence): cut exactly, short lines
+    lost their first sound ("Eight yellow" -> "A yellow"; 21 re-reads in a 15-minute book).
+    Lines are batched by length (`Voice.say` sorts them, then puts them back in order): a short
+    line in a batch with long ones lost words. With the whole clip a very short line now and then
+    comes out as nothing (2 in 20), so a line's last try uses the fingerprint only (`plain`,
+    x-vector mode: worse sameness, 0.69 vs 0.90, but it never came out silent): 30 short lines,
+    3 re-reads, none left wrong. `Ears.hear` returns "" for under 0.15 s (Parakeet crashes on
+    an empty clip).
+  - Voice clips must be 11.8 s or shorter (`test_no_voice_clip_is_too_long`): with a clip of
+    12 s or more the acting voice stopped at once on most lines (Ruth, 12.5 s: 8 of 8 short lines
+    silent; Oliver, Edna, Clara, Ben, Walter, Hank, Tyler too); every clip up to 11.8 s: none.
+    Those 8 now use a shorter take, or (Walter, Hank: slow talkers) the take sped up with
+    `atempo` (pitch kept). Check a new clip's pitch (librosa pyin): a "teenage boy" take came out
+    at 283 Hz, a girl's pitch. Numbers are said in words for the new voices (`say_numbers`:
+    "Since 1924." failed three times running).
+  - Another program can take the card's memory midway (Premiere Pro and another session's audio
+    worker did, during a test): `Maker` waits a minute and starts the worker again on what's left,
+    up to 10 times, showing "The graphics card is busy with another program...". The worker's
+    error was `torch.AcceleratorError: CUDA error: out of memory` (not OutOfMemoryError), after
+    which the CUDA context can't be trusted, hence a new worker rather than a retry in place.
+  - Listening back also checks lines of 3 s or more sound like their voice's clip
+    (`Ears.likeness`, Chatterbox's encoder, when Chatterbox is set up; under 0.72 = read again).
+  - Melissa (10) and Lucy (8) both got Lily: Rosie and Max (about 11) added, child roles may take
+    a teen voice before two children share one.
+  - The cast list in the title line and "Melissa whispered, Melissa:" were read: Claude's fixes
+    for them were refused (`same_words`). A fix that only takes words out (`only_removed`, at
+    most 150 words, like a skip) is now taken and listed as left out.
+  - PDF titles lose "Microsoft Word - " and underscores (`_pdf_title`).
+  - Jason (GTX 1660 Ti, 6 GB, an old driver) read "need 570 or newer" as "270", searched it, and
+    found 270 doesn't support his card. `gpu_check` now says the card works and only its driver is
+    old, with where to get the new one. Older cards (GTX 16, RTX 20) have no bfloat16: Qwen loads
+    in float16 there (`torch.cuda.is_bf16_supported`); 4 lines at once needed 7.5 GB, so the
+    batch is 4 / 2 / 1 for 8 / 6 / less GB.
 - **Director 2** (1.17.0, `DIRECTION_VERSION` "2", so 1.16 answers are asked again): every
   paragraph is listed with an acting note (`delivery`, `speech_delivery` per quote) and `feel`
   (calm / warm / strong); characters get a `manner` ("deep, steady"). Items carry `"m"` (note),
