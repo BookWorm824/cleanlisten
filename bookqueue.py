@@ -79,6 +79,10 @@ def plain_error(text):
     """The problem in everyday words when memory ran out ("bad allocation" is what the speech
     recognizer says); anything else as it was."""
     t = str(text or "")
+    # ffmpeg says "Cannot allocate memory" when a filter is too long for it, not when the PC is
+    # out of memory (CleanView 1.18.26: Jason was told his PC ran out at 33% in use)
+    if "error initializing filters" in t.lower() or "' for enable" in t.lower():
+        return t
     if any(w in t.lower() for w in ("bad allocation", "bad_alloc", "memoryerror", "out of memory",
                                     "not enough memory", "failed to allocate", "unable to allocate",
                                     # Windows' own words (WinError 1455, 1450, 8)

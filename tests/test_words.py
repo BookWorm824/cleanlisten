@@ -62,6 +62,23 @@ def test_screw_as_hardware(text):
     assert hits(text) == []
 
 
+# "screw" the prison guard (CleanView 1.18.27, Jason's Shawshank review)
+@pytest.mark.parametrize("text", [
+    "courtesy of the hardest screw that ever walked a turn at Shawshank",
+    "the meanest screw that ever lived", "no screw that I know of",
+    "another screw that owed him a favor", "a loose screw that rattled",
+    "he was the toughest screw them boys ever saw",
+])
+def test_screw_the_prison_guard(text):
+    assert hits(text, ["mild"]) == []
+
+
+@pytest.mark.parametrize("text", ["oh screw that I'm going home", "to be honest screw that",
+                                  "I said screw that and left", "be modest? screw that"])
+def test_screw_that_is_still_the_insult(text):
+    assert hits(text, ["mild"]) == [("screw that", "mild")]
+
+
 # --- slang for a man's private parts: only the slang word, only in slang phrases -------
 @pytest.mark.parametrize("text, word", [
     ("Grow some stones, Carter.", "stones"),

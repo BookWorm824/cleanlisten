@@ -785,6 +785,45 @@ def UNMARRIED(words, near=None):
 def SLEEPING_ALL(words, near=None):
     """Both, for the content check's "Sleeping around, affairs & living together"."""
     return SLEEPING(words) + UNMARRIED(words)
+# "a drink of water", "a drink of cold milk", "a drink from the brook" aren't alcohol (The Boxcar
+# Children, 2026-11-07, via CleanView: four sentences about water and milk were flagged)
+SOFT_DRINKS = {"water", "milk", "juice", "lemonade", "tea", "coffee", "cocoa", "soda", "pop",
+               "cider", "chocolate", "broth", "orangeade", "limeade", "punch"}
+SOFT_DRINK_ADJ = {"cold", "cool", "fresh", "warm", "hot", "clean", "clear", "sweet", "spring",
+                  "icy", "iced", "ice", "good", "nice", "little", "orange", "apple", "grape"}
+WATER_PLACES = {"brook", "stream", "spring", "well", "fountain", "creek", "river", "pump",
+                "faucet", "tap", "hose", "pond", "lake", "canteen", "dipper", "pail", "bucket",
+                "trough", "waterfall"}
+FROM_THE = {"the", "a", "his", "her", "their", "my", "our", "your", "that", "this"}
+
+
+def soft_drink(words, j):
+    """Do the words from j on ("of cold water", "from the brook") say a drink isn't alcohol?"""
+    nxt = words[j:j + 4]
+    if nxt[:1] == ["of"]:
+        rest = nxt[1:]
+        if rest[:1] and rest[0] in SOFT_DRINK_ADJ and rest[1:2]:
+            rest = rest[1:]
+        return bool(rest) and rest[0] in SOFT_DRINKS
+    if nxt[:1] == ["from"] and len(nxt) >= 3 and nxt[1] in FROM_THE:
+        rest = nxt[2:]
+        if rest[0] in SOFT_DRINK_ADJ and rest[1:2]:
+            rest = rest[1:]
+        return rest[0] in WATER_PLACES
+    return False
+
+
+class NotSoftDrink:
+    """A matcher that leaves out "a drink" when it's water, milk and the like."""
+
+    def __init__(self, m):
+        self.m = m
+
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in self.m(words, near)
+                if not (j - i == 2 and words[j - 1] == "drink" and soft_drink(words, j))]
+
+
 SUBSTANCES = Matcher(
     words=[r"drunk(en|enly|ard|ards|s)?", r"beers?", r"wines?", r"whiske?y", r"vodka", r"tequila",
            r"booze", r"boozing", r"liquor", r"alcohol(ic|ics|ism)?", r"hangover", r"hungover",
@@ -793,6 +832,7 @@ SUBSTANCES = Matcher(
            r"champagne", r"cocktails?", r"brandy", r"bourbon", r"gin", r"tipsy", r"smoked",
            r"smoking", r"stoned"],
     phrases=["got|getting|get high", "a|another|his|her drink"])
+SUBSTANCES = NotSoftDrink(SUBSTANCES)
 
 # CleanView's other filters, for books (1.11.0): smoking, drinking and drugs as three boxes, and
 # nudity, implied nudity, immodest clothing, rude gestures, violence and disturbing violence.
@@ -808,6 +848,7 @@ DRINKING = Matcher(
            r"champagne", r"cocktails?", r"brandy", r"bourbon", r"gin", r"tipsy", r"rum", r"scotch",
            r"sloshed"],
     phrases=["a|another|his|her drink", "had|has|have been drinking", "got|getting|get drunk"])
+DRINKING = NotSoftDrink(DRINKING)
 DRUGS = Matcher(
     words=[r"marijuana", r"cocaine", r"heroin", r"meth", r"methamphetamine", r"opioids?",
            r"overdos(e|ed|es|ing)", r"bong", r"stoned", r"ecstasy", r"lsd",

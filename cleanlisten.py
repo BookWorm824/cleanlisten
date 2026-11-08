@@ -317,6 +317,22 @@ SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "ti
 OFF_SAFE_NEXT = {"the", "a", "an", "his", "her", "its", "their", "my", "your", "our", "of", "to",
                  "into", "onto", "from", "at", "toward", "towards", "course", "balance", "guard",
                  "track", "road", "path", "ground", "floor", "table", "shelf", "wall", "hook"}
+# "screw" is a thing (a loose screw, tighten the screw) or a prison guard ("the hardest screw that
+# ever walked a turn at Shawshank", CleanView 1.18.27) when one of these comes just before it, or
+# a word like hardest / meanest / toughest (but "to be honest, screw that" is still the insult)
+SCREW_NOUN_AFTER = {"the", "a", "that", "this", "loose", "one", "each", "every", "of",
+                    "tighten", "any", "no", "another", "prison"}
+
+
+def screw_noun(words, i):
+    """Is words[i] ("screw") a thing or a guard here, going by the word before it?"""
+    if not i:
+        return False
+    prev = words[i - 1]
+    return prev in SCREW_NOUN_AFTER or (len(prev) > 4 and prev.endswith("est")
+                                        and prev not in ("honest", "modest"))
+
+
 SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
                    "together", "up", "through", "firmly", "securely", "loose", "around", "the",
                    "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"}
@@ -785,6 +801,8 @@ def _find_language(words, cats, breaks=()):
                     nxt = words[i + len(ph)] if i + len(ph) < n else ""
                     if ph[0] == "screw" and (words[i + 2] if i + 2 < n else "") in SCREW_SAFE_NEXT:
                         continue  # "screw it in tight", "screw that lid on"
+                    if ph[0] == "screw" and screw_noun(words, i):
+                        continue  # "the meanest screw that ever lived" (a prison guard)
                     if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
                                           ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT or
                                           ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT):
@@ -3584,8 +3602,35 @@ def extract_clip(path, s, e, dst, pad=1.0, longest=300.0):
     return a, b
 
 
+# ffmpeg can't read a sum of more than 100 terms in a row ("Error initializing filters ...
+# Cannot allocate memory"; found by CleanView 1.18.26 on a film with hundreds of mutes, and the
+# same here for a chapter with more than 100 mutes or cuts). Bracketed in 50s it reads about
+# 2,000, so each filter gets at most 500 ranges and longer lists get one filter per 500.
+SUM_GROUP = 50
+RANGES_PER_FILTER = 500
+
+
 def _ranges(rs):
-    return "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in rs)
+    terms = [f"between(t,{s:.3f},{e:.3f})" for s, e in rs]
+    if len(terms) <= SUM_GROUP:
+        return "+".join(terms)
+    return "+".join("(" + "+".join(terms[i:i + SUM_GROUP]) + ")"
+                    for i in range(0, len(terms), SUM_GROUP))
+
+
+def _chunks(rs):
+    return [rs[i:i + RANGES_PER_FILTER] for i in range(0, len(rs), RANGES_PER_FILTER)]
+
+
+def _range_filters(mr, cr):
+    """The ffmpeg filters that mute the ranges mr and cut out the ranges cr (one filter per
+    500 of each). aselect leaves the times alone, so each cut filter still sees the
+    original times; asetpts closes the gaps at the end."""
+    filt = [f"volume=volume=0:enable='{_ranges(c)}'" for c in _chunks(mr)]
+    if cr:
+        filt += [f"aselect='not({_ranges(c)})'" for c in _chunks(cr)]
+        filt.append("asetpts=N/SR/TB")
+    return filt
 
 
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
@@ -3622,11 +3667,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         cr = sorted((c["s"], c["e"]) for c in cuts if c["part"] == pi)
         src = Path(p)
         ext = src.suffix.lower()
-        filt = []
-        if mr:
-            filt.append(f"volume=volume=0:enable='{_ranges(mr)}'")
-        if cr:
-            filt.append(f"aselect='not({_ranges(cr)})',asetpts=N/SR/TB")
+        filt = _range_filters(mr, cr)
         fs = work / f"filter_{pi}.txt"
         fs.write_text(",".join(filt) or "anull")
         br = run([_tool("ffprobe"), "-v", "error", "-select_streams", "a:0", "-show_entries",
