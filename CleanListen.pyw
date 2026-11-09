@@ -83,8 +83,14 @@ def app_version():
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
     "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
 # The one main step on each page (Start cleaning, Save clean audiobook, Clean another book)
-# is a big bright green button, so it's easy to spot; grey buttons have an edge.
-GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
+# is a big green button, so it's easy to spot; grey buttons have an edge. Its green is the logo's
+# and the green text's (ACCENT), as in CleanRead and CleanView (the owner, 2026-11-09: "i want to
+# stay consistent. it just looked brighter").
+GO, GO_DK, BUTTON_EDGE = ACCENT, ACCENT_DK, "#B9AFA2"
+GO_OFF = "#A9C2BC"     # greyed out (the same as the other green buttons)
+# A book in the list that is ready keeps the bright green, so it looks different from a done one
+# (ACCENT_DK)
+READY_GREEN = "#1E7E34"
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 
 
@@ -311,7 +317,7 @@ class App(tk.Tk):
         s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
         s.configure("Main.TButton", background=GO, foreground="white",
                     font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
-        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", "#A8C9B0")])
+        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", GO_OFF)])
         s.configure("Go.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 11, "bold"), padding=(14, 4), borderwidth=0)
         s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
@@ -2058,7 +2064,7 @@ class App(tk.Tk):
     def _book_row(self, parent, job):
         key, step = job["key"], job["step"]
         ready = step == BQ.READY
-        outer = tk.Frame(parent, bg=GO if ready else LINE)
+        outer = tk.Frame(parent, bg=READY_GREEN if ready else LINE)
         outer.pack(fill="x", pady=4)
         c = tk.Frame(outer, bg=CARD, padx=14, pady=10)
         c.pack(fill="x", padx=2 if ready else 1, pady=2 if ready else 1)
@@ -2092,7 +2098,7 @@ class App(tk.Tk):
         if short:
             tk.Label(left, text=short, bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w",
                      wraplength=360, justify="left").pack(anchor="w")
-        color = {BQ.READY: GO, BQ.DONE: ACCENT_DK, BQ.FAILED: "#A3362B"}.get(step, INK)
+        color = {BQ.READY: READY_GREEN, BQ.DONE: ACCENT_DK, BQ.FAILED: "#A3362B"}.get(step, INK)
         status = tk.Label(left, text=self._job_status(job), bg=CARD, fg=color,
                           font=(FONT, 10, "bold" if step in (BQ.READY, BQ.DONE) else "normal"),
                           wraplength=360, justify="left", anchor="w")

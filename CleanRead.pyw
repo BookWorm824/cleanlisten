@@ -41,8 +41,11 @@ SETTINGS = APP_DATA / "cleanread_settings.json"
 BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
     "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
 # The one main step on each page (start, Save clean copy, Clean another book) is a big
-# bright green button, so it's easy to spot; grey buttons have an edge.
-GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
+# green button, so it's easy to spot; grey buttons have an edge. Its green is the logo's and the
+# green text's (ACCENT), not a brighter one (the owner, 2026-11-09: "the start cleaning button is a
+# different green than the main logo and other green text").
+GO, GO_DK, BUTTON_EDGE = ACCENT, ACCENT_DK, "#B9AFA2"
+GO_OFF = "#A9C2BC"     # greyed out (the same as the other green buttons)
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 CHIP = {"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
         "some": ("#FFF1D6", "#8A5A00"), "a lot": ("#FBE1DC", "#9A2F1F")}
@@ -129,7 +132,7 @@ class App(tk.Tk):
         s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
         s.configure("Main.TButton", background=GO, foreground="white",
                     font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
-        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", "#A8C9B0")])
+        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", GO_OFF)])
         s.configure("Go.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 11, "bold"), padding=(14, 5), borderwidth=0)
         s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])

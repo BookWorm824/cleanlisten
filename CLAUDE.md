@@ -25,7 +25,7 @@ says how to install CleanView. `cleanview_ai.py` stays: CleanListen and CleanRea
 | File | What it is |
 |---|---|
 | `cleanlisten.py` | The engine (~1900 lines): word lists, detectors, transcription, ebook alignment, local-AI helper, `analyze()`, `render()`, chapter split. Also has a CLI (`_cli`). |
-| `CleanListen.pyw` | The tkinter app (~1700 lines, one `App` class): setup → working → review → done screens, Claude/ChatGPT setup, chat window, per-item "Ask Claude", All-text search, update/resume. Buttons: each page's one main step is the big bright green `Main.TButton` (Start cleaning, Save clean audiobook, Clean another book — a tester with poor sight missed a small one); a first step is `Go.TButton`; grey `Plain.TButton`s have an edge. CleanRead.pyw follows the same. The setup page must fit without scrolling (check with a screenshot). |
+| `CleanListen.pyw` | The tkinter app (~1700 lines, one `App` class): setup → working → review → done screens, Claude/ChatGPT setup, chat window, per-item "Ask Claude", All-text search, update/resume. Buttons: each page's one main step is the big green `Main.TButton`, in the logo's green (`ACCENT`, as CleanView; 1.17.18, the owner: "i want to stay consistent. it just looked brighter"; a ready book in the list keeps the bright `READY_GREEN` so it differs from a done one; ReadAloud keeps its own bright green, the owner chose to leave it) (Start cleaning, Save clean audiobook, Clean another book — a tester with poor sight missed a small one); a first step is `Go.TButton`; grey `Plain.TButton`s have an edge. CleanRead.pyw follows the same. The setup page must fit without scrolling (check with a screenshot). |
 | `cleanlisten_claude.py` | Final check + chat through **Claude Code** (`claude -p`), **ChatGPT** (Codex) or **Gemini** (Antigravity CLI) on the user's own plan; the other two go through `HELPERS`. Holds the family's rules (`KIND_RULES`, `CAT_RULES`). |
 | `cleanlisten_gpt.py` | ChatGPT through OpenAI's Codex CLI (adapted from CleanView). |
 | `cleanlisten_gemini.py` | Gemini through Google's **Antigravity CLI** (`agy -p --output-format json --json-schema --sandbox`). Google replaced Gemini CLI with it for personal and Google One accounts on 2026-06-18. Built from Google's docs and tested with a faked `agy` only (`tests/test_gemini.py`); not yet tried on a real account. Requests over ~24k characters go in a file agy reads. Sign-in check is `agy models`. |
@@ -332,7 +332,9 @@ plain words, learned from Lauren directly and from her exported reviews:
   `/api/ps` size vs size_vram, `where_ai_ran`) and how many sentences a minute it read
   (`speed_note`), to see what the owner's PC does before trying to make it use the graphics chip.
   The owner: "if it makes no difference after we do it remember to come back to this version"
-  (that is, the AI setup as of 1.17.16).
+  (that is, the AI setup as of 1.17.16). First result (the owner's GTX 1660 Ti): "graphics card,
+  about 43 sentences a minute", but CleanView was cleaning a movie at the same time (two Ollama
+  models on a 6 GB card swap in and out), so it was asked to run a book with nothing else open.
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
   tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
   these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`
