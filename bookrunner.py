@@ -19,6 +19,8 @@ import time
 import traceback
 from pathlib import Path
 
+import freezes   # awake(): the PC doesn't go to sleep while this book is worked on
+
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
@@ -136,6 +138,7 @@ def main(spec_path):
         faulthandler.enable()          # a hard crash goes to worker_log.txt (stderr)
     except Exception:
         pass
+    freezes.awake().__enter__()   # the PC stays awake until this worker ends (2026-11-09)
     stop = threading.Event()
     watch_for_stop(stop, spec.get("stop_file"), spec.get("parent"))
     say = lambda f, m: send(p=round(float(f), 4), m=str(m))

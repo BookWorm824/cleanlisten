@@ -509,6 +509,10 @@ class App(tk.Tk):
         self.q.put(("progress", f, m))
 
     def _scan_thread(self, use_ai):
+        with freezes.awake():      # the PC doesn't go to sleep meanwhile (2026-11-09)
+            self._scan(use_ai)
+
+    def _scan(self, use_ai):
         try:
             book = self._load_book()
             res = engine.scan(book, use_ai=use_ai, progress=self._prog, cancel=lambda: self.cancel_flag)
@@ -530,6 +534,10 @@ class App(tk.Tk):
             self.q.put(("error", str(ex), traceback.format_exc()))
 
     def _analyze_thread(self, opts):
+        with freezes.awake():      # the PC doesn't go to sleep meanwhile (2026-11-09)
+            self._analyze(opts)
+
+    def _analyze(self, opts):
         try:
             book = self._load_book()
             an = engine.analyze(book, opts, progress=self._prog, cancel=lambda: self.cancel_flag)
@@ -542,6 +550,10 @@ class App(tk.Tk):
             self.q.put(("error", str(ex), traceback.format_exc()))
 
     def _write_thread(self, cuts, mutes):
+        with freezes.awake():      # the PC doesn't go to sleep meanwhile (2026-11-09)
+            self._write(cuts, mutes)
+
+    def _write(self, cuts, mutes):
         try:
             book = self.book
             out = engine.clean_out_path(book, self.outdir)

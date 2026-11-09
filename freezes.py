@@ -4,6 +4,7 @@ Jason, 2026-11-03: CleanView stopped responding during a movie and didn't say wh
 window doesn't answer for STALL_SECS, what every part of the app was doing is written to
 <prefix>stopped_last_time.txt; a hard crash is written by faulthandler to <prefix>crash_log.txt.
 Next start they're asked whether to send it in (kind "problem", to CleanListen's inbox).
+awake() keeps the PC from going to sleep while a book is being worked on.
 drain() runs the window's message queue so a flood of messages can't keep it busy, and one
 bad message can't stop it."""
 import json
@@ -213,6 +214,59 @@ class Watch:
                                     f"connection). It's saved here:\n\n{path}", parent=self.root)
         threading.Thread(target=go, daemon=True).start()
         check()
+
+
+# --- Keeping the PC awake while a book is worked on ----------------------------------------
+# The owner, 2026-11-09: a CleanRead book left overnight wasn't done 12 hours later; Windows
+# had put the PC to sleep (10:25 PM to 7:42 AM). While anything is inside `with awake():`
+# Windows won't sleep on its own (the screen can still turn off; closing the lid or pressing
+# the power button still sleeps). Windows ties the request to the thread that makes it, so one
+# keeper thread makes every request, and it's dropped when the last job ends or the app closes.
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+_awake_cond = threading.Condition()
+_awake_jobs = 0
+_awake_thread = None
+
+
+def _set_state(flags):
+    """Ask Windows (SetThreadExecutionState). 0 if it can't (not Windows)."""
+    try:
+        import ctypes
+        return ctypes.windll.kernel32.SetThreadExecutionState(flags)
+    except Exception:
+        return 0
+
+
+def _keeper():
+    on = False
+    while True:
+        with _awake_cond:
+            while (_awake_jobs > 0) == on:
+                _awake_cond.wait()
+            on = _awake_jobs > 0
+        _set_state(ES_CONTINUOUS | ES_SYSTEM_REQUIRED if on else ES_CONTINUOUS)
+
+
+class awake:
+    """`with freezes.awake(): ...` keeps the PC from going to sleep while the work runs."""
+
+    def __enter__(self):
+        global _awake_jobs, _awake_thread
+        with _awake_cond:
+            _awake_jobs += 1
+            if _awake_thread is None:
+                _awake_thread = threading.Thread(target=_keeper, daemon=True, name="keep the PC awake")
+                _awake_thread.start()
+            _awake_cond.notify_all()
+        return self
+
+    def __exit__(self, *exc):
+        global _awake_jobs
+        with _awake_cond:
+            _awake_jobs = max(0, _awake_jobs - 1)
+            _awake_cond.notify_all()
+        return False
 
 
 def drain(root, q, handle, on_error=None, watch=None):
