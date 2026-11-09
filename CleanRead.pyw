@@ -100,7 +100,7 @@ class App(tk.Tk):
         except Exception:
             pass
         self.q = queue.Queue()
-        self.cancel_flag = False
+        self.job = 0              # the check/find being worked on; Cancel moves on (2026-11-09)
         self.settings = load_settings()
         self.book_path = None
         self.book = None          # parsed book, kept while the same file is loaded
@@ -458,7 +458,8 @@ class App(tk.Tk):
             self.show_working("Checking the book…", "Reading every sentence. " + (
                 "The AI helper is on, so the check will take longer. You can leave it running."
                 if self.ai_var.get() else "This takes under a minute."))
-            threading.Thread(target=self._scan_thread, args=(self.ai_var.get(),), daemon=True).start()
+            threading.Thread(target=self._scan_thread, args=(self.job, self.book_path, self.ai_var.get()),
+                             daemon=True).start()
             return
         ticks, mywords = self.filter_card.ticks(), self.filter_card.mywords()
         if not F.anything_on(ticks) and not mywords:
@@ -474,7 +475,8 @@ class App(tk.Tk):
         self.show_working("Finding what to remove…", "Nothing is changed yet — you'll see "
                           "everything first." + (" The AI helper is on, so the check will take longer."
                                                  if opts["ai"] else ""))
-        threading.Thread(target=self._analyze_thread, args=(opts,), daemon=True).start()
+        threading.Thread(target=self._analyze_thread, args=(self.job, self.book_path, opts),
+                         daemon=True).start()
 
     def _book_name(self):
         if self.book is not None and str(self.book.path) == str(Path(self.book_path or "")):
@@ -489,65 +491,77 @@ class App(tk.Tk):
         self.pb.pack(fill="x")
         self.status = tk.Label(box, text="Starting…", bg=BG, fg=INK, font=(FONT, 12))
         self.status.pack(anchor="w", pady=(12, 0))
-        self.cancel_flag = False
+        self.job += 1
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
         self.cancel_btn.pack(side="right")
         LOGO.put_logo(p, "cleanread.ico", BG)     # the empty space (Jason, 2026-11-07)
 
     def cancel(self):
-        self.cancel_flag = True
-        self.status.config(text="Stopping…")
+        """Back to the start page at once (the owner, 2026-11-09: it took a while). The work
+        stops by itself at its next step; what it was doing (opening the book, waiting for the
+        AI) can't be cut short, but nothing it sends after this is used."""
+        self.job += 1
+        self.show_setup()
 
-    def _load_book(self):
-        if self.book is None or str(self.book.path) != str(Path(self.book_path)):
-            self.q.put(("progress", 0.01, "Opening the book…"))
-            self.book = engine.Book(self.book_path)
-            self.q.put(("named", self.book.title))
-        return self.book
+    def _send(self, job, msg):
+        """A message from job number `job`; _handle drops it if that job was cancelled."""
+        self.q.put(("for_job", job, msg))
+
+    def _load_book(self, job, path):
+        book = self.book
+        if book is None or str(book.path) != str(Path(path)):
+            self._send(job, ("progress", 0.01, "Opening the book…"))
+            book = engine.Book(path)
+            self._send(job, ("loaded", book))     # kept as self.book only if not cancelled
+        return book
 
     def _prog(self, f, m):
         self.q.put(("progress", f, m))
 
-    def _scan_thread(self, use_ai):
+    def _scan_thread(self, job, path, use_ai):
         with freezes.awake():      # the PC doesn't go to sleep meanwhile (2026-11-09)
-            self._scan(use_ai)
+            self._scan(job, path, use_ai)
 
-    def _scan(self, use_ai):
+    def _scan(self, job, path, use_ai):
+        send = lambda msg: self._send(job, msg)   # noqa: E731
         try:
-            book = self._load_book()
-            res = engine.scan(book, use_ai=use_ai, progress=self._prog, cancel=lambda: self.cancel_flag)
+            book = self._load_book(job, path)
+            res = engine.scan(book, use_ai=use_ai, progress=lambda f, m: send(("progress", f, m)),
+                              cancel=lambda: self.job != job)
             html = engine.report_html(res)
-            path = Path(self.book_path).with_name(Path(self.book_path).stem + " - Content Report.html")
+            rpath = Path(path).with_name(Path(path).stem + " - Content Report.html")
             try:
-                path.write_text(html, encoding="utf8")
+                rpath.write_text(html, encoding="utf8")
             except OSError:
-                path = APP_DATA / "reports" / path.name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(html, encoding="utf8")
-            res["report_path"] = str(path)
-            self.q.put(("scanned", res))
+                rpath = APP_DATA / "reports" / rpath.name
+                rpath.parent.mkdir(parents=True, exist_ok=True)
+                rpath.write_text(html, encoding="utf8")
+            res["report_path"] = str(rpath)
+            send(("scanned", res))
         except KeyboardInterrupt:
-            self.q.put(("cancelled",))
+            pass                    # cancelled: the start page is already showing
         except engine.BookError as ex:
-            self.q.put(("error", str(ex), ""))
+            send(("error", str(ex), ""))
         except Exception as ex:
-            self.q.put(("error", str(ex), traceback.format_exc()))
+            send(("error", str(ex), traceback.format_exc()))
 
-    def _analyze_thread(self, opts):
+    def _analyze_thread(self, job, path, opts):
         with freezes.awake():      # the PC doesn't go to sleep meanwhile (2026-11-09)
-            self._analyze(opts)
+            self._analyze(job, path, opts)
 
-    def _analyze(self, opts):
+    def _analyze(self, job, path, opts):
+        send = lambda msg: self._send(job, msg)   # noqa: E731
         try:
-            book = self._load_book()
-            an = engine.analyze(book, opts, progress=self._prog, cancel=lambda: self.cancel_flag)
-            self.q.put(("analyzed", an))
+            book = self._load_book(job, path)
+            an = engine.analyze(book, opts, progress=lambda f, m: send(("progress", f, m)),
+                                cancel=lambda: self.job != job)
+            send(("analyzed", an))
         except KeyboardInterrupt:
-            self.q.put(("cancelled",))
+            pass                    # cancelled: the start page is already showing
         except engine.BookError as ex:
-            self.q.put(("error", str(ex), ""))
+            send(("error", str(ex), ""))
         except Exception as ex:
-            self.q.put(("error", str(ex), traceback.format_exc()))
+            send(("error", str(ex), traceback.format_exc()))
 
     def _write_thread(self, cuts, mutes):
         with freezes.awake():      # the PC doesn't go to sleep meanwhile (2026-11-09)
@@ -582,6 +596,14 @@ class App(tk.Tk):
 
     def _handle(self, msg):
         kind = msg[0]
+        if kind == "for_job":       # from a check or find: dropped if it was cancelled
+            if msg[1] != self.job:
+                return
+            msg = msg[2]
+            kind = msg[0]
+            if kind == "loaded":
+                self.book = msg[1]
+                msg, kind = ("named", msg[1].title), "named"
         if kind in ("update_none", "update_fail", "update_progress", "updated"):
             self._update_msg(kind, msg[1])
             return
@@ -600,8 +622,6 @@ class App(tk.Tk):
             self.show_review()
         elif kind == "written":
             self.show_done(msg[1])
-        elif kind == "cancelled":
-            self.show_setup()
         elif kind == "sent":
             if msg[2] is None:
                 messagebox.showinfo(APP, "Sent. Thank you!")

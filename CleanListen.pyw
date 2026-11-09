@@ -1,4 +1,5 @@
 """CleanListen — a simple window for cleaning up audiobooks you own."""
+import copy
 import hashlib
 import json
 import os
@@ -1373,18 +1374,25 @@ class App(tk.Tk):
             return
         self._sync_ticks()
         self.show_working("Claude is checking the book\u2026", quick="claude")
+        self.claude_job = job = getattr(self, "claude_job", 0) + 1
         self.cancel_flag = False
+        # Claude works on a copy: Cancel goes straight back to the list as it was (the owner,
+        # 2026-11-09: Cancel took a while), and a cancelled check's answer is dropped
+        work_on, workdir = copy.deepcopy(self.analysis), self.workdir
 
         def work():
+            stopped = lambda: self.cancel_flag or self.claude_job != job   # noqa: E731
             try:
-                asr = engine.load_asr(self.workdir, self.analysis["parts"])
-                cc.review(self.analysis, asr, progress=lambda f, m: self.q.put(("progress", f, m)),
-                          cancel=lambda: self.cancel_flag)
-                self.q.put(("claude_done",))
+                asr = engine.load_asr(workdir, work_on["parts"])
+                cc.review(work_on, asr, progress=lambda f, m: None if stopped() else self.q.put(
+                    ("progress", f, m)), cancel=stopped)
+                if not stopped():
+                    self.q.put(("claude_done", job, work_on))
             except KeyboardInterrupt:
-                self.q.put(("claude_done",))
+                pass
             except Exception as ex:
-                self.q.put(("claude_fail", str(ex)))
+                if not stopped():
+                    self.q.put(("claude_fail", str(ex), job))
         threading.Thread(target=work, daemon=True).start()
 
     def open_chat(self):
@@ -1867,8 +1875,11 @@ class App(tk.Tk):
         LOGO.put_logo(p, "icon.ico", BG)          # the empty space (Jason, 2026-11-07)
 
     def cancel(self):
+        """The working page is only used by the Claude check now: back to the list at once,
+        as it was (2026-11-09)."""
         self.cancel_flag = True
-        self.status.config(text="Stopping after the current chunk…")
+        self.claude_job = getattr(self, "claude_job", 0) + 1
+        self.show_review()
 
     def _poll(self):
         """From now on freezes.drain runs the queue: a flood of messages can't keep the window
@@ -1896,11 +1907,14 @@ class App(tk.Tk):
         elif kind == "sent":
             self._sent(msg[1], msg[2])
         elif kind == "claude_done":
-            self._save_analysis()
-            self.show_review()
+            if msg[1] == getattr(self, "claude_job", None) and self.page_name == "working":
+                self.analysis = msg[2]
+                self._save_analysis()
+                self.show_review()
         elif kind == "claude_fail":
-            messagebox.showerror("Claude check", msg[1])
-            self.show_review()
+            if msg[2] == getattr(self, "claude_job", None) and self.page_name == "working":
+                messagebox.showerror("Claude check", msg[1])
+                self.show_review()
         elif kind == "play":
             self._play_ready(*msg[1:])
         elif kind == "play_fail":

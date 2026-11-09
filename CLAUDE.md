@@ -306,7 +306,12 @@ plain words, learned from Lauren directly and from her exported reviews:
   (`ai_find`, `ai_second_opinion`) and later chats follow. The working page shows the book's name. While the AI double-checks,
   the line under the progress bar counts ("AI is double-checking what it found · 14 of 150";
   the owner, 2026-11-09: the words never changed, so it looked frozen). CleanListen's AI helper
-  (`ai_assist`) counts the same way (1.17.11).
+  (`ai_assist`) counts the same way (1.17.11). Cancel goes back at once (the owner, 2026-11-09: it took a
+  while after a book had just started): CleanRead's check and find are numbered jobs (`self.job`,
+  messages wrapped as `("for_job", job, msg)` and dropped in `_handle` if cancelled), so Cancel
+  shows the start page right away and the old job stops at its next step by itself; CleanListen's
+  Claude check works on a copy of the analysis, so Cancel goes straight back to the list as it was.
+  Cancel in "Your books" was already immediate (the worker is stopped in the background).
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
   tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
   these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`
