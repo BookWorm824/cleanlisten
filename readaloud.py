@@ -1111,7 +1111,7 @@ class Maker:
             raise Stopped()
         missing = [i + 1 for i in range(len(chapters)) if not chapter_file(self.jobdir, i).exists()]
         if missing:
-            raise RuntimeError(f"Chapter {missing[0]} wasn't read aloud. Press Carry on to try again.")
+            raise RuntimeError(f"Chapter {missing[0]} wasn't read aloud. Press Resume to try again.")
         return assemble(self.jobdir, lambda f, m: self.say(0.95 + 0.05 * f, m, None))
 
     def _gpu(self, order, partial, lock):
@@ -1152,10 +1152,10 @@ class Maker:
             text = logf.read_text(encoding="utf8", errors="ignore")
             if "out of memory" in text.lower() or "OutOfMemoryError" in text:
                 raise RuntimeError("The graphics card ran out of memory. Close other programs (games, "
-                                   "video editors) and press Carry on: it carries on where it stopped.")
+                                   "video editors) and press Resume: it carries on where it stopped.")
             if "MemoryError" in text or "1455" in text:
                 raise RuntimeError("The computer ran low on memory. Close other programs and press "
-                                   "Carry on: it carries on where it stopped.")
+                                   "Resume: it carries on where it stopped.")
             lines = [ln for ln in text.strip().splitlines() if not ln.startswith("read again")]
             raise RuntimeError("The book couldn't be read aloud.\n\n" + "\n".join(lines)[-600:])
         logf.unlink(missing_ok=True)

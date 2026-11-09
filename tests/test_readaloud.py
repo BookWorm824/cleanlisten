@@ -288,3 +288,24 @@ def test_the_pc_stays_awake_while_reading_and_setting_up():
     assert "with freezes.awake():\n                    res = maker.run()" in run
     setup = src[src.index("    def set_up_reader("):src.index("    def _director_changed(")]
     assert "with freezes.awake():" in setup
+
+
+def test_stop_for_now_goes_home_at_once():
+    # Lauren (2026-11-09): Stop took a while to go back to the first page. It now goes home at once;
+    # the book stops in the background, and what it says afterwards is ignored by its job number
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ReadAloudWindow2", REPO / "ReadAloud.pyw")
+    win = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(win)
+    app = win.App.__new__(win.App)
+    app.job = 2
+    shown = []
+    app.show_done = lambda res: shown.append(res)
+    app.maker = None
+    app._handle(("for_job", 1, ("made", {"file": "x"})))     # from the book that was stopped
+    assert shown == []
+    src = (REPO / "ReadAloud.pyw").read_text("utf8")
+    stop = src[src.index("    def stop(self):"):src.index("    def on_close(")]
+    assert "self.job += 1" in stop and "self.show_setup()" in stop
+    run = src[src.index("    def run_job("):src.index("    def stop(self):")]
+    assert "w.join()" in run                                 # a new start waits for the old book

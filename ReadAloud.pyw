@@ -147,6 +147,11 @@ class App(tk.Tk):
         self.busy_sample = False
         self.gpu_ok = None            # (ok, message) once checked
         self.installing = None        # the reader being set up
+        # each book being made has a number; Stop for now moves it on, so the page goes home at once
+        # and anything the stopped book still says afterwards is ignored (Lauren, 2026-11-09: "it
+        # taking a while to actually cancel and go back to home screen")
+        self.job = 0
+        self.ending = []              # (worker thread, stopping thread) of books told to stop
         threading.Thread(target=lambda: self.q.put(("gpu_check", gpu.gpu_check())), daemon=True).start()
         self._style()
         self.page = None
@@ -299,12 +304,12 @@ class App(tk.Tk):
         st = self.settings
 
         for jobdir, job, got, n in engine.unfinished_jobs()[:2]:
-            c = self._card(body, "", f"Carry on with “{job.get('title', 'your book')}”?")
+            c = self._card(body, "", f"Resume “{job.get('title', 'your book')}”?")
             self._note(c, f"{got} of {n} chapters were read aloud before it stopped "
                           f"({engine.voice_label(job)}).")
             row = tk.Frame(c, bg=CARD)
             row.pack(anchor="w", pady=(8, 0))
-            ttk.Button(row, text="Carry on", style="Go.TButton",
+            ttk.Button(row, text="Resume", style="Go.TButton",
                        command=lambda d=jobdir, j=job: self.resume(d, j)).pack(side="left")
             ttk.Button(row, text="Forget it", style="Plain.TButton",
                        command=lambda d=jobdir: self.forget(d)).pack(side="left", padx=8)
@@ -816,28 +821,50 @@ class App(tk.Tk):
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
         self.job_title = title
-        self.maker = engine.Maker(jobdir, lambda f, m, left=None: self.q.put(("progress", f, m, left)))
+        self.job += 1
+        job = self.job
+
+        def tell(*msg):
+            self.q.put(("for_job", job, msg))
+        self.maker = engine.Maker(jobdir, lambda f, m, left=None: tell("progress", f, m, left))
         maker = self.maker
+        before = [w for w, _ in self.ending if w.is_alive()]
 
         def go():
             try:
+                # a book told to stop may still be finishing its last bit: wait for it, so two never
+                # read the same chapters or share the graphics card
+                if before:
+                    tell("progress", 0, "Waiting for the last book to finish stopping…", None)
+                    for w in before:
+                        w.join()
                 # hours of reading, often left overnight: the PC doesn't go to sleep meanwhile (a
                 # CleanRead book left overnight paused 9 hours while Windows slept, 2026-11-09).
                 # The director, every chapter and putting the audiobook together all run in here
                 with freezes.awake():
                     res = maker.run()
-                self.q.put(("made", res))
+                tell("made", res)
             except engine.Stopped:
-                self.q.put(("stopped",))
+                tell("stopped")
             except Exception as ex:
-                self.q.put(("error", str(ex), traceback.format_exc()))
-        threading.Thread(target=go, daemon=True).start()
+                tell("error", str(ex), traceback.format_exc())
+        self.worker = threading.Thread(target=go, daemon=True)
+        self.worker.start()
 
     def stop(self):
-        if self.maker:
-            self.status.config(text="Stopping… (what's been read so far is kept)")
-            self.stop_btn.config(state="disabled")
-            threading.Thread(target=self.maker.stop, daemon=True).start()
+        """Stop for now: back to the first page at once. The book stops in the background (a chapter
+        or the reading director can take a while to finish); what's read so far is kept, and it shows
+        under "Resume"."""
+        if not self.maker:
+            return
+        maker, self.maker = self.maker, None
+        self.job += 1                       # anything the stopped book says from now on is ignored
+        ender = threading.Thread(target=maker.stop, daemon=True)
+        ender.start()
+        self.ending = [(w, e) for w, e in self.ending if w.is_alive() or e.is_alive()]
+        self.ending.append((self.worker, ender))
+        self.book = None
+        self.show_setup()
 
     def on_close(self):
         if self.installing and not self.maker:
@@ -852,6 +879,8 @@ class App(tk.Tk):
                                             "you open ReadAloud."):
                 return
             self.maker.stop()
+        for w, e in self.ending:            # a book told to stop: let it close its reading programs
+            e.join(timeout=30)
         stop_playing()
         self.destroy()
 
@@ -903,6 +932,10 @@ class App(tk.Tk):
             pass
 
     def _handle(self, msg):
+        if msg[0] == "for_job":
+            if msg[1] != self.job:
+                return                      # from a book that was stopped: it's not on screen any more
+            msg = msg[2]
         kind = msg[0]
         if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
             self.pb["value"] = int(msg[1] * 1000)
@@ -1000,7 +1033,7 @@ class App(tk.Tk):
             self._poll_error(msg[2])
             chime()
             messagebox.showerror(APP, f"Something went wrong:\n\n{msg[1][:600]}\n\nWhat was read so far "
-                                      "is kept. Press Carry on to try again.")
+                                      "is kept. Press Resume to try again.")
             self.book = None
             self.show_setup()
 

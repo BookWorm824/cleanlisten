@@ -568,7 +568,7 @@ class Voice:
                 self.torch.cuda.empty_cache()
                 if self.batch == 1:
                     raise RuntimeError("The graphics card ran out of memory. Close other programs "
-                                       "(games, video editors) and press Carry on.")
+                                       "(games, video editors) and press Resume.")
                 self.batch = max(1, self.batch // 2)
         back = [None] * len(out)
         for k, x in zip(order, out):
