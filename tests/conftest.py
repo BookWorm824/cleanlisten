@@ -22,6 +22,14 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 import cleanlisten as E  # noqa: E402
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _own_ai_answers(tmp_path, monkeypatch):
+    """CleanRead keeps the AI helper's answers per book; each test starts with none."""
+    import cleanread
+    monkeypatch.setattr(cleanread, "ANSWERS_DIR", tmp_path / "cleanread_ai_answers")
 
 
 def words(text):

@@ -1326,25 +1326,151 @@ def _ai():
                            "update, then try again.") from ex
 
 
-def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
+def ai_second_opinion(text, definition, notes="", answers=None):
+    """True / False / None (couldn't tell). answers: the book's Answers (asked before = same answer)."""
+    ai = _ai()
+    prompt = ("Here is a passage from a book:\n\n" + text[:4000] + "\n\nDoes it contain " +
+              definition + "?" + ("\n" + notes if notes else "") +
+              ' Answer in JSON: {"fits": true} or {"fits": false}.')
+    schema = {"type": "object", "properties": {"fits": {"type": "boolean"}}, "required": ["fits"]}
+    try:
+        res = (answers.ask(ai, prompt, schema, 120) if answers else
+               ai.chat(prompt, schema=schema, timeout=120))
+        return res.get("fits")
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Learning from your marks: what you mark "Not a problem" on a content check, or
+# untick on the review page, is left out (or starts unticked) when it comes back,
+# and the AI helper sees it as examples. export_marks() puts one book's finds and
+# your marks in a file to send in (through CleanListen's inbox).
+# ---------------------------------------------------------------------------
+APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
+LEARNED = APP_DATA / "cleanread_learned.json"
+# What families marked fine in the reports they sent in, shipped with updates ("cleanread_fine" in
+# CleanListen's shared_learned.json): clear wrong flags only, never a family's own choice to keep
+# something that fits its filter. Your own marks come first.
+SHARED = HERE / "shared_learned.json"
+MAX_LEARNED = 400       # per kind
+
+
+# ---------------------------------------------------------------------------
+# Faster without losing accuracy (the owner, 2026-11-09: "make clean read faster", "do it in a
+# way that will keep checks accurate"):
+# - The AI's answers are kept for each book (Answers). A question is only answered from memory
+#   when it is exactly the same question: the same sentences, filters and wording, the same notes
+#   and "Not a problem" examples, and the same AI model. So a check that was stopped, crashed or
+#   slept picks up where it left off, and Find reuses the check's double-checks.
+# - A part the AI is too slow on (or answers badly) is split in half and asked again, instead of
+#   being skipped without a word; what it still can't read is said in the note.
+# - The book is read in the same groups of sentences as before: tried and dropped, skipping the
+#   copyright and contents pages saved a few sentences but moved every group, and the small AI then
+#   missed a bullying line it had caught (2026-11-09).
+# - Find also double-checks what an earlier read of the same book found for the same filter
+#   (worded the same), so nothing the check found is lost.
+# ---------------------------------------------------------------------------
+ANSWERS_DIR = APP_DATA / "cleanread_ai_answers"
+KEEP_ANSWERS = 40        # books; the oldest are tidied away
+
+
+class Answers:
+    """The AI helper's answers for one book, saved as they come in (one line each)."""
+
+    def __init__(self, book, model=""):
+        self.model, self.known, self.path, self.last_cached = model, {}, None, False
+        try:
+            key = getattr(book, "_answers_key", None)
+            if key is None:
+                h = hashlib.sha1()
+                for p in book.paras:
+                    h.update(p.text.encode("utf8", "ignore") + b"\n")
+                key = h.hexdigest()[:24]
+                book._answers_key = key
+            self.path = ANSWERS_DIR / f"{key}.jsonl"
+            if self.path.exists():
+                for line in self.path.read_text("utf8", "ignore").splitlines():
+                    try:
+                        d = json.loads(line)
+                        self.known[d["k"]] = d["a"]
+                    except (ValueError, KeyError, TypeError):
+                        pass        # a line cut short when the PC went off
+                os.utime(self.path)
+            _tidy_answers(self.path)
+        except Exception:
+            self.path = None
+
+    def key(self, *parts):
+        return hashlib.sha1(json.dumps([self.model, *parts], sort_keys=True).encode("utf8")).hexdigest()
+
+    def get(self, k, default=None):
+        return self.known.get(k, default)
+
+    def put(self, k, value):
+        self.known[k] = value
+        if not self.path:
+            return
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.path, "a", encoding="utf8") as f:
+                f.write(json.dumps({"k": k, "a": value}) + "\n")
+        except OSError:
+            pass
+
+    def ask(self, ai, prompt, schema, timeout):
+        """ai.chat, or the answer it gave to exactly this question before."""
+        k = self.key(schema, prompt)
+        self.last_cached = k in self.known
+        if self.last_cached:
+            return self.known[k]
+        res = ai.chat(prompt, schema=schema, timeout=timeout)
+        if isinstance(res, dict):
+            self.put(k, res)
+        return res
+
+
+def _tidy_answers(mine=None):
+    try:
+        files = sorted((p for p in ANSWERS_DIR.glob("*.jsonl") if p != mine),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        for p in files[KEEP_ANSWERS - 1:]:      # this book's own file is kept too
+            p.unlink()
+    except OSError:
+        pass
+
+
+def _answers_for(book):
+    ai = _ai()
+    return Answers(book, getattr(ai, "MODEL", ""))
+
+
+class AIStopped(RuntimeError):
+    pass
+
+
+def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=None):
     """The AI reads numbered sentences and names the ones that fit a type, quoting the words
     that show it (a find whose words aren't in that sentence is dropped); then each find is
     double-checked one at a time. Returns {(sentence index, type): 'high'|'medium'}.
     Answers are short on purpose: on a PC without a graphics card, writing the answer was
-    most of the time (the old "quote the first 8 words" prompt flagged half of every chunk)."""
+    most of the time (the old "quote the first 8 words" prompt flagged half of every chunk).
+    info (a dict) gets "unread": how many sentences the AI couldn't read."""
     ai = _ai()
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
     types = list(defs)
     if not types:
         return {}
+    answers = Answers(book, getattr(ai, "MODEL", ""))
     listing_defs = "\n".join(f'- "{t}": {defs[t]}' for t in types)
     schema = {"type": "object", "properties": {"flags": {"type": "array", "items": {
         "type": "object", "properties": {"n": {"type": "integer"},
                                          "type": {"type": "string", "enum": types},
                                          "words": {"type": "string"}},
         "required": ["n", "type", "words"]}}}, "required": ["flags"]}
-    S = len(book.sents)
+    S = P = len(book.sents)
+    order = list(range(S))
 
     def shows(words, i):
         """Are the quoted words (nearly) in sentence i?"""
@@ -1365,20 +1491,22 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
              "like them:\n" + "\n".join(f'- "{x}" (not "{t}")' for t, x in not_these)) if not_these else ""
     if notes:               # what they told the chat (Jason, 2026-11-03)
         teach = "\n\n" + notes + teach
+
+    def cands_key(t):
+        """What an earlier full read found for type t: the same book, filter wording, notes and
+        "Not a problem" examples, and the same sentences read."""
+        return answers.key("cands", t, defs[t], notes, [e[1] for e in fine.get(t, [])[-4:]], chunk)
+
     cands = set()
-    starts = list(range(0, S, chunk - 3))
-    t0 = time.time()
-    for n, a in enumerate(starts):
+    unread = []
+    run = {"fails": 0, "fresh": 0, "fresh_time": 0.0, "resumed": False}
+
+    def read(a, b):
+        """Ask about order[a:b]. Returns False if it had to be split up."""
         if cancel and cancel():
             raise KeyboardInterrupt
-        left = ""
-        if n >= 3:
-            per = (time.time() - t0) / n
-            left = f" · about {per * (len(starts) - n) / 60:.0f} min left"
-        say(0.75 * n / max(len(starts), 1), f"AI is reading the book · "
-            f"{100 * n // max(len(starts), 1)}%{left}")
-        part = range(a, min(S, a + chunk))
-        listing = "\n".join(f"{i - a + 1}. " + " ".join(book.sent_text(i).split()) for i in part)
+        part = order[a:b]
+        listing = "\n".join(f"{k + 1}. " + " ".join(book.sent_text(i).split()) for k, i in enumerate(part))
         prompt = ("You help parents know what is in a book before their child reads it. You will read "
                   "numbered sentences and point out only the ones that clearly show one of these:\n" +
                   listing_defs + "\n\nMost sentences in a book show none of these: everyday actions, "
@@ -1389,20 +1517,63 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
                   "\n\nAnswer in JSON: {\"flags\": [{\"n\": sentence number, \"type\": \"one of the "
                   "types\", \"words\": \"the exact words that show it\"}]}, or {\"flags\": []}."
                   "\n\nThe sentences:\n" + listing)
+        t0 = time.time()
         try:
-            res = ai.chat(prompt, schema=schema, timeout=300)
+            res = answers.ask(ai, prompt, schema, 300)
         except Exception:
-            continue
-        for f in res.get("flags", []):
+            run["fails"] += 1
+            if run["fails"] >= 4:       # four in a row: the AI has stopped answering
+                raise AIStopped("it stopped answering partway. Start again and it picks up "
+                                "where it left off")
+            if b - a > 10:              # too slow or a bad answer: ask about each half
+                m = (a + b) // 2
+                read(a, m)
+                read(m, b)
+            else:
+                unread.append(b - a)
+            return False
+        run["fails"] = 0
+        if answers.last_cached:
+            run["resumed"] = run["resumed"] or a == 0
+        else:
+            run["fresh"] += b - a
+            run["fresh_time"] += time.time() - t0
+        for f in res.get("flags", []) if isinstance(res, dict) else []:
             if f.get("type") not in defs or not isinstance(f.get("n"), int):
                 continue
-            i = a + f["n"] - 1
+            k = f["n"] - 1
             # the number is sometimes one off; the quoted words decide
-            i = next((k for k in (i, i - 1, i + 1) if k in part and shows(f.get("words"), k)), None)
-            if i is not None:
-                cands.add((i, f["type"]))
-        if a + chunk >= S:
+            k = next((x for x in (k, k - 1, k + 1) if 0 <= x < len(part) and shows(f.get("words"), part[x])),
+                     None)
+            if k is not None:
+                cands.add((part[k], f["type"]))
+        return True
+
+    pos, size = 0, chunk
+    while pos < P:
+        end = min(P, pos + size)
+        left = ""
+        if run["fresh"] >= 3 * chunk:
+            per = run["fresh_time"] / run["fresh"]
+            left = f" · about {per * (P - pos) / 60:.0f} min left"
+        elif run["resumed"]:
+            left = " · picking up where it left off"
+        say(0.75 * pos / max(P, 1), f"AI is reading the book · {100 * pos // max(P, 1)}%{left}")
+        if not read(pos, end):
+            size = max(10, size // 2)   # this PC needs smaller parts: keep them smaller
+        if end >= P:
             break
+        pos = end - 3                   # a little overlap, so a sentence's neighbours are seen
+    for t in types:
+        # what an earlier full read found for the same filter (worded the same) is checked too,
+        # and a full read adds what it found, for Find and next time
+        earlier = {i for i in answers.get(cands_key(t), []) or [] if isinstance(i, int) and 0 <= i < S}
+        mine = {i for i, kind in cands if kind == t}
+        if not unread and not mine <= earlier:
+            answers.put(cands_key(t), sorted(earlier | mine))
+        cands.update((i, t) for i in earlier)
+    if info is not None:
+        info["unread"] = sum(unread)
 
     sure_schema = {"type": "object", "properties": {
         "fits": {"type": "boolean"}, "confidence": {"type": "string", "enum": ["high", "medium", "low"]}},
@@ -1421,13 +1592,13 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
         seen = ("\nThe family said sentences like these do NOT count:\n" +
                 "\n".join(f'- "{x}"' for x in seen)) if seen else ""
         try:
-            res = ai.chat("Below is a short excerpt from a book. The sentence between >>> and <<< is "
-                          "the one being checked; the others are only context.\n\n" + ex +
-                          f"\n\nQuestion: Does the marked sentence clearly contain {defs[kind]}? " + seen +
-                          ("\n" + notes if notes else "") +
-                          "\nJudge only the marked sentence. Be strict: when in doubt, answer false.\n"
-                          'Answer in JSON: {"fits": true or false, "confidence": "high", "medium" or "low"}',
-                          schema=sure_schema, timeout=120)
+            res = answers.ask(ai, "Below is a short excerpt from a book. The sentence between >>> and <<< is "
+                              "the one being checked; the others are only context.\n\n" + ex +
+                              f"\n\nQuestion: Does the marked sentence clearly contain {defs[kind]}? " + seen +
+                              ("\n" + notes if notes else "") +
+                              "\nJudge only the marked sentence. Be strict: when in doubt, answer false.\n"
+                              'Answer in JSON: {"fits": true or false, "confidence": "high", "medium" or "low"}',
+                              sure_schema, 120)
         except Exception:
             continue
         if res.get("fits") is True and res.get("confidence") in ("high", "medium"):
@@ -1435,33 +1606,11 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
     return found
 
 
-def ai_second_opinion(text, definition, notes=""):
-    """True / False / None (couldn't tell)."""
-    ai = _ai()
-    try:
-        res = ai.chat("Here is a passage from a book:\n\n" + text[:4000] + "\n\nDoes it contain " +
-                      definition + "?" + ("\n" + notes if notes else "") +
-                      ' Answer in JSON: {"fits": true} or {"fits": false}.',
-                      schema={"type": "object", "properties": {"fits": {"type": "boolean"}},
-                              "required": ["fits"]}, timeout=120)
-        return res.get("fits")
-    except Exception:
-        return None
+def unread_note(info):
+    n = (info or {}).get("unread", 0)
+    return (f" It couldn't read {n} sentence(s) (the AI was too slow on them); the word lists "
+            "still read those." if n else "")
 
-
-# ---------------------------------------------------------------------------
-# Learning from your marks: what you mark "Not a problem" on a content check, or
-# untick on the review page, is left out (or starts unticked) when it comes back,
-# and the AI helper sees it as examples. export_marks() puts one book's finds and
-# your marks in a file to send in (through CleanListen's inbox).
-# ---------------------------------------------------------------------------
-APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
-LEARNED = APP_DATA / "cleanread_learned.json"
-# What families marked fine in the reports they sent in, shipped with updates ("cleanread_fine" in
-# CleanListen's shared_learned.json): clear wrong flags only, never a family's own choice to keep
-# something that fits its filter. Your own marks come first.
-SHARED = HERE / "shared_learned.json"
-MAX_LEARNED = 400       # per kind
 
 
 def item_key(text):
@@ -1700,8 +1849,9 @@ def scan(book, use_ai=False, progress=None, cancel=None):
 
     if use_ai:
         try:
+            info = {}
             found = ai_find(book, SCAN_AI, progress=lambda f, m: say(0.5 + 0.5 * f, m), cancel=cancel,
-                            notes=told(book.title))
+                            notes=told(book.title), info=info)
             added = 0
             for (si, kind), conf in sorted(found.items()):
                 items = res["cats"][kind]["items"]
@@ -1718,7 +1868,8 @@ def scan(book, use_ai=False, progress=None, cancel=None):
                 added += 1
             for c in res["cats"].values():
                 c["items"].sort(key=lambda x: (x["para"], x.get("si", 0)))
-            res["ai_note"] = f"The AI helper read the whole book and added {added} thing(s) the word lists missed."
+            res["ai_note"] = (f"The AI helper read the whole book and added {added} thing(s) the word "
+                              "lists missed." + unread_note(info))
         except KeyboardInterrupt:
             raise
         except Exception as ex:
@@ -2104,8 +2255,10 @@ AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick",
 
 def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""):
     ai = _ai()
+    info = {}
     found = ai_find(book, kinds, progress=lambda f, m: say(0.7 * f, m), cancel=cancel,
-                    notes=notes) if kinds else {}
+                    notes=notes, info=info) if kinds else {}
+    answers = _answers_for(book)
     added = sugg = off = 0
     # verified finds become sentence cuts (very sure = ticked, somewhat sure = unticked)
     by_kind = {}
@@ -2140,7 +2293,7 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
         say(0.7 + 0.15 * n / max(1, len(checks)),
             f"AI is double-checking what was flagged · {n + 1} of {len(checks)}")
         fits = ai_second_opinion(" ".join(x for x in (c.get("before"), c["text"], c.get("after"))
-                                          if x), kinds[c["kind"]], notes)
+                                          if x), kinds[c["kind"]], notes, answers)
         if fits is False:
             c["cut"] = False
             c["ai_note"] = "AI thinks this one is fine"
@@ -2160,13 +2313,13 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
         batch = checkable[b0:b0 + 20]
         rows = [f"{k}: ...{m['ctx_raw']} [[{m['word_raw']}]] {m['ctx_after_raw']}..." for k, m in enumerate(batch)]
         try:
-            res = ai.chat("Each numbered line below has one word or phrase in [[double brackets]] that a "
+            res = answers.ask(ai, "Each numbered line below has one word or phrase in [[double brackets]] that a "
                           "family's filter plans to mark out of a book:\n\n" + "\n".join(rows) +
                           "\n\nList ONLY the numbers where you are sure the bracketed word has an innocent "
                           "meaning, for example: 'hell' as a place in a sermon, 'bloody' meaning covered in "
                           "blood, 'ass' meaning a donkey, 'Jesus' or 'Lord' in a sincere prayer, 'gay' meaning "
                           "cheerful or bright, 'damned' in a theological sense. Answer in JSON like "
-                          "{\"fine\": [3, 7]}; use an empty list if none are innocent.", schema=schema, timeout=180)
+                          "{\"fine\": [3, 7]}; use an empty list if none are innocent.", schema, 180)
             for k in res.get("fine", []):
                 if isinstance(k, int) and 0 <= k < len(batch):
                     batch[k]["on"] = False
@@ -2175,7 +2328,7 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
         except Exception:
             pass
     return (f"AI helper added {added} it's sure about, suggested {sugg} more for you to decide "
-            f"(left unticked), and unticked {off} it thinks were flagged by mistake.")
+            f"(left unticked), and unticked {off} it thinks were flagged by mistake." + unread_note(info))
 
 
 # ---------------------------------------------------------------------------

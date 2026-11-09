@@ -312,6 +312,22 @@ plain words, learned from Lauren directly and from her exported reviews:
   shows the start page right away and the old job stops at its next step by itself; CleanListen's
   Claude check works on a copy of the analysis, so Cancel goes straight back to the list as it was.
   Cancel in "Your books" was already immediate (the worker is stopped in the background).
+- **CleanRead's AI helper, faster but just as careful** (the owner, 2026-11-09: "make clean read
+  faster" but "do it in a way that will keep checks accurate"). `Answers` keeps the AI's answers
+  per book in `%LOCALAPPDATA%\CleanListen\cleanread_ai_answers\<book hash>.jsonl` (one line per
+  answer, written as it comes; the 40 most recent books are kept). An answer is reused only for
+  exactly the same question (model, schema and full prompt text, so the same sentences, filters,
+  notes and "Not a problem" examples), so a stopped/crashed/slept check picks up where it left off
+  and a second run gives the same answers. A part the AI fails on is split in half and asked
+  again (and later parts stay that smaller size); four failures in a row raise `AIStopped` with a
+  plain note; sentences it still can't read are counted in the note (`unread_note`). After a full
+  read, each filter's candidates are saved under a key of its exact wording (`cands_key`), and any
+  later read with the same wording also double-checks them, so Find picks up what the content
+  check found for bullying, crude humor, sexual references and relationships. Tried and dropped,
+  both measured on the real local AI (gemma3:4b): skipping the copyright and contents pages (it
+  moved every group of 40 sentences and the AI then missed a bullying line it had caught), and
+  double-checking 8 finds in one question (12x faster but twice the false alarms; ruling out with
+  the batch and confirming one by one saved nothing). The groups of sentences are unchanged.
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
   tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
   these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`
