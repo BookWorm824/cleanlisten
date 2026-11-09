@@ -272,3 +272,23 @@ def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path
     monkeypatch.setattr(G.sys, "base_prefix", str(base))
     monkeypatch.setattr(G.sys, "executable", str(tmp_path / "venv" / "ReadAloud" / "ReadAloud.exe"))
     assert G._base_python() == str(base / "python.exe")
+
+
+def test_one_set_up_gets_all_the_new_voices(monkeypatch):
+    # Lauren had to press Set up for each of the three new voices (2026-11-09)
+    done, said = set(), []
+    monkeypatch.setattr(G, "ready", lambda r: not G.is_gpu(r) or r in done)
+    monkeypatch.setattr(G, "software_ready", lambda: bool(done))
+    monkeypatch.setattr(G, "model_ready", lambda r: r in done)
+    order = []
+
+    def install(r, progress=None, stop=None):
+        progress(0.5, "getting it")
+        order.append(r)
+        done.add(r)
+    monkeypatch.setattr(G, "install", install)
+    assert round(G.setup_all_size_gb(), 1) == round(G.SOFTWARE_GB + 4.3 + 4.3 + 3.2, 1)
+    G.install_all("chatterbox", lambda f, m: said.append((round(f, 2), m)))
+    assert order == ["chatterbox", "acting", "steady"]         # the chosen one first
+    assert said[0] == (0.17, "Chatterbox, 1 of 3: getting it") and said[-1][0] == 1.0
+    assert G.not_ready() == [] and G.setup_all_size_gb() == 0

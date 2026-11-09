@@ -200,6 +200,17 @@ def setup_size_gb(reader):
     return (0 if software_ready() else SOFTWARE_GB) + (0 if model_ready(reader) else READERS[reader][4])
 
 
+def not_ready():
+    """The new voices not set up yet."""
+    return [r for r in GPU_READERS if not ready(r)]
+
+
+def setup_all_size_gb():
+    todo = not_ready()
+    return (0 if software_ready() or not todo else SOFTWARE_GB) + \
+        sum(0 if model_ready(r) else READERS[r][4] for r in todo)
+
+
 def _base_python():
     """The Python CleanListen's own venv was made from (a venv can't make a venv of itself)."""
     # Started as ReadAloud.exe (its own name in Task Manager, a copy of pythonw.exe), Python gives
@@ -296,6 +307,20 @@ def install(reader, progress=None, stop=None):
             raise RuntimeError("Couldn't get the voice. Check the internet connection and try again.\n\n" + tail[-600:])
         (GPU_DIR / f"{reader}.ready").write_text(time.strftime("%Y-%m-%d %H:%M"), encoding="utf8")
     say(1.0, "The voice is ready.")
+
+
+def install_all(first=None, progress=None, stop=None):
+    """Set up every new voice not set up yet, `first` first: one press of Set up for all three
+    (Lauren had to press it for each, 2026-11-09). A voice already done stays done if a later one
+    fails."""
+    say = progress or (lambda f, m: None)
+    todo = sorted(not_ready(), key=lambda r: r != first)
+    n = len(todo)
+    for k, r in enumerate(todo):
+        def one(f, m, k=k, r=r):
+            say((k + f) / n, f"{READERS[r][0]}, {k + 1} of {n}: {m}" if n > 1 else m)
+        install(r, one, stop)
+    say(1.0, "The new voices are ready." if n > 1 else "The voice is ready.")
 
 
 def _fetch(reader):

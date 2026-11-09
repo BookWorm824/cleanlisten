@@ -478,7 +478,9 @@ class App(tk.Tk):
         elif gpu.ready(r):
             self.reader_lbl.config(text="✓ Ready.  " + speed, fg=ACCENT_DK)
         else:
-            self.reader_lbl.config(text=f"Needs a one-time download of about {gpu.setup_size_gb(r):.0f} GB "
+            # Set up gets all the new voices at once (Lauren had to press it for each), so the size
+            # is for all of them
+            self.reader_lbl.config(text=f"Needs a one-time download of about {gpu.setup_all_size_gb():.0f} GB "
                                         f"before its first book.  {speed}", fg=INK)
             self.setup_btn.pack(anchor="w", pady=(6, 0))
 
@@ -494,7 +496,8 @@ class App(tk.Tk):
         def go():
             try:
                 with freezes.awake():       # a download of several GB: the PC doesn't go to sleep meanwhile
-                    gpu.install(r, lambda f, m: self.q.put(("setup_msg", r, f, m)))
+                    # all the new voices in one go, the chosen one first
+                    gpu.install_all(r, lambda f, m: self.q.put(("setup_msg", r, f, m)))
                 self.q.put(("setup_done", r, ""))
             except Exception as ex:
                 self.q.put(("setup_done", r, str(ex)))
@@ -991,7 +994,7 @@ class App(tk.Tk):
                     pass
             self._show_reader()
         elif kind == "setup_msg":
-            if getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists() and self._reader() == msg[1]:
+            if getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists() and gpu.is_gpu(self._reader()):
                 self.reader_lbl.config(text=f"Setting up ({int(msg[2] * 100)}%): {msg[3]}", fg=INK)
         elif kind == "setup_done":
             self.installing = None
