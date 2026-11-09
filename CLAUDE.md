@@ -328,6 +328,11 @@ plain words, learned from Lauren directly and from her exported reviews:
   moved every group of 40 sentences and the AI then missed a bullying line it had caught), and
   double-checking 8 finds in one question (12x faster but twice the false alarms; ruling out with
   the batch and confirming one by one saved nothing). The groups of sentences are unchanged.
+  1.17.17: the AI note also says where the AI ran (graphics card / processor, from Ollama's
+  `/api/ps` size vs size_vram, `where_ai_ran`) and how many sentences a minute it read
+  (`speed_note`), to see what the owner's PC does before trying to make it use the graphics chip.
+  The owner: "if it makes no difference after we do it remember to come back to this version"
+  (that is, the AI setup as of 1.17.16).
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
   tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
   these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`

@@ -1517,7 +1517,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
                   "\n\nAnswer in JSON: {\"flags\": [{\"n\": sentence number, \"type\": \"one of the "
                   "types\", \"words\": \"the exact words that show it\"}]}, or {\"flags\": []}."
                   "\n\nThe sentences:\n" + listing)
-        t0 = time.time()
+        t0 = time.perf_counter()
         try:
             res = answers.ask(ai, prompt, schema, 300)
         except Exception:
@@ -1537,7 +1537,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
             run["resumed"] = run["resumed"] or a == 0
         else:
             run["fresh"] += b - a
-            run["fresh_time"] += time.time() - t0
+            run["fresh_time"] += time.perf_counter() - t0
         for f in res.get("flags", []) if isinstance(res, dict) else []:
             if f.get("type") not in defs or not isinstance(f.get("n"), int):
                 continue
@@ -1574,6 +1574,8 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
         cands.update((i, t) for i in earlier)
     if info is not None:
         info["unread"] = sum(unread)
+        info["fresh"], info["fresh_time"] = run["fresh"], run["fresh_time"]
+        info["where"] = where_ai_ran(ai)        # while the model is still loaded
 
     sure_schema = {"type": "object", "properties": {
         "fits": {"type": "boolean"}, "confidence": {"type": "string", "enum": ["high", "medium", "low"]}},
@@ -1610,6 +1612,46 @@ def unread_note(info):
     n = (info or {}).get("unread", 0)
     return (f" It couldn't read {n} sentence(s) (the AI was too slow on them); the word lists "
             "still read those." if n else "")
+
+
+# How fast the AI read and where it ran (the owner, 2026-11-09: can it read faster without a worse
+# check? First find out what her PC does: on the graphics card or only on the processor, and how
+# many sentences a minute). Only reported, nothing about the check changes.
+def where_ai_ran(ai):
+    """"graphics", "part" or "processor" from Ollama's list of loaded models; None if unknown."""
+    try:
+        with ai._api("/api/ps", timeout=5) as r:
+            models = json.loads(r.read()).get("models") or []
+        want = getattr(ai, "MODEL", "")
+        m = next((m for m in models if want and want in (m.get("name"), m.get("model"))),
+                 models[0] if len(models) == 1 else None)
+        size, vram = float(m.get("size") or 0), float(m.get("size_vram") or 0)
+    except Exception:
+        return None
+    if size <= 0:
+        return None
+    return "graphics" if vram >= 0.9 * size else "part" if vram > 0 else "processor"
+
+
+WHERE_TEXT = {"graphics": "on the graphics card", "processor": "on the processor only",
+              "part": "partly on the graphics card and partly on the processor"}
+
+
+def speed_note(info):
+    info = info or {}
+    fresh, secs = info.get("fresh", 0), info.get("fresh_time", 0.0)
+    where = WHERE_TEXT.get(info.get("where"))
+    if fresh < 20 or secs <= 0:
+        return (" It reused what it had already read in this book." if "fresh" in info and not fresh
+                else "")
+    per_min = fresh * 60 / secs
+    per_min = round(per_min, -1) if per_min >= 100 else round(per_min) or 1
+    return (f" The AI ran {where} and read about {per_min:,.0f} sentences a minute." if where else
+            f" The AI read about {per_min:,.0f} sentences a minute.")
+
+
+def ai_run_note(info):
+    return unread_note(info) + speed_note(info)
 
 
 
@@ -1869,7 +1911,7 @@ def scan(book, use_ai=False, progress=None, cancel=None):
             for c in res["cats"].values():
                 c["items"].sort(key=lambda x: (x["para"], x.get("si", 0)))
             res["ai_note"] = (f"The AI helper read the whole book and added {added} thing(s) the word "
-                              "lists missed." + unread_note(info))
+                              "lists missed." + ai_run_note(info))
         except KeyboardInterrupt:
             raise
         except Exception as ex:
@@ -2328,7 +2370,7 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
         except Exception:
             pass
     return (f"AI helper added {added} it's sure about, suggested {sugg} more for you to decide "
-            f"(left unticked), and unticked {off} it thinks were flagged by mistake." + unread_note(info))
+            f"(left unticked), and unticked {off} it thinks were flagged by mistake." + ai_run_note(info))
 
 
 # ---------------------------------------------------------------------------
