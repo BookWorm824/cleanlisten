@@ -1412,7 +1412,8 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes=""):
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(0.75 + 0.25 * n / max(len(todo), 1), "AI is double-checking what it found…")
+        say(0.75 + 0.25 * n / max(len(todo), 1),       # "14 of 150" (the owner, 2026-11-09)
+            f"AI is double-checking what it found · {n + 1} of {len(todo)}")
         prev = " ".join(book.sent_text(i - 1).split()) if i > 0 else ""
         nxt = " ".join(book.sent_text(i + 1).split()) if i + 1 < S else ""
         ex = f"{prev}\n>>> {' '.join(book.sent_text(i).split())} <<<\n{nxt}".strip()
@@ -2136,7 +2137,8 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
     for n, c in enumerate(checks):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(0.7 + 0.15 * n / max(1, len(checks)), "AI is double-checking what was flagged…")
+        say(0.7 + 0.15 * n / max(1, len(checks)),
+            f"AI is double-checking what was flagged · {n + 1} of {len(checks)}")
         fits = ai_second_opinion(" ".join(x for x in (c.get("before"), c["text"], c.get("after"))
                                           if x), kinds[c["kind"]], notes)
         if fits is False:
@@ -2153,7 +2155,8 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
     for b0 in range(0, len(checkable), 20):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(0.85 + 0.15 * b0 / max(1, len(checkable)), "AI is double-checking the marked-out words…")
+        say(0.85 + 0.15 * b0 / max(1, len(checkable)), "AI is double-checking the marked-out words · "
+            f"{b0 + 1}–{min(b0 + 20, len(checkable))} of {len(checkable)}")
         batch = checkable[b0:b0 + 20]
         rows = [f"{k}: ...{m['ctx_raw']} [[{m['word_raw']}]] {m['ctx_after_raw']}..." for k, m in enumerate(batch)]
         try:

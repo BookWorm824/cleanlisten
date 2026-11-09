@@ -82,3 +82,27 @@ def test_the_clean_chat_still_has_its_own_instructions(book, tmp_path, monkeypat
     monkeypatch.setattr(cc, "saved_provider", lambda: "claude")
     R.Chat(book, an, tmp_path / "chat").ask("hi")
     assert "fine-tune what CleanRead takes out" in seen[0][0] and seen[0][1] is R.CHAT_SCHEMA
+
+
+def test_ai_double_check_shows_a_counter(book, monkeypatch):
+    # the owner, 2026-11-09: "AI is double-checking what it found…" never changed, so it
+    # looked frozen; now it counts "1 of 2", "2 of 2"... under the progress bar
+    import re
+
+    class FakeAI:
+        def ensure_ai(self, progress=None):
+            pass
+
+        def chat(self, prompt, schema=None, timeout=300):
+            if "numbered sentences" in prompt:      # flag every sentence that mentions the witch
+                return {"flags": [{"n": int(k), "type": "ref", "words": t} for k, t in
+                                  re.findall(r"^(\d+)\. (.*witch.*)$", prompt, re.M)]}
+            return {"fits": True, "confidence": "high"}
+
+    monkeypatch.setattr(R, "_ai", lambda: FakeAI())
+    said = []
+    found = R.ai_find(book, {"ref": "sex"}, progress=lambda f, m: said.append(m))
+    assert len(found) == 2
+    checks = [m for m in said if m.startswith("AI is double-checking what it found")]
+    assert checks == ["AI is double-checking what it found · 1 of 2",
+                      "AI is double-checking what it found · 2 of 2"]
