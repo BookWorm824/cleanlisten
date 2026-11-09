@@ -488,7 +488,8 @@ class App(tk.Tk):
 
         def go():
             try:
-                gpu.install(r, lambda f, m: self.q.put(("setup_msg", r, f, m)))
+                with freezes.awake():       # a download of several GB: the PC doesn't go to sleep meanwhile
+                    gpu.install(r, lambda f, m: self.q.put(("setup_msg", r, f, m)))
                 self.q.put(("setup_done", r, ""))
             except Exception as ex:
                 self.q.put(("setup_done", r, str(ex)))
@@ -820,7 +821,11 @@ class App(tk.Tk):
 
         def go():
             try:
-                res = maker.run()
+                # hours of reading, often left overnight: the PC doesn't go to sleep meanwhile (a
+                # CleanRead book left overnight paused 9 hours while Windows slept, 2026-11-09).
+                # The director, every chapter and putting the audiobook together all run in here
+                with freezes.awake():
+                    res = maker.run()
                 self.q.put(("made", res))
             except engine.Stopped:
                 self.q.put(("stopped",))

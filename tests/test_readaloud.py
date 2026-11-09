@@ -279,3 +279,12 @@ def test_the_set_up_message_never_points_at_a_hidden_button():
     src = (REPO / "ReadAloud.pyw").read_text("utf8")
     start = src[src.index("    def start(self):"):src.index("    def resume(")]
     assert "self.gpu_ok[1]" in start and "still being set up" in start and "still checking" in start
+
+
+def test_the_pc_stays_awake_while_reading_and_setting_up():
+    # a book takes hours and is often left overnight; Windows sleeping paused a CleanRead book 9 hours
+    src = (REPO / "ReadAloud.pyw").read_text("utf8")
+    run = src[src.index("    def run_job("):src.index("    def stop(self):")]
+    assert "with freezes.awake():\n                    res = maker.run()" in run
+    setup = src[src.index("    def set_up_reader("):src.index("    def _director_changed(")]
+    assert "with freezes.awake():" in setup
