@@ -248,3 +248,27 @@ def test_a_busy_graphics_card_is_waited_for(tmp_path, monkeypatch):
     monkeypatch.setattr(m._stop, "wait", lambda t: False)       # don't really wait a minute
     res = m.run()
     assert tries == [[0], [0]] and Path(res["file"]).exists()
+
+
+def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path):
+    # As ReadAloud.exe, Python's base was "...\Python312\ReadAloud.exe", which doesn't exist:
+    # Set up failed at once with WinError 2 (Lauren, 2026-11-09)
+    base = tmp_path / "Python312"
+    base.mkdir()
+    (base / "python.exe").write_text("")
+    monkeypatch.setattr(G.sys, "_base_executable", str(base / "ReadAloud.exe"), raising=False)
+    monkeypatch.setattr(G.sys, "base_prefix", str(base))
+    monkeypatch.setattr(G.sys, "executable", str(tmp_path / "venv" / "ReadAloud" / "ReadAloud.exe"))
+    assert G._base_python() == str(base / "python.exe")
+
+
+def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path):
+    # As ReadAloud.exe, Python's base was "...\Python312\ReadAloud.exe", which doesn't exist:
+    # Set up failed at once with WinError 2 (Lauren, 2026-11-09)
+    base = tmp_path / "Python312"
+    base.mkdir()
+    (base / "python.exe").write_text("")
+    monkeypatch.setattr(G.sys, "_base_executable", str(base / "ReadAloud.exe"), raising=False)
+    monkeypatch.setattr(G.sys, "base_prefix", str(base))
+    monkeypatch.setattr(G.sys, "executable", str(tmp_path / "venv" / "ReadAloud" / "ReadAloud.exe"))
+    assert G._base_python() == str(base / "python.exe")

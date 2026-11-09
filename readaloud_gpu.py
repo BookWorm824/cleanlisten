@@ -202,10 +202,21 @@ def setup_size_gb(reader):
 
 def _base_python():
     """The Python CleanListen's own venv was made from (a venv can't make a venv of itself)."""
-    base = Path(getattr(sys, "_base_executable", "") or sys.executable)
-    if base.name.lower() == "pythonw.exe":
-        base = base.with_name("python.exe")
-    return str(base)
+    # Started as ReadAloud.exe (its own name in Task Manager, a copy of pythonw.exe), Python gives
+    # "...\Python312\ReadAloud.exe" as the base, which doesn't exist: Set up failed at once with
+    # "[WinError 2] The system cannot find the file specified" (Lauren, 2026-11-09). So look for
+    # python.exe itself
+    seen = []
+    for p in (getattr(sys, "_base_executable", ""), Path(sys.base_prefix) / "python.exe", sys.executable):
+        if p:
+            p = Path(p)
+            if p.name.lower() != "python.exe":
+                p = p.with_name("python.exe")
+            seen.append(p)
+    for p in seen:
+        if p.exists():
+            return str(p)
+    return str(seen[0])
 
 
 def _run_lines(cmd, on_line, stop=None, env=None):
