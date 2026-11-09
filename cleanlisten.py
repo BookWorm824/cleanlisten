@@ -2254,7 +2254,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(todo), 1), "AI is double-checking what it found…")
+        say(n / max(len(todo), 1),          # "14 of 150" (the owner, 2026-11-09)
+            f"AI is double-checking what it found · {n + 1} of {len(todo)}")
         conf = verify(f"Does the marked sentence clearly contain {T[kind]}?", i)
         if conf:
             found.setdefault(kind, {})[i] = conf
@@ -2265,7 +2266,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     for n, sc in enumerate(checks):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(checks), 1), "AI is double-checking what was flagged…")
+        say(n / max(len(checks), 1), f"AI is double-checking what was flagged · {n + 1} of {len(checks)}")
         try:
             res = ai.chat("Here is a passage from an audiobook:\n\n" + sc["text"][:4000] +
                           "\n\nDoes it contain " + T[sc["kind"]] +
@@ -2289,7 +2290,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     for b0 in range(0, len(checkable), 20):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(b0 / max(len(checkable), 1), "AI is double-checking the muted words…")
+        say(b0 / max(len(checkable), 1), "AI is double-checking the muted words · "
+            f"{b0 + 1}–{min(b0 + 20, len(checkable))} of {len(checkable)}")
         batch = checkable[b0:b0 + 20]
         rows = []
         for q, m in enumerate(batch):
@@ -2330,7 +2332,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         if any(m["part"] == part and not (asr[j - 1]["e"] < m["s"] or asr[i]["s"] > m["e"])
                for m in mutes):
             continue
-        say(n / max(len(word_cands), 1), "AI is double-checking words it found…")
+        say(n / max(len(word_cands), 1),
+            f"AI is double-checking words it found · {n + 1} of {len(word_cands)}")
         conf = verify(f'Is the word "{word}" in the marked sentence used as ' +
                       "; or as ".join(LANGUAGE_DEFS[c] for c in lang) + "?", li)
         if not conf:

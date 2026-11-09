@@ -305,7 +305,8 @@ plain words, learned from Lauren directly and from her exported reviews:
   notes kept in CleanListen's learned notes (`cleanlisten_learn.add_note`), which the AI helper
   (`ai_find`, `ai_second_opinion`) and later chats follow. The working page shows the book's name. While the AI double-checks,
   the line under the progress bar counts ("AI is double-checking what it found · 14 of 150";
-  the owner, 2026-11-09: the words never changed, so it looked frozen).
+  the owner, 2026-11-09: the words never changed, so it looked frozen). CleanListen's AI helper
+  (`ai_assist`) counts the same way (1.17.11).
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
   tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
   these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`
