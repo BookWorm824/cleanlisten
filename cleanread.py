@@ -652,7 +652,8 @@ def modern_orientation(words, i, old_style=False):
         return True
     if w in ("gays", "queers"):
         return True
-    if prv in MODERN_PREV and nxt == "":
+    # "he is gay", and "he's gay and proud" (but not "she was gay and merry": CleanView 1.18.31)
+    if prv in MODERN_PREV and (nxt == "" or nxt == "and" and not E.gay_happy(words, i)):
         return prv not in ("the", "a", "an", "so")
     return prv in ("openly", "secretly") or (prv == "as" and i > 1 and words[i - 2] in ("out", "identifies", "identified", "identify"))
 

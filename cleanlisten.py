@@ -128,8 +128,13 @@ STRONG = [r".*fuck.*", r"cunts?", r"motherf.*", r"fk", r"effing", r"effin", r"f'
           r"mofos?", r"wtf", r"stfu", r"omfg",
           # racial slurs (the unmistakable ones; "cracker", "coon", "chink" etc. have
           # everyday meanings too, so they're left to the AI and Claude)
-          r"nigg(a|as|ah|az|er|ers)", r"kikes?", r"wetbacks?", r"gooks?", r"towelheads?",
-          r"ragheads?", r"beaners?"]
+          # (and their possessives: "even a greaseball's got feelings", CleanView 1.18.30)
+          r"nigg(a|as|ah|az|er|ers)", r"kike(s|'s|s')?", r"wetback(s|'s|s')?", r"gook(s|'s|s')?",
+          r"towelhead(s|'s|s')?", r"raghead(s|'s|s')?", r"beaner(s|'s|s')?",
+          # West Side Story (CleanView 1.18.30); never fine (not in INNOCENT_WORDS). Guards for
+          # "spic and span" and "doo wop" are in INNOCENT_NEXT / INNOCENT_PREV
+          r"spic(s|'s|s')?", r"spick(s|'s|s')?", r"polack(s|'s|s')?", r"greaseball(s|'s|s')?",
+          r"wop(s|'s|s')?"]
 MODERATE = [
     r".*shit.*", r"bitch.*", r"son(of|ofa|uva|na)?bitch.*", r"sumbitch.*", r"ass", r"asses",
     r"ass(holes?|wipes?|hats?|clowns?|face|faces|heads?|kick(s|ed|er|ers|ing)?|"
@@ -287,6 +292,8 @@ SEXUAL_WORDS = [
     r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
     r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
     r"cockblock(s|ed|er|ing)?", r"schlongs?", r"todgers?", r"dildos?",
+    r"nymphos?", r"nymphomaniacs?",   # 50 First Dates (CleanView 1.18.34); not "nymph" (a water nymph)
+    r"bondage", r"safewords?",        # the owner, 2026-11-08 (CleanView 1.18.39); see bondage_slavery()
 ]
 SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
@@ -297,6 +304,10 @@ SEXUAL_PHRASES = [
     ("rub", "one", "out"), ("rubbing", "one", "out"), ("rubbed", "one", "out"),
     ("spank", "the", "monkey"), ("spanking", "the", "monkey"),
     ("choke", "the", "chicken"), ("choking", "the", "chicken"),
+    # Red Eye (CleanView 1.18.31). Not "quickie" alone: "a quickie divorce" is fine
+    ("thanks", "for", "the", "quickie"),
+    ("private", "parts"),   # 50 First Dates (CleanView 1.18.34); not "a private party"
+    ("safe", "word"), ("safe", "words"),   # not "a safe word to use" (SAFE_WORD_NOT_NEXT)
 ] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
                           "jacking", "jackin")] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
      for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
@@ -322,6 +333,22 @@ OFF_SAFE_NEXT = {"the", "a", "an", "his", "her", "its", "their", "my", "your", "
 # a word like hardest / meanest / toughest (but "to be honest, screw that" is still the insult)
 SCREW_NOUN_AFTER = {"the", "a", "that", "this", "loose", "one", "each", "every", "of",
                     "tighten", "any", "no", "another", "prison"}
+
+
+# "bondage" meaning slavery (CleanRead's Christian books): "out of the house of bondage", "freed
+# them from bondage", "the bondage of sin", "in bondage in Egypt", "sold into bondage"
+BONDAGE_SLAVERY_PREV = {"from", "in"}
+BONDAGE_SLAVERY_PREV2 = {("house", "of"), ("out", "of"), ("sold", "into"), ("taken", "into"),
+                         ("led", "into")}
+# "Is there a safe word to use?", "That's a safe word for kids to say"
+SAFE_WORD_NOT_NEXT = {"to", "for"}
+
+
+def bondage_slavery(words, i):
+    """Is words[i] ("bondage") slavery here rather than the sexual kind?"""
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    return (nxt == "of" or (words[i - 1] if i else "") in BONDAGE_SLAVERY_PREV or
+            tuple(words[max(0, i - 2):i]) in BONDAGE_SLAVERY_PREV2)
 
 
 def screw_noun(words, i):
@@ -513,6 +540,21 @@ PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # de
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
 # "General Hooker", "door knockers". (The word after, or before.)
 GAY_HAPPY_NEXT = {"refrain", "apparel", "abandon", "laughter", "nineties", "paree"}
+# "gay" beside another happy word: "I feel pretty and witty and gay", "merry and gay", "gay and
+# carefree" (West Side Story, CleanView 1.18.30). "Tall and gay", "gay and proud" still count.
+GAY_HAPPY_WORDS = {"witty", "pretty", "merry", "bright", "happy", "light", "lighthearted",
+                   "carefree", "cheerful", "lively", "sunny", "jolly", "glad", "festive", "colorful",
+                   "colourful", "giddy", "laughing", "charming", "sparkling", "blithe", "joyful",
+                   "joyous", "gladsome", "frolicsome"}
+
+
+def gay_happy(words, i):
+    """Is words[i] "gay" in "<happy> and gay" or "gay and <happy>"?"""
+    return words[i] == "gay" and (
+        i >= 2 and words[i - 1] == "and" and words[i - 2] in GAY_HAPPY_WORDS or
+        words[i + 1:i + 2] == ["and"] and i + 2 < len(words) and words[i + 2] in GAY_HAPPY_WORDS)
+
+
 INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
@@ -535,7 +577,9 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                  "craps": {"table", "tables", "game", "games", "shooter", "shooters", "dealer"},
                  # "gay" meaning happy ("the gay refrain", "don we now our gay apparel")
                  "gay": GAY_HAPPY_NEXT,
-                 "bullshit": {"degree", "degrees"}}                 # "a BS degree"
+                 "bullshit": {"degree", "degrees"},                 # "a BS degree"
+                 # "keep it spic and span", "Spic 'n' Span"; "a wop bop a loo bop"
+                 "spic": {"and", "n"}, "spick": {"and", "n"}, "wop": {"bop", "bam", "doo"}}
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WWI army camp
                  "cum": {"summa", "magna"},
                  # a small sting: "a tiny prick of black", "a jealous prick at my heart",
@@ -555,7 +599,8 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                  "craps": {"two", "play", "playing", "played", "shoot", "shooting", "rolled",
                            "roll", "of", "at"},                    # "two craps in a row"
                  "crud": {"the", "some", "of", "that", "this", "all", "any", "green", "black",
-                          "brown", "gray", "grey"}}                 # "the crud on the floor"
+                          "brown", "gray", "grey"},                 # "the crud on the floor"
+                 "wop": {"doo", "do", "shoo", "be", "bop"}}           # "doo wop music"
 # Rude words kids copy (CleanListen's "Rude words" box, off unless ticked; the same list as
 # CleanView's). "Shut it" is rude, "shut it down" isn't.
 RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?", r"idiotic",
@@ -807,6 +852,8 @@ def _find_language(words, cats, breaks=()):
                                           ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT or
                                           ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT):
                         continue  # "shut it down", "shut up in the attic", "it sucks the juice out"
+                    if ph[0] == "safe" and nxt in SAFE_WORD_NOT_NEXT:
+                        continue  # "Is there a safe word to use?"
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
                     if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
@@ -855,6 +902,9 @@ def _find_language(words, cats, breaks=()):
                 if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) or
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
+                        w == "gay" and gay_happy(words, i) or
+                        w == "bondage" and bondage_slavery(words, i) or
+                        w.startswith("safeword") and (words[i + 1] if i + 1 < n else "") in SAFE_WORD_NOT_NEXT or
                         w in ("jesus", "christ") and reverent(words, i)):
                     break     # "pussy cat", "Moby Dick", "summa cum laude", "the love of Christ"
                 hits.append((i, i + 1, cat))
@@ -1102,7 +1152,8 @@ def _came_out(words, i):
 def relationship_hit(words):
     """Does this sentence make a same-sex or non-traditional relationship clear?"""
     if any(any(p.match(w) for p in RELATIONSHIP_WORDS) and not (
-            w == "gay" and words[k + 1:k + 2] and words[k + 1] in GAY_HAPPY_NEXT)
+            w == "gay" and (words[k + 1:k + 2] and words[k + 1] in GAY_HAPPY_NEXT or
+                            gay_happy(words, k)))
            for k, w in enumerate(words)):
         return True
     for i in range(len(words)):
@@ -1315,7 +1366,11 @@ TOPIC_WORDS = {
         r"rudolph's (red )?nose|mistletoe|"
         r"yuletide|jingle bells|"
         r"hallowe'?en|trick ?or ?treat\w*|jack ?o'?lanterns?|all hallows|"
-        r"valentines?|valentine's|cupid|"
+        # a lone "Valentine" is a name ("Let's get Valentine.", I Love Lucy; CleanView 1.18.37)
+        r"valentines|valentine's|cupid|"
+        r"valentine(?= (day|cards?|party|dance|gifts?|candy|chocolates?|hearts?)\b)|"
+        r"(?<=\bmy )valentine|(?<=\ba )valentine|(?<=\byour )valentine|(?<=\bher )valentine|"
+        r"(?<=\bhis )valentine|(?<=\bsecret )valentine|"
         r"easter\b(?! island)|egg hunts?|"
         r"(st|saint) (patrick|paddy|patty)'?s( day)?\b(?! (cathedral|church|school|hospital))|"
         r"leprechauns?|pot of gold)\b"),

@@ -366,6 +366,16 @@ def test_kid_topics_left_alone(kind, text):
     assert not E.topic_hit(kind, words(text))
 
 
+def test_valentine_the_name_is_not_the_holiday():
+    # I Love Lucy (CleanView 1.18.37): a lone "Valentine" is a name
+    for text in ("Let's get Valentine.", "Mrs. Valentine called.", "Valentine, come here."):
+        assert not E.topic_hit("holiday", words(text)), text
+    for text in ("Happy Valentine's Day!", "Will you be my valentine?",
+                 "I made valentines for the class.", "a Valentine card", "I got a valentine from Tommy",
+                 "Valentine Day is coming", "Cupid shot his arrow", "She was his secret valentine."):
+        assert E.topic_hit("holiday", words(text)), text
+
+
 def test_kid_topics_are_off_unless_ticked_and_the_ai_knows_them():
     for t in E.TOPICS:
         assert t in E.AI_TYPES and t in E.TOPIC_LABELS

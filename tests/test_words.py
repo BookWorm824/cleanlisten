@@ -743,3 +743,75 @@ def test_prayers_arent_oaths(text):
 def test_oaths_near_prayers_still_caught(text, word):
     w = words(text)
     assert word in [" ".join(w[i:j]) for i, j, _ in E.find_language(w, EVERY)]
+
+
+# --- West Side Story (CleanView 1.18.30): slurs, and "gay" meaning happy -----------------
+@pytest.mark.parametrize("text, word", [
+    ("Says the Spic.", "spic"), ("Back where you came from. Spics.", "spics"),
+    ("You lyin' Spic!", "spic"), ("I'm gonna get that Polack.", "polack"), ("Wop!", "wop"),
+    ("Even a greaseball's got feelings.", "greaseball's"), ("a dirty wop's car", "wop's"),
+])
+def test_west_side_story_slurs(text, word):
+    assert (word, "strong") in hits(text)
+    assert word not in E.INNOCENT_WORDS            # never "fine in context"
+
+
+@pytest.mark.parametrize("text", [
+    "keep the kitchen spic and span", "Spic 'n' Span", "a wop bop a loo bop", "doo wop music",
+    "Mick Jagger sang", "Jackson Pollock painted it", "a doo-wop song", "spick-and-span",
+])
+def test_not_slurs(text):
+    assert hits(text) == []
+
+
+@pytest.mark.parametrize("text", ["I feel pretty and witty and gay", "we were merry and gay",
+                                  "so gay and carefree all summer"])
+def test_gay_beside_a_happy_word(text):
+    assert hits(text) == [] and not E.relationship_hit(words(text))
+
+
+@pytest.mark.parametrize("text", ["he is gay", "a gay couple", "tall and gay", "gay and proud"])
+def test_gay_still_counts(text):
+    assert ("gay", "orientation") in hits(text)
+
+
+# --- Red Eye (CleanView 1.18.31) --------------------------------------------------------
+def test_thanks_for_the_quickie():
+    assert hits("Thanks for the quickie.", ["sexual"]) == [("thanks for the quickie", "sexual")]
+    assert hits("I thought he came down here for a quickie divorce", ["sexual"]) == []
+
+
+def test_bondage_and_safe_word():
+    # the owner, 2026-11-08 (CleanView 1.18.39)
+    for text, want in (('Bondage. My safe word is "apples."', ["bondage", "safe word"]),
+                       ("Are you into bondage?", ["bondage"]),
+                       ("What's your safe word?", ["safe word"]),
+                       ("We need a safeword.", ["safeword"]),
+                       ("Pick safe words with your partner.", ["safe words"])):
+        assert [w for w, _ in hits(text, ["sexual"])] == want, text
+    for fine in ("out of the house of bondage", "He freed them from bondage.", "the bondage of sin",
+                 "Israel was in bondage in Egypt", "sold into bondage", "Is there a safe word to use?",
+                 "That's a safe word for kids to say", "That's a safe place.", "Say the word."):
+        assert hits(fine, ["sexual"]) == [], fine
+
+
+def test_fifty_first_dates_words():
+    assert hits("How's that hot wahini nympho from Ohio, huh?", ["sexual"]) == [("nympho", "sexual")]
+    assert hits("Oh, the nympho is the state bird of Ohio.", ["sexual"]) == [("nympho", "sexual")]
+    assert hits("She was a nymphomaniac.", ["sexual"]) == [("nymphomaniac", "sexual")]
+    assert hits("They only bite when you touch the private parts.", ["sexual"]) == [
+        ("private parts", "sexual")]
+    assert hits("out of all mammals, they have the second largest penis", ["sexual"]) == [
+        ("penis", "sexual")]
+    for fine in ("a water nymph in the pond", "the nymphs danced", "It's a private party.",
+                 "We spoke privately.", "keep your parts private"):
+        assert hits(fine, ["sexual"]) == [], fine
+
+
+@pytest.mark.parametrize("text, same_sex", [
+    ("I feel pretty and witty and gay, and I pity any girl who isn't me tonight", False),
+    ("so gay and carefree", False), ("He's gay and proud", True), ("a gay couple", True)])
+def test_the_same_sex_sentence_check_and_gay_meaning_happy(text, same_sex):
+    import cleanread as R
+    assert E.relationship_hit(words(text)) is same_sex
+    assert R.rel_hit(words(text)) is same_sex
