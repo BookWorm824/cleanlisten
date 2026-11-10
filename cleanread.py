@@ -680,6 +680,36 @@ def rel_hit(words, old_style=False):
     return E.relationship_hit(w2)
 
 
+# What the AI calls a same-sex or non-traditional relationship is kept only when the sentence or the
+# one before or after has a word of romance or of a couple in it (the owner, 2026-11-09: in Camp Club
+# Girls the small AI suggested 43 plain lines between friends, "“No,” they replied.",
+# "Elizabeth giggled nervously.", and in The Boxcar Children "Jessie asked."; its own double-check
+# agreed, and a stricter question made it worse). Measured on her lines with the local AI: 45 of 49
+# harmless lines dropped, all 12 real ones (a girlfriend, husband, crush, two moms, a throuple,
+# several wives, "more than friends"...) kept.
+LOVE_NEAR = re.compile(
+    r"\b(lov(e|es|ed|ing|er|ers|ely)|kiss(es|ed|ing)?|dat(e|es|ed|ing)|"
+    r"(girl|boy)[ -]?friends?|crush(es|ed|ing)?|flirt(s|ed|ing|y|atious)?|"
+    r"husbands?|wi(fe|ves)|marri(ed|age|ages)|marry(ing)?|wedd(ing|ed)|engaged|fianc[eé]e?s?|"
+    r"partners?|couples?|sweethearts?|darling|beloved|romance|romantic(ally)?|"
+    r"gay|lesbians?|queer|bisexual|homosexual|trans(gender)?|non-?binary|"
+    r"throuple|polyam\w*|polygam\w*|swingers?|"
+    r"moms|mums|mommies|mothers|dads|daddies|fathers|"
+    r"more than (just )?friends|lips|caress\w*|cuddl\w*|embrac\w*|"
+    r"blush(es|ed|ing)?|attract(ed|ion|ive)|longing|smitten|came out|coming out)\b", re.I)
+
+
+def romance_near(book, i):
+    """A word of romance or of a couple in sentence i or the one before or after it (or the word
+    lists' own relationship test)."""
+    for k in (i - 1, i, i + 1):
+        if 0 <= k < len(book.sents):
+            if LOVE_NEAR.search(book.sent_text(k).replace("\u2019", "'")) or \
+                    rel_hit(book.sent_words(k), book.old_style):
+                return True
+    return False
+
+
 def _ref_hit(words):
     """A sexual reference: a sexual word or phrase ("sexy", "make love", "slept with him"),
     or two explicit words together, or sex drugs (Viagra, "the little blue pill", Spanish
@@ -1581,7 +1611,8 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
         "fits": {"type": "boolean"}, "confidence": {"type": "string", "enum": ["high", "medium", "low"]}},
         "required": ["fits", "confidence"]}
     found = {}
-    todo = sorted(cands)
+    # the small AI takes plain talk between two girls or two boys for a same-sex relationship
+    todo = sorted(c for c in cands if c[1] != "relationship" or romance_near(book, c[0]))
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt

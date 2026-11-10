@@ -332,7 +332,12 @@ plain words, learned from Lauren directly and from her exported reviews:
   `/api/ps` size vs size_vram, `where_ai_ran`) and how many sentences a minute it read
   (`speed_note`), to see what the owner's PC does before trying to make it use the graphics chip.
   The owner: "if it makes no difference after we do it remember to come back to this version"
-  (that is, the AI setup as of 1.17.16). First result (the owner's GTX 1660 Ti): "graphics card,
+  (that is, the AI setup as of 1.17.16). Second result, nothing else running: about 140 a minute.
+  1.17.19 (released; the owner: "send it"): an AI "relationship" (same-sex / non-traditional) find is kept only when that sentence
+  or its neighbour has a romance or couple word (`LOVE_NEAR`, `romance_near`, checked before the
+  double-check): the owner's Camp Club Girls had 43 harmless suggestions between friends. A
+  stricter double-check question was tried on the local AI and made it worse (25 of 49 wrong).
+  First result (the owner's GTX 1660 Ti): "graphics card,
   about 43 sentences a minute", but CleanView was cleaning a movie at the same time (two Ollama
   models on a 6 GB card swap in and out), so it was asked to run a book with nothing else open.
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
