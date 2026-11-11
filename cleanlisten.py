@@ -3662,18 +3662,21 @@ def extract_clip(path, s, e, dst, pad=1.0, longest=300.0):
 
 # ffmpeg can't read a sum of more than 100 terms in a row ("Error initializing filters ...
 # Cannot allocate memory"; found by CleanView 1.18.26 on a film with hundreds of mutes, and the
-# same here for a chapter with more than 100 mutes or cuts). Bracketed in 50s it reads about
-# 2,000, so each filter gets at most 500 ranges and longer lists get one filter per 500.
-SUM_GROUP = 50
-RANGES_PER_FILTER = 500
+# same here for a chapter with more than 100 mutes or cuts). 1.17.6 bracketed them in 50s, 500 to a
+# filter, but Scarlet (Unabridged), one 7-hour MP3, still failed on the owner's PC with "Error when
+# evaluating the expression ... for enable" (2026-11-11). Now each filter gets at most 50 ranges,
+# plainly added up with no brackets, which any ffmpeg reads; a long list is a chain of filters.
+RANGES_PER_FILTER = 50
 
 
 def _ranges(rs):
-    terms = [f"between(t,{s:.3f},{e:.3f})" for s, e in rs]
-    if len(terms) <= SUM_GROUP:
-        return "+".join(terms)
-    return "+".join("(" + "+".join(terms[i:i + SUM_GROUP]) + ")"
-                    for i in range(0, len(terms), SUM_GROUP))
+    return "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in rs)
+
+
+def _short_error(text):
+    """ffmpeg's message with any long quoted filter shortened, so the line that says what went wrong
+    still shows (the owner's screenshot showed only a list of times)."""
+    return re.sub(r"'[^'\n]{120,}'", lambda m: m.group(0)[:60] + " … " + m.group(0)[-40:], text)
 
 
 def _chunks(rs):
@@ -3682,7 +3685,7 @@ def _chunks(rs):
 
 def _range_filters(mr, cr):
     """The ffmpeg filters that mute the ranges mr and cut out the ranges cr (one filter per
-    500 of each). aselect leaves the times alone, so each cut filter still sees the
+    50 of each). aselect leaves the times alone, so each cut filter still sees the
     original times; asetpts closes the gaps at the end."""
     filt = [f"volume=volume=0:enable='{_ranges(c)}'" for c in _chunks(mr)]
     if cr:
@@ -3779,7 +3782,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                 pass
             real = [e for _, e in errors if "Unrecognized option" not in e
                     and "Error splitting the argument" not in e] or [e for _, e in errors] or [""]
-            msg = real[0][-600:]
+            msg = _short_error(real[0])[-600:]
             if any(k in msg for k in ("Permission denied", "being used by another process")):
                 msg = ("The file is open in another program (a player, Yoto app or cloud sync?). "
                        "Close it and press Save again.\n\n" + msg)

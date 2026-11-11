@@ -787,6 +787,12 @@ _CASUAL = Matcher(
     phrases=["one night stand|stands",
              "cheated|cheating|cheats|cheat on " + P(["her", "him", "his", "my", "your", "their"]),
              "having|had|has|have an affair", "an|the|their|his|her|secret|torrid affair with",
+             # a lone "the affair" / "an affair" too, as CleanView 1.18.51 (Castle: "How long was the
+             # affair?"); not "quite an affair", "what an affair", "the affair of the necklace",
+             # "none of your affair", "a family affair" or "Internal Affairs" (the owner, 2026-11-09:
+             # "add it to the next update")
+             "!quite|such|what the|an|his|her|their|love|secret|torrid|illicit|sordid|extramarital "
+             "affair !of",
              "sleeping|slept|sleeps around", "hooked|hooking|hook up with",
              "were|became|become|are|be|being|been lovers", "secret|illicit lover|lovers",
              "took|take|taking|taken|takes a lover", "his mistress",
