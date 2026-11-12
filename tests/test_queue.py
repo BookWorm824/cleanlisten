@@ -365,6 +365,20 @@ class FakeWorkers:
     def stop_all(self, wait=5.0):
         self.procs.clear()
 
+    # Pause beside Cancel (2026-11-12)
+    def alive(self, key):
+        return key in self.procs
+
+    def paused(self, key):
+        return key in getattr(self, "frozen", set())
+
+    def pause(self, key):
+        self.frozen = getattr(self, "frozen", set()) | {key}
+        return True
+
+    def resume(self, key):
+        getattr(self, "frozen", set()).discard(key)
+
 
 def _load_app():
     import importlib.machinery
@@ -415,6 +429,17 @@ def test_the_your_books_page(tmp_path, monkeypatch):
         _pump(app)
         assert app._rows[one["key"]]["status"].cget("text") == "Listening to part 1 of 2"
         assert int(app._rows[one["key"]]["pb"]["value"]) == 400
+
+        # Pause beside Cancel on a book being worked on; paused, it says so and offers Resume
+        app._pause_book(one["key"])
+        _pump(app)
+        assert app._rows[one["key"]]["status"].cget("text") == "Paused — press Resume to carry on."
+        fake.send(one["key"], p=0.45, m="Listening to part 1 of 2")      # sent just before it froze
+        _pump(app)
+        assert app._rows[one["key"]]["status"].cget("text").startswith("Paused")
+        app._pause_book(one["key"])                                          # Resume
+        _pump(app)
+        assert app._rows[one["key"]]["status"].cget("text") == "Listening to part 1 of 2"
 
         # book one is ready: the third starts, and the row offers Review
         wd = Path(one["workdir"])

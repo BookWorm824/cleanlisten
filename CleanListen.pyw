@@ -127,6 +127,7 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("graphic", "Graphic violence to cut", "Graphic"),
                 ("violence", "Violence to cut", "Violence"),
                 ("disturbing", "Disturbing violence to cut", "Disturbing"),
+                ("medical", "Medical scenes to cut", "Medical"),
                 ("nudity", "Nudity to cut", "Nudity"), ("implied", "Implied nudity to cut", "Implied"),
                 ("immodest", "Immodest clothing to cut", "Immodest"),
                 ("flirt", "Flirting to cut", "Flirting"), ("kiss", "Man & woman kissing to cut", "Kissing"),
@@ -2015,7 +2016,17 @@ class App(tk.Tk):
                     f"{r.get('cuts', 0)} passages cut{gone}")
         if step == BQ.FAILED:
             return "Ran into a problem: " + BQ.plain_error(job.get("error"))
+        if step in BQ.RUNNING and getattr(self, "workers", None) and self.workers.paused(job["key"]):
+            return "Paused \u2014 press Resume to carry on."
         return job.get("status") or BQ.STATUS.get(step, "")
+
+    def _pause_book(self, key):
+        """Pause or carry on with one book (its worker and what it started are frozen)."""
+        if self.workers.paused(key):
+            self.workers.resume(key)
+        elif not self.workers.pause(key):
+            messagebox.showinfo("CleanListen", "That book couldn't be paused right now.")
+        self.show_queue()
 
     def show_queue(self):
         keep = None      # redrawn when a book moves on: stay where you were in a long list
@@ -2083,6 +2094,11 @@ class App(tk.Tk):
                 ttk.Button(btns, text="Change cover\u2026", style="Plain.TButton",
                            command=lambda: self._change_job_cover(key)).pack(side="left",
                                                                             padx=(8, 0))
+        if step in BQ.RUNNING and self.workers.alive(key):
+            # Pause beside Cancel (the owner, 2026-11-12, as CleanView 1.18.66)
+            paused = self.workers.paused(key)
+            ttk.Button(btns, text="Resume" if paused else "Pause", style="Plain.TButton",
+                       command=lambda: self._pause_book(key)).pack(side="left", padx=(8, 0))
         if step in (BQ.WAITING, BQ.PREPARING, BQ.SAVE_WAITING, BQ.SAVING):
             ttk.Button(btns, text="Cancel", style="Plain.TButton",
                        command=lambda: self._cancel_book(key)).pack(side="left", padx=(8, 0))
@@ -2218,6 +2234,7 @@ class App(tk.Tk):
         self.show_queue()
 
     def _remove_book(self, key):
+        self.workers.resume(key)
         self.books.remove(key)
         self._open_rows.discard(key)
         self.show_queue()
@@ -2888,7 +2905,8 @@ class App(tk.Tk):
                  "bully": "BULLYING", "disrespect": "DISRESPECT", "flirt": "FLIRTING",
                  "kiss": "KISSING", "kiss_ss": "SAME-SEX KISSING", "sleeping": "SLEEPING AROUND",
                  "unmarried": "UNMARRIED COUPLE", "graphic": "GRAPHIC VIOLENCE",
-                 "violence": "VIOLENCE", "disturbing": "DISTURBING", "nudity": "NUDITY",
+                 "violence": "VIOLENCE", "disturbing": "DISTURBING", "medical": "MEDICAL",
+                 "nudity": "NUDITY",
                  "implied": "IMPLIED NUDITY", "immodest": "IMMODEST CLOTHING", "smoking": "SMOKING",
                  "drinking": "DRINKING", "drugs": "DRUGS", "gestures": "RUDE GESTURE",
                  "holiday": "HOLIDAY",

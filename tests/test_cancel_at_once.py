@@ -37,7 +37,8 @@ def drain(ui, app):
 
 
 def cleanread_app(ui):
-    app = types.SimpleNamespace(job=1, q=queue.Queue(), book=None, report=None, shown=[])
+    app = types.SimpleNamespace(job=1, q=queue.Queue(), book=None, report=None, shown=[], paused=False)
+    app._stop_or_wait = lambda job: ui.App._stop_or_wait(app, job)
     app.show_setup = lambda: app.shown.append("start page")
     app.show_report = lambda: app.shown.append("report")
     app._send = lambda job, msg: ui.App._send(app, job, msg)

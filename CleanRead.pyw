@@ -5,6 +5,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 import traceback
 from pathlib import Path
@@ -104,6 +105,7 @@ class App(tk.Tk):
             pass
         self.q = queue.Queue()
         self.job = 0              # the check/find being worked on; Cancel moves on (2026-11-09)
+        self.paused = False       # Pause on the working page (2026-11-12)
         self.settings = load_settings()
         self.book_path = None
         self.book = None          # parsed book, kept while the same file is loaded
@@ -495,14 +497,44 @@ class App(tk.Tk):
         self.status = tk.Label(box, text="Starting…", bg=BG, fg=INK, font=(FONT, 12))
         self.status.pack(anchor="w", pady=(12, 0))
         self.job += 1
+        self.paused = False
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
         self.cancel_btn.pack(side="right")
+        # Pause beside Cancel (the owner, 2026-11-12, as CleanView 1.18.66: "should we have a pause
+        # buton next to the cancel button when a check is happening", "yes build it")
+        self.pause_btn = ttk.Button(self.footer, text="Pause", style="Plain.TButton",
+                                    command=self.toggle_pause)
+        self.pause_btn.pack(side="right", padx=(0, 10))
         LOGO.put_logo(p, "cleanread.ico", BG)     # the empty space (Jason, 2026-11-07)
+
+    def toggle_pause(self):
+        """Pause or carry on. The check waits at its next step (a question the AI is already
+        answering is finished first), and the PC may sleep meanwhile."""
+        self.paused = not self.paused
+        if getattr(self, "pause_btn", None) and self.pause_btn.winfo_exists():
+            self.pause_btn.config(text="Resume" if self.paused else "Pause")
+        if getattr(self, "status", None) and self.status.winfo_exists():
+            self.status.config(text="Paused \u2014 press Resume to carry on." if self.paused
+                               else getattr(self, "_last_status", "Carrying on\u2026"))
+
+    def _stop_or_wait(self, job):
+        """The work's "stop?" question: True once this check was cancelled; while paused, it
+        waits here, letting the PC sleep."""
+        if self.paused and self.job == job:
+            nap = freezes.awake()
+            nap.__exit__(None, None, None)          # the PC may sleep while paused
+            try:
+                while self.paused and self.job == job:
+                    time.sleep(0.2)
+            finally:
+                nap.__enter__()
+        return self.job != job
 
     def cancel(self):
         """Back to the start page at once (the owner, 2026-11-09: it took a while). The work
         stops by itself at its next step; what it was doing (opening the book, waiting for the
         AI) can't be cut short, but nothing it sends after this is used."""
+        self.paused = False
         self.job += 1
         self.show_setup()
 
@@ -530,7 +562,7 @@ class App(tk.Tk):
         try:
             book = self._load_book(job, path)
             res = engine.scan(book, use_ai=use_ai, progress=lambda f, m: send(("progress", f, m)),
-                              cancel=lambda: self.job != job)
+                              cancel=lambda: self._stop_or_wait(job))
             html = engine.report_html(res)
             rpath = Path(path).with_name(Path(path).stem + " - Content Report.html")
             try:
@@ -557,7 +589,7 @@ class App(tk.Tk):
         try:
             book = self._load_book(job, path)
             an = engine.analyze(book, opts, progress=lambda f, m: send(("progress", f, m)),
-                                cancel=lambda: self.job != job)
+                                cancel=lambda: self._stop_or_wait(job))
             send(("analyzed", an))
         except KeyboardInterrupt:
             pass                    # cancelled: the start page is already showing
@@ -612,7 +644,9 @@ class App(tk.Tk):
             return
         if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
             self.pb["value"] = int(msg[1] * 1000)
-            self.status.config(text=msg[2])
+            self._last_status = msg[2]
+            if not self.paused:             # "Paused" stays until Resume
+                self.status.config(text=msg[2])
         elif kind == "named" and getattr(self, "name_lbl", None) and self.name_lbl.winfo_exists():
             self.name_lbl.config(text=msg[1])
         elif kind == "chat_reply":
@@ -936,7 +970,7 @@ class App(tk.Tk):
 
         self.cut_vars = []
         order = ["sex", "nudity", "implied", "immodest", "ref", "sleeping", "unmarried", "kiss",
-                 "kiss_ss", "flirt", "relationship", "violence", "graphic", "gore", "disturbing",
+                 "kiss_ss", "flirt", "relationship", "violence", "graphic", "gore", "disturbing", "medical",
                  "religion", "crude", "bully", "disrespect", "smoking", "drinking", "drugs", "gestures",
                  "holiday", "birthday", "magic", "darkmagic", "vampires"]
         for c in cuts:          # what was found, so what you change yourself is remembered
@@ -1074,6 +1108,7 @@ class App(tk.Tk):
         mutes = [m for v, m in self.mute_vars if v.get()]
         self.show_working("Saving the clean copy…")
         self.cancel_btn.destroy()
+        self.pause_btn.destroy()          # quick, and nothing to stop it at
         threading.Thread(target=self._write_thread, args=(cuts, mutes), daemon=True).start()
 
     # ---------- ask Claude about the cuts (Jason, 2026-11-03: "like the view one") ----------

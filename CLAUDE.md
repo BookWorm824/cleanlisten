@@ -665,6 +665,43 @@ shows a new pattern, say what you inferred so she can correct it.
 
 **A lone "the affair" / "an affair"** is sleeping around (1.17.20, as CleanView 1.18.51: Castle's "How long was the affair?"), one phrase in `cleanread._CASUAL`, which CleanListen's `sleeping_hit` uses too; not "quite/such/what an affair", "the affair of", "your affair", "a family affair" or "affairs" (`tests/test_lone_affair.py`).
 
+**From CleanView, 2026-11-12 (the owner's "every app" rule; all in one update):**
+- **Medical**, a box after Gore ("Medical  (surgery, autopsies, wounds being treated, needles and
+  shots)"): ticked for Young kids, Kids and Teens, not Adults; settings saved before it follow gore or
+  graphic (`filters._upgrade`, `cleanread._upgrade`). A gory passage in a medical setting is kind
+  "medical" (`cleanlisten.gory_kind` / `medical_setting`: surgery, an autopsy, a morgue, stitches...;
+  a doctor, nurse or medic alone only when no attack words are in the passage or just around it).
+  Needles and stitching sentence by sentence: `cleanread.MEDICAL` (never drug use: `DRUGS` and
+  heroin/junkie words win). Off, a medical scene isn't cut even with Gore on; on, it's cut even with
+  Gore off. It's one of `MORE_KINDS`, so the AI, Claude, the review page and learning know it
+  (`tests/test_medical.py`). Two gory scenes one plain paragraph apart are read as one passage.
+  Coroner, medical examiner, doctor and detective **case talk** is part of Medical too (CleanView
+  1.18.72 made it a box of its own; for books the owner chose "Part of Medical, no new box"):
+  CleanView's phrase list in `cleanread._MEDICAL` (sexual assault, sex offender, rape kit, cause or
+  time of death, autopsy, stab/gunshot wounds, rigor mortis, GSW...). With Medical off it's left
+  alone: "sex"/"sexual" before assault, offender, crime, abuse... isn't a sexual word
+  (`CASE_TALK_NEXT`), and the AI's and Claude's sexual-reference wording leaves it out.
+- **One window per program** with an "Opening CleanListen/CleanRead/ReadAloud…" box (as CleanView
+  1.18.64): `launcher.pyw` `clicked()` / `run_app()`, a lock each (`Local\<name>-open`), "view"
+  takes none; "Check for updates" passes `CLEANLISTEN_UPDATE_DONE`, so the new copy waits for the
+  old one (`tests/test_one_window.py`).
+- **Pause** beside Cancel (as CleanView 1.18.66): CleanListen per book (`bookqueue.Workers.pause` /
+  `resume` freeze the worker and what it started, never Ollama; Cancel, Remove and closing resume
+  first; the PC stays awake while a book is paused, since a frozen worker can't let go);
+  CleanRead's check waits at its next step (`CleanRead.App._stop_or_wait`, the PC may sleep).
+  `run_watched` doesn't count paused or asleep time as ffmpeg being stuck (`tests/test_pause.py`).
+- **Sexual words**: skinny dip(ping), chastity belt, naked photos/pictures/pics/selfies (just those
+  words muted); not "skinny dippers", "the naked eye", "the naked truth" (Castle S2E3).
+  CleanView keeps these in its own LINE_WORDS, so its cross-check lists them as differences.
+- **Innuendo, a conversation at a time** (CleanView 1.18.70; the owner: "yes to the check"), when
+  sexual references are on with the AI helper: `cleanlisten.sexual_talk` asks per 30 sentences
+  whether anything sexual is said, then which lines (exact words, checked against the line), then
+  each line alone. Used by CleanListen's `ai_assist` and CleanRead's `ai_find`; finds come in
+  unticked ("AI suggests"), and a line with a listed sexual word stays just the word. On gemma3:4b:
+  the old read caught 0 of 8 test innuendo lines, this 4 of 8, none of 60 innocent lines
+  (`tests/test_sexual_talk.py`). Costs about one extra question per 30 sentences (a quiet part
+  is one quick question), so a long book takes longer on a slow graphics card.
+
 **"Screw" the prison guard** (1.17.6, from CleanView 1.18.27, Jason's Shawshank review): "the hardest screw that ever walked a turn" isn't "screw that". `screw_noun()` in `cleanlisten.py` skips a "screw ..." phrase when the word before is in `SCREW_NOUN_AFTER` (the, a, loose, no, another, prison...) or is a word over 4 letters ending in "est" (hardest, meanest), except honest and modest. Same rule as CleanView's `cvcore.screw_noun`; CleanRead gets it through `find_language`.
 
 **A drink of water isn't drinking** (1.17.6, The Boxcar Children via CleanView): `NotSoftDrink` in `cleanread.py` wraps `DRINKING` and `SUBSTANCES` (CleanListen uses the same matchers) and leaves out "a drink" followed by "of" a soft drink (`SOFT_DRINKS`, with one word like cold/fresh/hot between) or "from the" brook, spring, well... (`WATER_PLACES`). "I'd like a drink, too" on its own is still flagged: only the sentences around it say it's water. Tests in `tests/test_soft_drinks.py`.

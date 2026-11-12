@@ -347,15 +347,122 @@ def kill_tree(proc):
         pass
 
 
+# ---------- Pause and Resume a book ----------
+# The owner, 2026-11-12 (CleanView 1.18.66): "should we have a pause buton next to the cancel button
+# when a check is happening", then "yes build it". A paused book's worker, and everything it started
+# (ffmpeg while saving, the speech model's helpers, Claude's), is frozen where it is and carries on
+# from there on Resume. The AI program (Ollama) is shared with CleanRead and CleanView, so it's never
+# frozen, even if this book started it: it finishes the question it's on and the answer waits. Other
+# books carry on. Cancel, Remove, closing the window and updating resume first (a frozen worker can't
+# stop), and nothing is left frozen when CleanListen ends.
+NEVER_FREEZE = ("ollama",)
+
+
+def process_tree(pid):
+    """[(pid, exe name)] of a process and everything it started, parents first."""
+    if os.name != "nt":
+        return [(pid, "")]
+    import ctypes
+    from ctypes import wintypes
+
+    class Entry(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_void_p),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    k.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    k.Process32FirstW.argtypes = k.Process32NextW.argtypes = (wintypes.HANDLE, ctypes.c_void_p)
+    k.CloseHandle.argtypes = (wintypes.HANDLE,)
+    snap = k.CreateToolhelp32Snapshot(0x2, 0)              # TH32CS_SNAPPROCESS
+    info = {}
+    if snap and snap != ctypes.c_void_p(-1).value:
+        e = Entry()
+        e.dwSize = ctypes.sizeof(Entry)
+        ok = k.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            info[e.th32ProcessID] = (e.th32ParentProcessID, e.szExeFile)
+            ok = k.Process32NextW(snap, ctypes.byref(e))
+        k.CloseHandle(snap)
+    out, seen = [(pid, info.get(pid, (0, ""))[1])], {pid}
+    grew = True
+    while grew:
+        more = [(c, name) for c, (par, name) in info.items() if par in seen and c not in seen and c != par]
+        grew = bool(more)
+        out += more
+        seen |= {c for c, _ in more}
+    return out
+
+
+def freeze(pid, on):
+    """Suspend (on) or resume one process. False if it couldn't be."""
+    if os.name != "nt":
+        return False
+    import ctypes
+    from ctypes import wintypes
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.OpenProcess.restype = wintypes.HANDLE
+    k.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k.CloseHandle.argtypes = (wintypes.HANDLE,)
+    nt = ctypes.WinDLL("ntdll")
+    fn = nt.NtSuspendProcess if on else nt.NtResumeProcess
+    fn.argtypes = (wintypes.HANDLE,)
+    h = k.OpenProcess(0x0800, False, pid)                  # PROCESS_SUSPEND_RESUME
+    if not h:
+        return False
+    try:
+        return fn(h) == 0
+    finally:
+        k.CloseHandle(h)
+
+
 class Workers:
     """One worker process per running book. on_message(key, dict) is called (on a reading
     thread) for every line a worker sends, and once with {"exit": code} when it ends."""
 
-    def __init__(self, on_message, python=None, runner=None):
+    def __init__(self, on_message, python=None, runner=None, freeze=None, tree=None):
         self.on_message = on_message
         self.python = python or sys.executable
         self.runner = str(runner or HERE / "bookrunner.py")
         self.procs = {}
+        self._freeze, self._tree = freeze or globals()["freeze"], tree or process_tree
+        self.frozen = {}            # key -> [pids frozen, in order]: the paused books
+        self._pause_lock = threading.RLock()
+        import atexit
+        atexit.register(self.resume_all)     # never leave a book frozen when CleanListen ends
+
+    def pause(self, key):
+        """Freeze this book's worker and what it started (not Ollama). True if it's paused."""
+        with self._pause_lock:
+            proc = self.procs.get(key)
+            if proc is None or proc.poll() is not None:
+                return False
+            if key in self.frozen:
+                return True
+            done = []
+            for pid, name in self._tree(proc.pid):
+                if any(n in (name or "").lower() for n in NEVER_FREEZE):
+                    continue
+                if self._freeze(pid, True):
+                    done.append(pid)
+            if not done:
+                return False
+            self.frozen[key] = done
+            return True
+
+    def resume(self, key):
+        with self._pause_lock:
+            for pid in reversed(self.frozen.pop(key, [])):
+                self._freeze(pid, False)
+
+    def paused(self, key):
+        return key in self.frozen
+
+    def resume_all(self):
+        for key in list(self.frozen):
+            self.resume(key)
 
     def start(self, job, task, threads):
         """task: "prepare" or "save". The job's details go in a file in its own folder."""
@@ -402,6 +509,8 @@ class Workers:
             if self.procs.get(key) is proc:
                 self.on_message(key, msg)
         code = proc.wait()
+        if self.procs.get(key) is proc:
+            self.frozen.pop(key, None)
         try:
             proc.stop_file.unlink()
         except OSError:
@@ -427,6 +536,7 @@ class Workers:
         proc = self.procs.get(key)
         if proc is None:
             return
+        self.resume(key)                    # a frozen worker can't stop
         self._ask_to_stop(proc)
 
         def later():
@@ -438,6 +548,7 @@ class Workers:
 
     def stop_all(self, wait=5.0):
         """When the window closes: ask every worker to stop, wait a little, then make sure."""
+        self.resume_all()                   # a frozen worker can't stop
         procs = list(self.procs.values())
         for p in procs:
             self._ask_to_stop(p)

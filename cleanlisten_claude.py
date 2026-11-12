@@ -63,6 +63,7 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "sleeping": "sleeping around or an affair",
               "unmarried": "unmarried couple living or sleeping together",
               "graphic": "graphic violence", "violence": "violence", "disturbing": "disturbing violence",
+              "medical": "medical scene",
               "nudity": "nudity", "implied": "implied nudity", "immodest": "immodest clothing",
               "smoking": "smoking", "drinking": "drinking", "drugs": "drug use",
               "gestures": "rude gesture",
@@ -95,11 +96,14 @@ KIND_RULES = {
            "news (a president and his interns); a reply that only reacts to a joke ('ha!', "
            "'that's disgusting') stays. Ordinary romance, affection, dating, marriage and kissing are fine, "
            "and so are pregnancy or babies, 'sex' meaning men or women ('the fair sex'), a polite "
-           "'it's a pleasure', and a body part in a threat.",
+           "'it's a pleasure', and a body part in a threat. A coroner's, medical examiner's, doctor's "
+           "or detective's case talk about a body or a crime (findings, rape or sexual assault, sex "
+           "offenders, evidence) is Medical, a separate choice, not this.",
     "gore": "Gore: cut descriptions that dwell on insides on the outside: organs, entrails, "
             "brains, mutilation or a body cut apart (several sentences of it). A single violent "
             "sentence - even a split skull - stays, as does saying someone was shot, stabbed, "
-            "beaten, killed or found dead. This family is fine with mystery-level violence.",
+            "beaten, killed or found dead. This family is fine with mystery-level violence. "
+            "Surgery or an autopsy is a medical scene, not this.",
     "religion": "Religious content: cut people explaining, preaching, teaching or debating "
                 "religious beliefs of any faith - Christian, Catholic (saints, the rosary, "
                 "purgatory, the Mass), Buddhist, Hindu, Muslim, Jewish, pagan or any other "
@@ -161,7 +165,18 @@ KIND_RULES = {
     "graphic": "Graphic violence: cut only prolonged, very graphic descriptions that dwell on "
                "blood, bloody wounds or a bloody body (several sentences of it). A single violent "
                "sentence - even blood seeping - stays, as does saying someone was shot, stabbed, "
-               "beaten, killed or found dead. This family is fine with mystery-level violence.",
+               "beaten, killed or found dead. This family is fine with mystery-level violence. "
+               "Surgery, an autopsy or a wound being treated is a medical scene, not this.",
+    "medical": "Medical scenes: cut graphic medical description - surgery or an operation, an "
+               "autopsy or a body on a morgue table, a doctor, nurse or medic stitching or treating "
+               "a bloody wound - and a needle going in: a shot, an injection, a blood draw, an IV "
+               "being put in, the dentist's needle, insulin - and a coroner's, medical examiner's, "
+               "doctor's or detective's case talk about a body or a victim: wounds and injuries, "
+               "blood, organs, cause or time of death, an autopsy or what was done to the body, or "
+               "rape, sexual assault, sex offenders or sexual evidence. A diagnosis, a doctor's visit, being in "
+               "hospital, or only mentioning pills, an IV bag or a pharmacy is fine. An attack or a "
+               "crime scene is not medical even with medics there, and injecting illegal drugs is "
+               "drug use, not this.",
     "disturbing": "Disturbing violence: cut torture, executions, cruelty to someone helpless or to "
                   "an animal, and the bloody aftermath of an accident (a car crash, a fall).",
     "nudity": "Nudity: cut sentences describing someone naked or their private parts shown or "

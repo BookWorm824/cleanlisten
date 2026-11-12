@@ -82,17 +82,24 @@ def run_watched(cmd, watch, stall=None, every=2.0):
     stall = STALL_SECONDS if stall is None else stall
     with tempfile.TemporaryFile() as err:
         p = popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
-        size, since = None, time.time()
+        size, since = None, time.monotonic()
         stuck = False
+        last = since
         while p.poll() is None:
             time.sleep(every)
+            t = time.monotonic()
+            if t - last > every * 5 + 10:
+                # this process was paused (CleanListen's Pause freezes it with ffmpeg) or the PC
+                # slept: that time isn't ffmpeg being stuck
+                since += t - last
+            last = t
             try:
                 now = os.path.getsize(watch)
             except OSError:
                 now = -1
             if now != size:
-                size, since = now, time.time()
-            elif time.time() - since > stall:
+                size, since = now, t
+            elif t - since > stall:
                 stuck = True
                 p.kill()
                 p.wait()
@@ -294,6 +301,9 @@ SEXUAL_WORDS = [
     r"cockblock(s|ed|er|ing)?", r"schlongs?", r"todgers?", r"dildos?",
     r"nymphos?", r"nymphomaniacs?",   # 50 First Dates (CleanView 1.18.34); not "nymph" (a water nymph)
     r"bondage", r"safewords?",        # the owner, 2026-11-08 (CleanView 1.18.39); see bondage_slavery()
+    # Castle S2E3 (CleanView 1.18.69, the owner, 2026-11-12): "skinny-dipping" is one word once the
+    # hyphen goes; not "skinny dippers" (police talk: "a couple of skinny dippers found her")
+    r"skinnydip(ping|ped|s)?",
 ]
 SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
@@ -308,7 +318,13 @@ SEXUAL_PHRASES = [
     ("thanks", "for", "the", "quickie"),
     ("private", "parts"),   # 50 First Dates (CleanView 1.18.34); not "a private party"
     ("safe", "word"), ("safe", "words"),   # not "a safe word to use" (SAFE_WORD_NOT_NEXT)
-] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
+    # Castle S2E3 (CleanView 1.18.69, the owner, 2026-11-12); not "skinny dippers", "the naked eye"
+    # or "the naked truth". Coroners' and detectives' case talk ("any signs of sexual assault?") is
+    # left alone: the owner, "leave coroners talk"
+    ("skinny", "dip"), ("skinny", "dips"), ("skinny", "dipped"), ("skinny", "dipping"),
+    ("chastity", "belt"), ("chastity", "belts"),
+] + [("naked", w) for w in ("photo", "photos", "picture", "pictures", "pic", "pics", "selfie", "selfies")
+     ] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
                           "jacking", "jackin")] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
      for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
                "anybody", "each", "everyone", "everybody")]
@@ -555,7 +571,15 @@ def gay_happy(words, i):
         words[i + 1:i + 2] == ["and"] and i + 2 < len(words) and words[i + 2] in GAY_HAPPY_WORDS)
 
 
+# Coroner, medical examiner, doctor and detective case talk is part of Medical (CleanView 1.18.72
+# made it a box, "Coroner and doctor talk"; for books the owner chose, 2026-11-12, "Part of Medical,
+# no new box"). With Medical off it is left alone: not muted as a sexual word either.
+CASE_TALK_NEXT = {"assault", "assaults", "assaulted", "offender", "offenders", "offense", "offenses",
+                  "offence", "offences", "crime", "crimes", "trafficking", "trafficker", "traffickers",
+                  "abuse", "abused", "abuser", "abusers", "predator", "predators", "harassment",
+                  "exploitation"}
 INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
+                 **{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
                  # turf: "sod houses", "a sod roof" (CleanView 1.18.11, from CleanRead)
@@ -1813,16 +1837,27 @@ AI_TYPES = {
            "but a follow-up that carries the joke on or calls back to it counts (a reply that only "
            "reacts to a joke, plainly mentioning underwear, ordinary romance, "
            "affection and kissing, pregnancy or babies, 'sex' meaning men or women ('the fair "
-           "sex'), a polite 'it's a pleasure', or a body part in a threat are NOT this)",
+           "sex'), a polite 'it's a pleasure', a body part in a threat, or a coroner's, medical examiner's, doctor's or detective's case talk about a body or a crime (findings, rape or sexual assault, sex offenders, evidence), which is a separate choice, are NOT this)",
     # judged by what's happening, not by where they are or what they wear (Lauren, 2026-10-30:
     # "sometimes a sex scene is just sitting and wearing clothes", and oral/hand pleasures)
     "sex": "part of a sex scene, judged by what is happening, not by where they are or whether "
            "they are dressed: it includes oral sex and touching someone's private parts (two "
            "people only talking, sitting or lying in bed is NOT this)",
     "graphic": "a graphic description of blood, bloody wounds or injuries, or a bloody body "
-               "(simply saying someone died, was shot or was found dead is NOT this)",
+               "(simply saying someone died, was shot or was found dead is NOT this, and neither is "
+               "a medical scene: surgery, an autopsy, or a doctor or nurse treating a wound)",
     "gore": "a description of insides on the outside: organs, entrails, brains, or a body cut "
-            "apart or dismembered",
+            "apart or dismembered (in surgery or an autopsy it is a medical scene, NOT this)",
+    "medical": "a medical scene described in graphic detail: surgery or an operation, an autopsy or "
+               "a body on a morgue table, a doctor, nurse or medic stitching or treating a bloody "
+               "wound, or a needle going in (a shot, an injection, a blood draw, an IV being put "
+               "in, the dentist's needle, insulin); or a coroner's, medical examiner's, doctor's or "
+               "detective's case talk about a body or a victim: wounds and injuries, blood, organs, "
+               "cause or time of death, an autopsy or what was done to the body, or rape, sexual "
+               "assault, sex offenders or sexual evidence (a diagnosis, a doctor's visit, being in "
+               "hospital, or only mentioning pills, an IV bag or a pharmacy is NOT this; an attack "
+               "or a crime scene is NOT this even with medics there; injecting illegal drugs is "
+               "drug use, NOT this)",
     "violence": "violence: a fight, a shooting, a stabbing, a beating or an attack, or a killing "
                 "heard or described by what follows (a gunshot, then someone or an animal is dead) "
                 "(saying someone died of illness or old age, or a weapon simply mentioned, is NOT "
@@ -2053,16 +2088,17 @@ def _read():
 
 # CleanView's sentence filters for books (1.11.0): each is its own box, with CleanRead's word lists
 MORE_KINDS = ("sleeping", "unmarried", "nudity", "implied", "immodest", "violence", "disturbing",
-              "smoking", "drinking", "drugs", "gestures")
+              "medical", "smoking", "drinking", "drugs", "gestures")
 MORE_LABELS = {"sleeping": "sleeping around", "unmarried": "unmarried couples living together",
                "nudity": "nudity", "implied": "implied nudity", "immodest": "immodest clothing",
                "violence": "violence", "disturbing": "disturbing violence", "smoking": "smoking",
                "drinking": "drinking", "drugs": "drug use", "gestures": "rude gestures",
+               "medical": "medical scene",
                "graphic": "graphic violence", "kiss_ss": "same-sex kissing"}
 _MATCHERS = {"sleeping": "SLEEPING", "unmarried": "UNMARRIED", "nudity": "NUDITY",
              "implied": "IMPLIED", "immodest": "IMMODEST", "violence": "VIOLENCE",
              "disturbing": "DISTURBING", "smoking": "SMOKING", "drinking": "DRINKING",
-             "drugs": "DRUGS", "gestures": "GESTURES"}
+             "drugs": "DRUGS", "gestures": "GESTURES", "medical": "MEDICAL"}
 
 
 def sentence_hit(kind, words):
@@ -2095,6 +2131,42 @@ def gore_level(words):
     return "gore" if any(p.match(w) for w in words for p in GORE_INSIDES) else "graphic"
 
 
+# Medical (the owner, 2026-11-12, via CleanView 1.18.62/1.18.63: "a lot of the gore that gets flagged
+# is medical. would it be good to create a separate filter", "autopsies are medical only for adults
+# though. ticked everywhere else"; needles too, "but be sure drugs are separated")
+# A gory passage in a medical setting is "medical", not graphic or gore: surgery, an autopsy or a
+# morgue, stitching or treating a wound. A doctor, nurse or medic only counts when it isn't an
+# attack or a crime ("a crime scene or an attack is not medical, even with medics there").
+MEDICAL_PLACES = {"autopsy", "autopsies", "morgue", "mortuary", "surgery", "surgeries", "surgeon",
+                  "surgeons", "surgical", "scalpel", "scalpels", "incision", "incisions", "suture",
+                  "sutures", "sutured", "suturing", "forceps", "pathologist", "operation"}
+MEDICAL_PAIRS = {("operating", "table"), ("operating", "room"), ("operating", "theater"),
+                 ("operating", "theatre"), ("medical", "examiner"), ("emergency", "room"),
+                 ("first", "aid")}
+MEDICAL_PEOPLE = {"doctor", "doctors", "doc", "nurse", "nurses", "medic", "medics", "paramedic",
+                  "paramedics", "physician", "physicians", "hospital", "clinic", "infirmary",
+                  "bandage", "bandages", "bandaged", "stitches", "stitched", "stitching", "antiseptic",
+                  "gauze", "syringe", "needle", "iodine", "dentist", "vet", "veterinarian"}
+ATTACK_WORDS = {"attack", "attacked", "attacker", "attackers", "attacking", "stab", "stabbed",
+                "stabbing", "murder", "murdered", "murderer", "murders", "killer", "killers", "crime",
+                "assault", "assaulted", "fight", "fighting", "fought", "struck", "slashed", "mauled"}
+
+
+def medical_setting(words, around=()):
+    """Is this gory passage a medical scene? around: the words just before and after it, where
+    an attack ("the killer stabbed her") may be told although the passage itself is only blood
+    and paramedics."""
+    ws = set(words)
+    if ws & MEDICAL_PLACES or any(p in MEDICAL_PAIRS for p in zip(words, words[1:])):
+        return True
+    return bool(ws & MEDICAL_PEOPLE) and not (ws | set(around)) & ATTACK_WORDS
+
+
+def gory_kind(words, around=()):
+    """A gory passage's kind: medical, gore (insides) or graphic (blood)."""
+    return "medical" if medical_setting(words, around) else gore_level(words)
+
+
 def _ai_backed(kind, words):
     """Does a passage the AI on this PC flagged contain anything the word lists recognise
     for that kind? (Its unbacked finds are mostly false alarms, so they start unticked.)"""
@@ -2103,6 +2175,8 @@ def _ai_backed(kind, words):
             return is_explicit(words) or bool(find_language(words, ["sexual"]))
         if kind == "gore":
             return is_gory(words)
+        if kind == "medical":
+            return sentence_hit(kind, words) or is_gory(words) and medical_setting(words)
         if kind == "religion":
             return religion_score(words) > 0 or blames_god(words) or invokes_providence(words)
         if kind == "crude":
@@ -2259,6 +2333,13 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         conf = verify(f"Does the marked sentence clearly contain {T[kind]}?", i)
         if conf:
             found.setdefault(kind, {})[i] = conf
+    if "ref" in kinds:
+        # innuendo, a conversation at a time; for you to decide (unticked), and a line with a word
+        # on the list stays "just the word"
+        for i in sexual_talk([t for _, _, t in sents], lambda p, s, t: ai.chat(p, schema=s, timeout=t),
+                             T["ref"], cancel, say):
+            if not find_language(sent_norm[i], ["sexual"]):
+                found.setdefault("ref", {}).setdefault(i, "medium")
 
     # ---- 3. second opinion on what the word lists flagged
     checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai") and not sc.get("strict")]
@@ -2379,6 +2460,68 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     say(1.0, "AI check done")
     return scenes
+
+
+# Innuendo, a conversation at a time (CleanView 1.18.70; the owner, 2026-11-12: "yes to the check").
+# Reading 40 sentences for every filter at once, the small AI here missed innuendo ("Take your pants
+# off!", "code for 'do me'"): 0 of 8 in a test. Three questions per 30 sentences: does anyone say
+# something sexual (most of a book: no, one quick question); if so, which lines, with their exact
+# words (a line whose words aren't really there is dropped); then each line on its own. On the same
+# test: 4 of 8, and none of 60 innocent lines (some close: "I could just eat you up," said Grandma).
+SEXUAL_TALK_EXTRA = ("Innuendo counts too: a suggestive remark with a sexual meaning in context (an "
+                     "invitation to undress or to have sex, a line that hints at sex), talk of sleeping "
+                     "with someone to get ahead, naked photos.")
+SEXUAL_TALK_CHUNK = 30
+
+
+def sexual_talk(texts, ask, ref_def, cancel=None, progress=None, chunk=SEXUAL_TALK_CHUNK):
+    """The sentences (indices into texts) that say something sexual, innuendo included.
+    ask(prompt, schema, timeout) -> dict (raises if the AI didn't answer)."""
+    say = progress or (lambda f, m: None)
+    yes = {"type": "object", "properties": {"sexual": {"type": "boolean"}}, "required": ["sexual"]}
+    which = {"type": "object", "properties": {"lines": {"type": "array", "items": {
+        "type": "object", "properties": {"n": {"type": "integer"}, "words": {"type": "string"}},
+        "required": ["n", "words"]}}}, "required": ["lines"]}
+    fits = {"type": "object", "properties": {"fits": {"type": "boolean"}}, "required": ["fits"]}
+
+    def plain(s):
+        return " ".join(w for w in (norm(t) for t in str(s).split()) if w)
+
+    out = set()
+    starts = list(range(0, len(texts), chunk))
+    for n, a in enumerate(starts):
+        if cancel and cancel():
+            raise KeyboardInterrupt
+        say(n / max(len(starts), 1), f"AI is listening for innuendo \u00b7 {n + 1} of {len(starts)}")
+        part = [" ".join(str(t).split()) for t in texts[a:a + chunk]]
+        listing = "\n".join(f"{k + 1}. {t}" for k, t in enumerate(part))
+        try:
+            if not ask("Here is part of a book:\n\n" + listing + "\n\nDoes anyone here say something "
+                       "sexual, including innuendo or a double meaning that is sexual in this context? "
+                       'Answer in JSON: {"sexual": true or false}', yes, 120).get("sexual"):
+                continue
+            lines = ask("Here is part of a book:\n\n" + listing + "\n\nWhich lines say something "
+                        "sexual, including innuendo or a double meaning that is sexual in this context? "
+                        "For each, give its number and copy the exact words. Answer in JSON: "
+                        '{"lines": [{"n": number, "words": "exact words"}]}', which, 120).get("lines", [])
+        except Exception:
+            continue
+        for f in lines if isinstance(lines, list) else []:
+            k = f.get("n", 0) - 1 if isinstance(f, dict) and isinstance(f.get("n"), int) else -1
+            q = plain(f.get("words", "")) if k >= 0 else ""
+            if not 0 <= k < len(part) or not q or q not in plain(part[k]) or a + k in out:
+                continue
+            ex = "\n".join(x for x in (part[k - 1] if k else "", ">>> " + part[k] + " <<<",
+                                        part[k + 1] if k + 1 < len(part) else "") if x)
+            try:
+                v = ask(ex + f"\n\nDoes the marked line contain {ref_def}? {SEXUAL_TALK_EXTRA}\n"
+                        "Count innuendo and double meanings that are sexual in this context. Answer false "
+                        'if it doesn\'t fit. Answer in JSON: {"fits": true or false}', fits, 120)
+            except Exception:
+                continue
+            if v.get("fits") is True:
+                out.add(a + k)
+    return out
 
 
 def in_background(work):
@@ -2726,11 +2869,15 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     if find_sex:
         say(0.97, "Looking for sex scenes\u2026")
         scenes += find_passages(sex_score, SEX_C, SEX_WINDOW_SCORE, "sex")
-    if find_gore or find_graphic:
+    if find_gore or find_graphic or "medical" in more:
         say(0.98, "Looking for gory descriptions\u2026")
+        on = {"gore": find_gore, "graphic": find_graphic, "medical": "medical" in more}
         for sc in find_passages(gore_score, GORE_C, GORE_WINDOW_SCORE, "gore"):
-            sc["kind"] = gore_level([norm(w) for w in sc["text"].split()])
-            if find_gore if sc["kind"] == "gore" else find_graphic:
+            # a medical one is cut only if Medical is ticked, and then even if Gore isn't
+            around = [w["n"] for w in asr if w["part"] == sc["part"] and
+                      (sc["s"] - 15 <= w["s"] < sc["s"] or sc["e"] < w["s"] <= sc["e"] + 5)]
+            sc["kind"] = gory_kind([norm(w) for w in sc["text"].split()], around)
+            if on[sc["kind"]]:
                 scenes.append(sc)
     if find_refs:
         # any sentence that talks about sex, even in passing

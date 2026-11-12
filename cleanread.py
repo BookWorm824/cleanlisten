@@ -894,6 +894,49 @@ DRUGS = Matcher(
              "smoked|smoking|smoke|smokes a joint",
              "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line",
              "shot|shooting up"])
+# Medical (the owner, 2026-11-12, via CleanView 1.18.62/1.18.63: "a lot of the gore that gets flagged
+# is medical. would it be good to create a separate filter", "autopsies are medical only for adults
+# though. ticked everywhere else"; needles too, "but be sure drugs are separated")
+# A needle going in or a wound being stitched, one sentence at a time (a gory medical passage is
+# found with the gory descriptions, cleanlisten.gory_kind). Not "fuel injection", "a shot at the
+# title", "a shot of whiskey", "in stitches", sewing, or only mentioning pills or an IV bag; and
+# never drug use ("shooting up", heroin...), which stays under Drugs.
+_MEDICAL = Matcher(
+    phrases=["!fuel|cash|capital|budget|money injection|injections",
+             "injected him|her|me|you|them|himself|herself|myself|yourself",
+             "flu|booster|tetanus|allergy|insulin|rabies|measles|polio|covid shot|shots",
+             "insulin injection|injections|pen|needle|needles",
+             "get|got|gets|getting|needs|needed|need a|her|his|my|your|their shot|shots "
+             "!at|of|in|for|from|with|to|on|and",
+             "gave|give|gives|giving him|her|me|you|them a shot|shots !at|of|in|for|from|with|to|on|and",
+             "put|puts|putting|started|starting|start|inserted|inserting|insert|placed|placing an|the|his|her|my|another iv",
+             "iv in|into his|her|my|your|the arm|hand|vein|veins",
+             "needle in|into his|her|my|your|their|the arm|vein|veins|skin|hand|gum|gums|thigh|leg|shoulder|bottom|neck",
+             "drew|draw|draws|drawing|drawn some|his|her|my|your|their blood",
+             "blood draw|draws",
+             "stitched|stitching|sutured the|his|her|my|your|a wound|cut|cuts|gash|arm|leg|head|forehead|face|hand|lip|chin",
+             "stitch|stitched|stitching him|her|me|you up",
+             "needed|need|needs|got|get|getting few|five|six|seven|eight|ten|twelve stitches",
+             "needed|need|needs|got|get|getting stitches",
+             # coroner and doctor case talk (CleanView 1.18.72's list); not "a tox screen", "he'll be
+             # fine", "time to go home", "a wound to my pride"
+             "sexual|sexually assault|assaults|assaulted", "sex|sexual offender|offenders",
+             "rape kit|kits", "was|been|were|being|is raped", "cause|time of death",
+             "stab|gunshot|exit|entry|defensive wound|wounds", "blunt force trauma|injury|injuries",
+             "ligature mark|marks", "rigor mortis", "post mortem", "postmortem",
+             "single|fatal|massive|single blow|wound|wounds to the head|chest|back|neck|throat"],
+    words=[r"syringes?", r"hypodermics?", r"novocaine?", r"lidocaine", r"scalpels?", r"incisions?",
+           r"sutur(e|es|ed|ing)", r"autops(y|ies)", r"postmortems?", r"lividity", r"gsw"])
+DRUG_NEEDLE = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", "dope", "smack", "meth",
+               "crack", "cocaine", "speedball", "overdose", "overdosed", "high"}
+
+
+def MEDICAL(words, near=None):
+    """A needle going in or a wound being stitched (not drug use)."""
+    sp = _MEDICAL(words)
+    return sp if sp and not DRUGS(words) and not DRUG_NEEDLE & set(words) else []
+
+
 # Not about a body (CleanRead reports, 2026-11-03): "a topless automobile", "the fear in her
 # eyes naked", "my discomfort stood naked", "the naked eye", "the naked truth". Still found:
 # "a topless dancer", "stood naked and unashamed".
@@ -1106,6 +1149,9 @@ SCAN = [
              phrases=["beat|beats|beating|beaten him|her|them|me|you|us up", "beat up",
                       "shot him|her|them|me|you|at", "slit his|her|their throat"])),
     ("gore", 3, "Gory descriptions", "graphic, bloody descriptions of injuries or bodies", None),
+    ("medical", 3, "Medical scenes",
+     "surgery, autopsies, wounds being treated, needles and shots, coroner and doctor case talk",
+     MEDICAL),
     ("scary", 3, "Scary & creepy moments", "monsters, nightmares, terror, screaming, skeletons",
      Matcher(words=[r"monsters?", r"monstrous", r"nightmares?", r"terrif(ied|ying)", r"terror",
                     r"horrif(ied|ying)", r"horrors?", r"creep(y|ier|iest)", r"scream(s|ed|ing)?",
@@ -1281,7 +1327,7 @@ def _sentence_runs(book, hit):
 # just "poured himself a whiskey". Kinds about what a sentence means (a joke, innuendo, an
 # affair, anger at God) still take the whole sentence, as in CleanView.
 PART_KINDS = {"kiss", "kiss_ss", "flirt", "nudity", "implied", "immodest", "violence", "graphic",
-              "disturbing", "smoking", "drinking", "drugs", "gestures", "bully", "disrespect",
+              "disturbing", "medical", "smoking", "drinking", "drugs", "gestures", "bully", "disrespect",
               "holiday", "birthday", "magic", "darkmagic", "vampires"}
 PART_MIN_WORDS = 14      # shorter sentences are cut whole
 PART_KEEP_WORDS = 5      # and so is one where less than this would be left
@@ -1642,6 +1688,14 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
             continue
         if res.get("fits") is True and res.get("confidence") in ("high", "medium"):
             found[(i, kind)] = res["confidence"]
+    if "ref" in defs:
+        # innuendo, a conversation at a time (CleanView 1.18.70, cleanlisten.sexual_talk); for you to
+        # decide, and a line with a word on the list stays "just the word"
+        for i in E.sexual_talk([book.sent_text(i) for i in range(S)],
+                               lambda p, s, t: answers.ask(ai, p, s, t), defs["ref"], cancel,
+                               lambda f, m: say(0.75 + 0.25 * f, m)):
+            if not E.find_language(book.sent_words(i), ["sexual"]):
+                found.setdefault((i, "ref"), "medium")
     return found
 
 
@@ -1905,6 +1959,13 @@ def scan(book, use_ai=False, progress=None, cancel=None):
                               "passage": True, "src": "list",
                               "key": item_key(" ".join(book.paras[x].text for x in run_))})
         res["cats"][key] = {"label": label, "group": SCAN_GROUPS[grp], "desc": desc, "items": items}
+    if "gore" in res["cats"] and "medical" in res["cats"]:
+        # a gory passage in a medical setting is a medical scene (1.17.21)
+        gore = res["cats"]["gore"]["items"]
+        med = [it for it in gore if E.medical_setting([E.norm(w) for w in it["text"].split()])]
+        res["cats"]["gore"]["items"] = [it for it in gore if it not in med]
+        res["cats"]["medical"]["items"] = sorted(res["cats"]["medical"]["items"] + med,
+                                                 key=lambda x: (x["para"], x.get("si", 0)))
 
     say(0.47, "Counting language…")
     for i, j, cat in book.lang_hits:
@@ -2161,7 +2222,7 @@ CLEAN_LABELS = {"sex": "Explicit scenes", "ref": "Sexual references", "gore": "G
                 "sleeping": "Sleeping around & affairs", "unmarried": "Unmarried couples together",
                 "nudity": "Nudity", "implied": "Implied nudity", "immodest": "Immodest clothing",
                 "smoking": "Smoking", "drinking": "Drinking", "drugs": "Drug use",
-                "gestures": "Rude gestures", **E.TOPIC_LABELS}
+                "gestures": "Rude gestures", "medical": "Medical scenes", **E.TOPIC_LABELS}
 
 
 def _upgrade(opts):
@@ -2172,6 +2233,7 @@ def _upgrade(opts):
         for k in ("smoking", "drinking", "drugs"):
             opts.setdefault(k, opts["substances"])
     opts.setdefault("graphic", opts.get("gore"))
+    opts.setdefault("medical", bool(opts.get("gore") or opts.get("graphic")))   # before 1.17.21
     opts.setdefault("samesexwords", opts.get("relationships"))
     return opts
 
@@ -2216,12 +2278,12 @@ def analyze(book, opts, progress=None, cancel=None):
     if opts.get("sex"):
         say(0.1, "Looking for sex scenes…")
         add_passages("sex")
-    if opts.get("gore") or opts.get("graphic"):
+    if opts.get("gore") or opts.get("graphic") or opts.get("medical"):
         say(0.15, "Looking for gory descriptions…")
         n0 = len(cuts)
         add_passages("gore")
-        for c in cuts[n0:]:            # graphic (blood) or gore (insides), as in CleanView
-            c["kind"] = E.gore_level([E.norm(w) for w in c["raw"].split()])
+        for c in cuts[n0:]:            # graphic (blood), gore (insides) or medical, as in CleanView
+            c["kind"] = E.gory_kind([E.norm(w) for w in c["raw"].split()])
         cuts[n0:] = [c for c in cuts[n0:] if opts.get(c["kind"])]
     if "preach" in rparts:
         say(0.2, "Looking for religious content…")

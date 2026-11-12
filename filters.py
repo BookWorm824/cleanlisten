@@ -56,6 +56,8 @@ SECTIONS = [
         ("violence", "Violence  (fights, shootings, attacks)", False),
         ("graphic", "Graphic violence  (blood, bloody wounds)", True),
         ("gore", "Gore  (insides showing, dismemberment)", True),
+        ("medical", "Medical  (surgery, autopsies, coroner and doctor talk, wounds being treated, "
+                    "needles)", False),
         ("disturbing", "Disturbing  (torture, executions, cruelty, bloody accidents)", False)]),
     ("Other", 2, [
         ("smoking", "Smoking", False), ("drinking", "Drinking alcohol", False),
@@ -101,6 +103,9 @@ def _upgrade(ticks):
             t.setdefault(k, bool(t["substances"]))
     if "gore" in t:
         t.setdefault("graphic", t["gore"])
+    if "gore" in t or "graphic" in t:
+        # saved before the Medical box (1.17.21): it follows gory descriptions until you tick it
+        t.setdefault("medical", bool(t.get("gore") or t.get("graphic")))
     if "religion_strict" in t:
         t.setdefault("religion_prayers", t["religion_strict"])
     return {k: v for k, v in t.items() if k in STANDARD}
@@ -184,7 +189,8 @@ def listen_kwargs(t, mywords=()):
         find_bully=bool(t.get("bully")), find_disrespect=bool(t.get("disrespect")),
         find_flirt=bool(t.get("flirt")), find_topics=[k for k in TOPICS if t.get(k)],
         more=[k for k in ("sleeping", "unmarried", "nudity", "implied", "immodest", "violence",
-                          "disturbing", "smoking", "drinking", "drugs", "gestures") if t.get(k)],
+                          "disturbing", "medical", "smoking", "drinking", "drugs", "gestures")
+              if t.get(k)],
         kiss=t.get("kiss", "keep"), kiss_ss=t.get("kiss_ss", "keep"), mine=own_phrases(mywords))
 
 
