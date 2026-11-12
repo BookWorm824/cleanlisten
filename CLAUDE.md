@@ -665,6 +665,18 @@ shows a new pattern, say what you inferred so she can correct it.
 
 **A lone "the affair" / "an affair"** is sleeping around (1.17.20, as CleanView 1.18.51: Castle's "How long was the affair?"), one phrase in `cleanread._CASUAL`, which CleanListen's `sleeping_hit` uses too; not "quite/such/what an affair", "the affair of", "your affair", "a family affair" or "affairs" (`tests/test_lone_affair.py`).
 
+**The filters in folding sections** (as CleanView 1.18.74; the owner, 2026-11-12: "send a message to
+the other 3 programs to create the redone tick boxes like the clean view format", then for ReadAloud
+"read along does a different job so it doesnt need that format"): `filters.SECTIONS` is eight
+sections by topic (Bad language with her own words, Sex and nudity, Romance and relationships,
+Violence, Medical, Attitude, Smoking/drinking/drugs, Faith, holidays and magic; same keys, presets
+and saved ticks). `build_boxes` draws each as one line until opened: a box ticked, empty or a dash
+for some (`head_images`), the name, "3 of 5 ticked", "Choose which…"/"Hide"; the box ticks all of a
+section (or, when all are, unticks; kissing menus to "Cut all kisses"/"Keep"; religion with all its
+parts, and it counts only with a part). Folded by default; open ones remembered in filters.json
+(`open_sections`, shared by both apps). CleanRead's tick boxes are CleanListen's rounded ✓ ones (the
+owner: "Yes, real ticks"; the built-in ✗ read as "not taken out"). `tests/test_sections.py`.
+
 **From CleanView, 2026-11-12 (the owner's "every app" rule; all in one update):**
 - **Medical**, a box after Gore ("Medical  (surgery, autopsies, wounds being treated, needles and
   shots)"): ticked for Young kids, Kids and Teens, not Adults; settings saved before it follow gore or

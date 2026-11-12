@@ -121,12 +121,66 @@ class App(tk.Tk):
         self.after(100, self._poll)
 
     # ---------- look ----------
+    @staticmethod
+    def _tick_image(size, fill, border, tick):
+        """A rounded tick box drawn pixel by pixel (tkinter can't load SVG); CleanListen's."""
+        img = tk.PhotoImage(width=size, height=size)
+        r = size * 0.22
+
+        def inside(x, y, inset):
+            lo, hi, rr = inset, size - inset, max(0.0, r - inset)
+            px, py = x + 0.5, y + 0.5
+            if not (lo <= px <= hi and lo <= py <= hi):
+                return False
+            cx = min(max(px, lo + rr), hi - rr)
+            cy = min(max(py, lo + rr), hi - rr)
+            return (px - cx) ** 2 + (py - cy) ** 2 <= rr * rr
+
+        def near_tick(x, y):
+            px, py = (x + 0.5) / size, (y + 0.5) / size
+            for (ax, ay), (bx, by) in (((0.24, 0.52), (0.43, 0.70)), ((0.43, 0.70), (0.77, 0.32))):
+                dx, dy = bx - ax, by - ay
+                k = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+                if (px - ax - k * dx) ** 2 + (py - ay - k * dy) ** 2 <= 0.075 ** 2:
+                    return True
+            return False
+
+        width = max(1.0, size / 14)
+        for y in range(size):
+            for x in range(size):
+                if not inside(x, y, 0):
+                    continue
+                c = fill if inside(x, y, width) else border
+                if tick and near_tick(x, y):
+                    c = "#FFFFFF"
+                img.put(c, (x, y))
+        return img
+
     def _style(self):
         s = ttk.Style(self)
         s.theme_use("clam")
         s.configure(".", background=BG, foreground=INK, font=(FONT, 10))
         s.configure("TCheckbutton", background=CARD, font=(FONT, 10))
         s.map("TCheckbutton", background=[("active", CARD)])
+        # rounded tick boxes with a real tick, as CleanListen's (the owner, 2026-11-12: "Yes, real
+        # ticks"): the built-in ones show an ✗, which read as "not taken out" beside the sections
+        try:
+            size = round(15 * max(1.0, self.winfo_fpixels("1i") / 96.0))
+            self._ticks = {k: self._tick_image(size, *v) for k, v in {
+                "off": ("#FFFFFF", "#9C958C", False), "hover": ("#FFFFFF", ACCENT, False),
+                "on": (ACCENT, ACCENT, True), "on_hover": (ACCENT_DK, ACCENT_DK, True),
+                "off_dis": ("#F1EEEA", "#C9C3BB", False), "on_dis": ("#A9C2BC", "#A9C2BC", True)}.items()}
+            t = self._ticks
+            s.element_create("Tick.indicator", "image", t["off"],
+                             ("disabled", "selected", t["on_dis"]), ("disabled", t["off_dis"]),
+                             ("active", "selected", t["on_hover"]), ("selected", t["on"]),
+                             ("active", t["hover"]), width=size + round(size * 0.5), sticky="w")
+            s.layout("TCheckbutton", [("Checkbutton.padding", {"sticky": "nswe", "children": [
+                ("Tick.indicator", {"side": "left", "sticky": ""}),
+                ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
+                    ("Checkbutton.label", {"sticky": "nswe"})]})]})])
+        except tk.TclError:
+            pass      # keep the built-in tick boxes
         s.configure("TRadiobutton", background=CARD, font=(FONT, 11, "bold"))
         s.map("TRadiobutton", background=[("active", CARD)])
         s.configure("Accent.TButton", background=ACCENT, foreground="white",

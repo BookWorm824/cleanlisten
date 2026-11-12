@@ -25,49 +25,55 @@ FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 KISS_LEVELS = (("keep", "Keep"), ("passionate", "Cut passionate kisses"), ("all", "Cut all kisses"))
 RELIGION_PARTS = (("preach", "Preaching"), ("anger", "Anger at God"), ("prayers", "Prayers & verses"))
 # (heading, columns, [(key, label, ticked in this family's book standard)]). A kissing row is
-# (key, label, level); "religion" gets its parts underneath.
+# (key, label, level); "religion" gets its parts underneath. In sections by topic, each with a box
+# that ticks all of it and folding away to one line, as CleanView 1.18.74 (the owner, 2026-11-12:
+# "send a message to the other 3 programs to create the redone tick boxes like the clean view
+# format"; when it was designed: "a main box for each category to tick all if wanted, but if only
+# some of the subcategories are wanted just those can be ticked. vid angel had a system like that",
+# "maybe not as long", "lets make medical anything its own category"). Same keys as before.
 SECTIONS = [
-    ("Language", 1, [
+    ("Bad language", 1, [
         ("swearing", "Swearing  (f-word, s-word, b-word…)", True),
         ("mild", "Mild words  (damn, hell, crap, “screw you”)", True),
         ("deity", "God's name used as a swear", True),
         ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
         ("sexual", "Sexual words  (sex, sexy…)", True),
-        ("samesexwords", "Words about same-sex relationships  (gay, lesbian…)", True),
         ("rude", "Rude words kids copy  (stupid, dumb, idiot, shut up…)", False),
-        ("refs", "Sexual references and innuendo", True),
-        ("crude", "Crude humor  (toilet and gross-out jokes)", True),
-        ("bully", "Bullying and mocking", False),
-        ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
-        ("religion", "Religious content", True)]),
+        ("samesexwords", "Words about same-sex relationships  (gay, lesbian…)", True)]),
     ("Sex and nudity", 1, [
+        ("refs", "Sexual references and innuendo", True),
+        ("sex", "Sex scenes", True),
         ("nudity", "Nudity  (someone described naked)", False),
         ("implied", "Implied nudity  (under sheets, in towels, bare backs)", False),
-        ("sex", "Sex scenes", True),
         ("immodest", "Immodest clothing  (swimsuits, underwear, sexy dancing)", False),
-        ("sleeping", "Sleeping around  (casual sex, affairs)", False)]),
-    ("Kissing and relationships", 1, [
+        ("gestures", "Rude and sexual gestures  (the middle finger, crude motions)", False)]),
+    ("Romance and relationships", 1, [
         ("kiss", "Man & woman kissing", "keep"),
         ("kiss_ss", "Same-sex kissing", "passionate"),
-        ("relationships", "Same-sex relationships  (flirting, talk and intimate scenes)", True),
+        ("sleeping", "Sleeping around  (casual sex, affairs)", False),
         ("unmarried", "Unmarried couples living or sleeping together", False),
+        ("relationships", "Same-sex relationships  (flirting, talk and intimate scenes)", True),
         ("flirt", "Flirting", False)]),
     ("Violence", 1, [
         ("violence", "Violence  (fights, shootings, attacks)", False),
         ("graphic", "Graphic violence  (blood, bloody wounds)", True),
         ("gore", "Gore  (insides showing, dismemberment)", True),
-        ("medical", "Medical  (surgery, autopsies, coroner and doctor talk, wounds being treated, "
-                    "needles)", False),
         ("disturbing", "Disturbing  (torture, executions, cruelty, bloody accidents)", False)]),
-    ("Other", 2, [
+    ("Medical", 1, [
+        ("medical", "Medical  (surgery, autopsies, coroner and doctor talk, wounds being treated, "
+                    "needles)", False)]),
+    ("Attitude", 1, [
+        ("bully", "Bullying and mocking", False),
+        ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
+        ("crude", "Crude humor  (toilet and gross-out jokes)", True)]),
+    ("Smoking, drinking and drugs", 3, [
         ("smoking", "Smoking", False), ("drinking", "Drinking alcohol", False),
-        ("drugs", "Drug use", False),
-        ("gestures", "Rude and sexual gestures  (the middle finger, crude motions)", False)]),
-    ("Holidays and birthdays", 1, [
+        ("drugs", "Drug use", False)]),
+    ("Faith, holidays and magic", 1, [
+        ("religion", "Religious content", True),
         ("holiday", "Holidays  (Christmas, Halloween, Easter, Valentine's Day, St. Patrick's Day)",
          False),
-        ("birthday", "Candles on a birthday cake  (parties and cake are fine)", False)]),
-    ("Magic and monsters", 1, [
+        ("birthday", "Candles on a birthday cake  (parties and cake are fine)", False),
         ("darkmagic", "Dark magic  (witchcraft, wizards, curses, the occult)", False),
         ("magic", "Magic  (spells, wands, potions, fairies)", False),
         ("vampires", "Vampires and werewolves", False)]),
@@ -257,19 +263,74 @@ class FilterCard:
         self.on_change()
 
 
-def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600):
-    """Every filter's tick box, in a card per section as in CleanView, packed into `parent`.
+_HEAD_IMGS = {}
+
+
+def head_images(w):
+    """The section boxes: ticked, empty, and a dash for some (drawn, so both apps look alike)."""
+    key = str(w.tk)
+    if key in _HEAD_IMGS:
+        return _HEAD_IMGS[key]
+    try:
+        n = max(15, round(15 * w.winfo_fpixels("1i") / 96.0))
+    except tk.TclError:
+        n = 15
+    gap = max(6, n // 2)
+    imgs = {}
+    for name, fill, edge in (("off", "#FFFFFF", "#8C857C"), ("on", ACCENT, ACCENT), ("some", ACCENT, ACCENT)):
+        img = tk.PhotoImage(master=w, width=n + gap, height=n)
+        img.put(edge, to=(0, 0, n, n))
+        img.put(fill, to=(1, 1, n - 1, n - 1))
+        imgs[name] = img
+    t = max(2, round(n / 7))
+    pts = [(0.2, 0.52), (0.42, 0.74), (0.8, 0.28)]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        for k in range(2 * n + 1):
+            x = round((x0 + (x1 - x0) * k / (2 * n)) * n - t / 2)
+            y = round((y0 + (y1 - y0) * k / (2 * n)) * n - t / 2)
+            imgs["on"].put("#FFFFFF", to=(max(0, x), max(0, y), min(n, x + t), min(n, y + t)))
+    imgs["some"].put("#FFFFFF", to=(round(n * 0.25), (n - t) // 2, round(n * 0.75), (n - t) // 2 + t))
+    _HEAD_IMGS[key] = imgs
+    return imgs
+
+
+def _is_on(v):
+    val = v.get()
+    return val != "Keep" if isinstance(val, str) else bool(val)
+
+
+def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600, opened=None,
+                on_fold=None, heads=None):
+    """Every filter's tick box, in sections by topic as in CleanView 1.18.74, packed into `parent`.
+    Each section is one line until opened: a box that ticks (or, when all are, unticks) all of it,
+    shown ticked, empty or with a dash for some; its name; "3 of 5 ticked"; "Choose which…".
+    opened: the set of open section names (changed in place; on_fold() is called after). heads:
+    a dict filled with name -> (box, count label, tick_all, show) for tests.
     Returns (vars, words box). on_change() is called whenever a tick or a choice changes."""
     on_change = on_change or (lambda: None)
+    on_fold = on_fold or (lambda: None)
+    opened = set() if opened is None else opened
+    heads = {} if heads is None else heads
+    imgs = head_images(parent)
     vars_ = {}
     words = None
+    box = tk.Frame(parent, bg=CARD, highlightbackground=LINE, highlightthickness=1)
+    box.pack(fill="x", padx=padx, pady=4)
     for heading, cols, items in SECTIONS:
-        card = tk.Frame(parent, bg=CARD, highlightbackground=LINE, highlightthickness=1)
-        card.pack(fill="x", padx=padx, pady=4)
-        tk.Label(card, text=heading, bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(
-            anchor="w", padx=12, pady=(6, 2))
-        grid = tk.Frame(card, bg=CARD)
-        grid.pack(fill="x", padx=12, pady=(0, 8))
+        head = tk.Frame(box, bg=CARD)
+        head.pack(fill="x", padx=12, pady=(7, 0))
+        body = tk.Frame(box, bg=CARD)
+        master = tk.Label(head, image=imgs["off"], bg=CARD, cursor="hand2")
+        master.pack(side="left")
+        name = tk.Label(head, text=heading, bg=CARD, fg=INK, font=(FONT, 11, "bold"), cursor="hand2")
+        name.pack(side="left")
+        count = tk.Label(head, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
+        count.pack(side="left", padx=(10, 0))
+        more = tk.Label(head, text="", bg=CARD, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
+        more.pack(side="left", padx=(10, 0))
+        grid = tk.Frame(body, bg=CARD)
+        grid.pack(fill="x", padx=(34, 12), pady=(2, 4))
+        got, parts = [], {}            # the section's own choices; religion's parts (by its name)
         n = 0
         for key, label, default in items:
             if isinstance(default, str):            # a kissing level
@@ -279,12 +340,14 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600):
                          anchor="w").pack(side="left")
                 v = tk.StringVar(value=dict(KISS_LEVELS).get(cur.get(key), "Keep"))
                 vars_[key] = v
+                got.append(v)
                 ttk.Combobox(row, textvariable=v, values=[n_ for _, n_ in KISS_LEVELS],
                              state="readonly", width=22).pack(side="left")
                 n += cols
                 continue
             v = tk.BooleanVar(value=bool(cur.get(key)))
             vars_[key] = v
+            got.append(v)
             ttk.Checkbutton(grid, text=label, variable=v).grid(
                 row=n // cols, column=n % cols, sticky="w", padx=(0, 24), pady=1)
             n += 1
@@ -295,27 +358,69 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600):
                 for p, plabel in RELIGION_PARTS:
                     pv = tk.BooleanVar(value=bool(cur.get("religion_" + p)))
                     vars_["religion_" + p] = pv
+                    parts[str(v)] = parts.get(str(v), []) + [pv]
                     boxes.append(ttk.Checkbutton(row, text=plabel, variable=pv))
                     boxes[-1].pack(side="left", padx=(0, 10))
-                show = lambda *_, bs=boxes, rv=v: [b.state(["!disabled"] if rv.get() else
-                                                           ["disabled"]) for b in bs]
-                v.trace_add("write", show)
-                show()
+                show_parts = lambda *_, bs=boxes, rv=v: [b.state(["!disabled"] if rv.get() else
+                                                                 ["disabled"]) for b in bs]
+                v.trace_add("write", show_parts)
+                show_parts()
                 n += cols
-        if heading == "Language":
-            tk.Label(card, text="Your own words and phrases to mark out or mute  (one per line, "
-                     "for every age)", bg=CARD, fg=INK, font=(FONT, 10)).pack(anchor="w", padx=12)
-            words = tk.Text(card, height=4, font=(FONT, 10), wrap="none", relief="solid",
+        if heading == "Bad language":
+            tk.Label(body, text="Your own words and phrases to mark out or mute  (one per line, "
+                     "for every age)", bg=CARD, fg=INK, font=(FONT, 10)).pack(anchor="w", padx=(34, 12))
+            words = tk.Text(body, height=4, font=(FONT, 10), wrap="none", relief="solid",
                             borderwidth=1, highlightthickness=0, padx=6, pady=4)
             words.insert("1.0", "\n".join(mywords))
-            words.pack(fill="x", padx=12)
+            words.pack(fill="x", padx=(34, 12))
             words.bind("<KeyRelease>", lambda e: on_change())
             words.bind("<FocusOut>", lambda e: on_change())
-            tk.Label(card, text="Taken out wherever they come up, the whole phrase: for example "
+            tk.Label(body, text="Taken out wherever they come up, the whole phrase: for example "
                      "\u201cgrow some stones\u201d. Whole words only, so \u201cstones\u201d on "
                      "its own wouldn't touch \u201cmilestones\u201d.", bg=CARD, fg=MUTED,
-                     font=(FONT, 9), wraplength=wrap, justify="left").pack(anchor="w", padx=12,
+                     font=(FONT, 9), wraplength=wrap, justify="left").pack(anchor="w", padx=(34, 12),
                                                                           pady=(2, 8))
+
+        def on(v, parts=parts):
+            # religion counts as ticked only with at least one of its parts
+            return _is_on(v) and (str(v) not in parts or any(p.get() for p in parts[str(v)]))
+
+        def refresh(*_, got=got, master=master, count=count, on=on):
+            if not master.winfo_exists():
+                return
+            k = sum(on(v) for v in got)
+            master.config(image=imgs["on" if k == len(got) else "off" if k == 0 else "some"])
+            count.config(text=f"{k} of {len(got)} ticked")
+
+        def tick_all(_=None, got=got, parts=parts, on=on):
+            want = not all(on(v) for v in got)
+            for v in got:
+                v.set(("Cut all kisses" if want else "Keep") if isinstance(v.get(), str) else want)
+                if want:
+                    for p in parts.get(str(v), ()):
+                        p.set(True)
+
+        def show(opening, heading=heading, body=body, head=head, more=more):
+            if opening:
+                body.pack(fill="x", after=head)
+                opened.add(heading)
+            else:
+                body.pack_forget()
+                opened.discard(heading)
+            more.config(text="Hide" if opening else "Choose which\u2026")
+
+        def flip(_=None, heading=heading, show=show):
+            show(heading not in opened)
+            on_fold()
+        master.bind("<Button-1>", tick_all)
+        for w in (name, more):
+            w.bind("<Button-1>", flip)
+        for v in got + [p for ps in parts.values() for p in ps]:
+            v.trace_add("write", refresh)
+        refresh()
+        show(heading in opened)
+        heads[heading] = (master, count, tick_all, show)
+    tk.Label(box, text="", bg=CARD).pack(pady=1)
     for v in vars_.values():
         v.trace_add("write", lambda *_: on_change())
     return vars_, words
@@ -362,10 +467,22 @@ class FilterPanel:
         self._quiet = True
         for w in self.body.winfo_children():
             w.destroy()
+        self.heads = {}
         self.vars, self.words = build_boxes(self.body, ticks(self.d), self.d["mywords"],
-                                            self._changed, padx=0, wrap=self.wrap)
+                                            self._changed, padx=0, wrap=self.wrap,
+                                            opened=self._opened(), on_fold=self._folded,
+                                            heads=self.heads)
         self.std.config(text=f"Back to the standard ticks for {dict(PROFILES)[self.d['profile']]}")
         self._quiet = False
+
+    def _opened(self):
+        """The sections open last time (shared by both apps), changed in place."""
+        self._open = set(self.d.get("open_sections") or [])
+        return self._open
+
+    def _folded(self):
+        self.d["open_sections"] = sorted(self._open)
+        save(self.d)
 
     def _changed(self):
         if self._quiet:
@@ -429,7 +546,10 @@ class FiltersWindow(tk.Toplevel):
                  "to check before anything is cut.", bg=BG, fg=MUTED, font=(FONT, 9),
                  wraplength=640, justify="left").pack(anchor="w", padx=16, pady=(0, 6))
         body = self._scroll()
-        self.vars, self.words = build_boxes(body, cur, d["mywords"])
+        self._open = set(d.get("open_sections") or [])
+        self.heads = {}
+        self.vars, self.words = build_boxes(body, cur, d["mywords"], opened=self._open,
+                                            heads=self.heads)
         self.protocol("WM_DELETE_WINDOW", self._done)
         self.grab_set()
 
@@ -461,6 +581,7 @@ class FiltersWindow(tk.Toplevel):
 
     def _done(self):
         self.d["ticks"][self.d["profile"]], self.d["mywords"] = read_boxes(self.vars, self.words)
+        self.d["open_sections"] = sorted(self._open)
         self.grab_release()
         self.destroy()
         self.on_done()

@@ -26,9 +26,10 @@ PARAS = [PLAIN, SURGERY, PLAIN, PLAIN, PLAIN, STABBING, PLAIN, PLAIN, NEEDLE, PL
 
 
 def test_the_box_sits_after_gore_and_follows_the_ages():
-    violence = next(items for head, _, items in F.SECTIONS if head == "Violence")
-    keys = [k for k, _, _ in violence]
-    assert keys.index("medical") == keys.index("gore") + 1
+    # its own section, right after Violence (as CleanView 1.18.74's "Medical")
+    heads = [h for h, _, _ in F.SECTIONS]
+    assert heads.index("Medical") == heads.index("Violence") + 1
+    assert [k for k, _, _ in F.SECTIONS[heads.index("Medical")][2]] == ["medical"]
     assert F.LABELS["medical"].startswith("Medical  (surgery, autopsies")
     assert [F.PRESETS[p]["medical"] for p in ("young", "kids", "teens", "adults")] == [True, True, True, False]
     assert F.PRESETS["adults"]["gore"]                     # Gore stays ticked for Adults

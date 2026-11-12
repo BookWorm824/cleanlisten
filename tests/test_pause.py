@@ -77,22 +77,40 @@ def test_nothing_to_pause_once_it_ended():
 @pytest.mark.skipif(not WINDOWS, reason="Windows processes")
 def test_a_real_worker_really_stops_working_while_paused(tmp_path):
     out = tmp_path / "count.txt"
-    code = (f"import time\nn = 0\nwhile True:\n    n += 1\n    open({str(out)!r}, 'w').write(str(n))\n"
-            "    time.sleep(0.05)\n")
+    # the count is swapped in whole, so it's never read half-written (the full test run is busy)
+    tmp = str(out) + ".tmp"
+    code = "\n".join(["import os, time", "n = 0", "while True:", "    n += 1",
+                      f"    open({tmp!r}, 'w').write(str(n))",
+                      f"    os.replace({tmp!r}, {str(out)!r})", "    time.sleep(0.05)"])
     proc = subprocess.Popen([sys.executable, "-c", code])
+
+    def count():
+        for _ in range(50):
+            try:
+                return int(out.read_text())
+            except (OSError, ValueError):
+                time.sleep(0.05)
+        raise AssertionError("the worker never wrote its count")
+
+    def waits_for(test, secs=15):
+        end = time.monotonic() + secs
+        while time.monotonic() < end:
+            if test():
+                return True
+            time.sleep(0.1)
+        return False
+    w = BQ.Workers(lambda k, m: None)
     try:
-        w = BQ.Workers(lambda k, m: None)
         proc.stop_file = tmp_path / "stop"
         w.procs["b"] = proc
-        time.sleep(1.0)
+        assert waits_for(lambda: out.exists())
         assert w.pause("b")
-        time.sleep(0.3)
-        frozen_at = out.read_text()
+        time.sleep(0.5)
+        frozen_at = count()
         time.sleep(1.0)
-        assert out.read_text() == frozen_at          # nothing happened while paused
+        assert count() == frozen_at                  # nothing happened while paused
         w.resume("b")
-        time.sleep(1.0)
-        assert int(out.read_text()) > int(frozen_at)  # and it carried on
+        assert waits_for(lambda: count() > frozen_at)   # and it carried on
     finally:
         w.resume_all()
         proc.kill()
