@@ -87,6 +87,9 @@ def play_wav(path):
         open_path(path)
 
 
+PAUSED = "Paused — press Resume to carry on."
+
+
 def stop_playing():
     try:
         import winsound
@@ -823,6 +826,9 @@ class App(tk.Tk):
         self._logo(p)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
+        # Pause beside it (the owner, 2026-11-12): the reading freezes where it is until Resume
+        self.pause_btn = ttk.Button(self.footer, text="Pause", style="Plain.TButton", command=self.toggle_pause)
+        self.pause_btn.pack(side="right", padx=(0, 10))
         self.job_title = title
         self.job += 1
         job = self.job
@@ -853,6 +859,23 @@ class App(tk.Tk):
                 tell("error", str(ex), traceback.format_exc())
         self.worker = threading.Thread(target=go, daemon=True)
         self.worker.start()
+
+    def toggle_pause(self):
+        m = self.maker
+        if not m:
+            return
+        if m.paused:
+            m.resume()
+            self.pause_btn.config(text="Pause")
+            self.status.config(text=getattr(self, "last_status", "") or "Carrying on…")
+            self.left_lbl.config(text="")
+        else:
+            m.pause()
+            self.pause_btn.config(text="Resume")
+            self.status.config(text=PAUSED)
+            self.left_lbl.config(text="")
+        if getattr(self, "watch", None):
+            self.watch.doing["status"] = self.status.cget("text")
 
     def stop(self):
         """Stop for now: back to the first page at once. The book stops in the background (a chapter
@@ -942,6 +965,9 @@ class App(tk.Tk):
         kind = msg[0]
         if kind == "progress" and getattr(self, "pb", None) and self.pb.winfo_exists():
             self.pb["value"] = int(msg[1] * 1000)
+            self.last_status = msg[2]
+            if self.maker and self.maker.paused:
+                return                      # it still says Paused until Resume
             self.status.config(text=msg[2])
             if msg[3] is not None:
                 self.left_lbl.config(text=engine.fmt_left(msg[3]).capitalize())

@@ -830,6 +830,128 @@ class Stopped(Exception):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Pause: freeze the reading programs (and everything they started) and let them carry on later.
+# Never Ollama: other programs share it. Anything still frozen is let go when ReadAloud closes.
+# ---------------------------------------------------------------------------
+_FROZEN = {}                # pid -> times frozen
+_FROZEN_LOCK = threading.Lock()
+
+
+def _process_tree(pid):
+    """pid and every process it started (and theirs), parents first, skipping Ollama. A child
+    has to be younger than its parent, so a reused process number is never taken for one."""
+    if os.name != "nt":
+        return [pid]
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+
+    class PE(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k32.CreateToolhelp32Snapshot(2, 0)
+    if not snap or snap == wintypes.HANDLE(-1).value:
+        return [pid]
+    kids = {}
+    names = {}
+    try:
+        e = PE()
+        e.dwSize = ctypes.sizeof(PE)
+        ok = k32.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            kids.setdefault(e.th32ParentProcessID, []).append(e.th32ProcessID)
+            names[e.th32ProcessID] = e.szExeFile.lower()
+            ok = k32.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k32.CloseHandle(snap)
+
+    def born(p):
+        h = k32.OpenProcess(0x1000, False, p)          # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return None
+        try:
+            t = [wintypes.FILETIME() for _ in range(4)]
+            if not k32.GetProcessTimes(h, *[ctypes.byref(x) for x in t]):
+                return None
+            return (t[0].dwHighDateTime << 32) | t[0].dwLowDateTime
+        finally:
+            k32.CloseHandle(h)
+
+    out, todo = [], [(pid, born(pid))]
+    while todo:
+        p, b = todo.pop(0)
+        if p in out:
+            continue
+        out.append(p)
+        for c in kids.get(p, []):
+            if c == p or "ollama" in names.get(c, ""):
+                continue
+            cb = born(c)
+            if b is not None and (cb is None or cb < b):
+                continue
+            todo.append((c, cb))
+    return out
+
+
+def _suspend(pid, on):
+    if os.name != "nt":
+        import signal
+        try:
+            os.kill(pid, signal.SIGSTOP if on else signal.SIGCONT)
+            return True
+        except OSError:
+            return False
+    import ctypes
+    h = ctypes.windll.kernel32.OpenProcess(0x0800, False, pid)      # PROCESS_SUSPEND_RESUME
+    if not h:
+        return False
+    try:
+        nt = ctypes.windll.ntdll
+        return (nt.NtSuspendProcess(h) if on else nt.NtResumeProcess(h)) == 0
+    finally:
+        ctypes.windll.kernel32.CloseHandle(h)
+
+
+def freeze(pid):
+    """Freeze a reading program and what it started. Returns the process numbers frozen."""
+    done = []
+    with _FROZEN_LOCK:
+        for p in _process_tree(pid):
+            if _suspend(p, True):
+                _FROZEN[p] = _FROZEN.get(p, 0) + 1
+                done.append(p)
+    return done
+
+
+def thaw(pids):
+    """Let frozen programs carry on, the last frozen first."""
+    with _FROZEN_LOCK:
+        for p in reversed(list(pids)):
+            if _FROZEN.get(p):
+                _suspend(p, False)
+                _FROZEN[p] -= 1
+                if not _FROZEN[p]:
+                    del _FROZEN[p]
+
+
+def thaw_all():
+    with _FROZEN_LOCK:
+        left = [(p, n) for p, n in _FROZEN.items()]
+        _FROZEN.clear()
+    for p, n in reversed(left):
+        for _ in range(n):
+            _suspend(p, False)
+
+
+import atexit                                   # noqa: E402
+atexit.register(thaw_all)
+
+
 def chapter_file(jobdir, i):
     return Path(jobdir) / f"ch{i:04d}.m4a"
 
@@ -999,8 +1121,55 @@ class Maker:
         self.n_workers, self.threads = workers or workers_for_pc()
         self.procs = {}
         self._stop = threading.Event()
+        self._paused = threading.Event()
+        self._plock = threading.Lock()
+        self._frozen = []
+        self._paused_at = None
+        self._paused_for = 0.0
+
+    @property
+    def paused(self):
+        return self._paused.is_set()
+
+    def pause(self):
+        """Pause: the reading programs are frozen where they are (the owner asked for a Pause
+        button beside Stop for now, 2026-11-12). Nothing new starts until resume()."""
+        with self._plock:
+            if self._paused.is_set() or self._stop.is_set():
+                return
+            self._paused.set()
+            self._paused_at = time.time()
+            for p in list(self.procs.values()):
+                self._frozen += freeze(p.pid)
+
+    def resume(self):
+        with self._plock:
+            if not self._paused.is_set():
+                return
+            thaw(self._frozen)
+            self._frozen = []
+            self._paused_for += time.time() - self._paused_at
+            self._paused_at = None
+            self._paused.clear()
+
+    def _started(self, p):
+        # a reading program started just as Pause was pressed is frozen too
+        with self._plock:
+            if self._paused.is_set():
+                self._frozen += freeze(p.pid)
+
+    def _wait_while_paused(self):
+        while self._paused.is_set() and not self._stop.is_set():
+            time.sleep(0.25)
+
+    def _clock(self):
+        """Seconds that count towards the time left: paused time doesn't."""
+        with self._plock:
+            now = self._paused_at or time.time()
+            return now - self._paused_for
 
     def stop(self):
+        self.resume()                   # a frozen program can't stop
         self._stop.set()
         try:
             (self.jobdir / "stop").write_text("stop")
@@ -1032,7 +1201,8 @@ class Maker:
             get_model(lambda f, m: self.say(f * 0.02, m), self._stop)
         if job.get("director") and not (self.jobdir / "directed.json").exists():
             import readaloud_ai
-            readaloud_ai.direct(self.jobdir, lambda f, m: self.say(0.02 + 0.08 * f, m, None), self._stop)
+            readaloud_ai.direct(self.jobdir, lambda f, m: self.say(0.02 + 0.08 * f, m, None), self._stop,
+                                self._paused)
         base = 0.1 if job.get("director") else 0.02
         chapters = json.loads((self.jobdir / "chapters.json").read_text(encoding="utf8"))
         words = [c["words"] for c in chapters]
@@ -1048,6 +1218,9 @@ class Maker:
 
         def worker_loop():
             while not self._stop.is_set() and not errors:
+                self._wait_while_paused()
+                if self._stop.is_set():
+                    return
                 with lock:
                     if not todo:
                         return
@@ -1095,11 +1268,12 @@ class Maker:
                 left_ch = len(chapters) - sum(have)
             # time left: measured from the first words read (the voices take a while to start),
             # and only once there's a fair sample, so it never says "4 hours" for a 12-minute job
+            clock = self._clock()
             if first is None and now > start_words:
-                first = (time.time(), now)
+                first = (clock, now)
             left = None
-            if first and time.time() - first[0] > 45 and now - first[1] > 0.02 * total:
-                rate = (now - first[1]) / (time.time() - first[0])
+            if first and clock - first[0] > 45 and now - first[1] > 0.02 * total and not self.paused:
+                rate = (now - first[1]) / (clock - first[0])
                 left = (total - now) / rate
             msg = f"Reading the book aloud… {len(chapters) - left_ch} of {len(chapters)} chapters done"
             if self.status:
@@ -1112,6 +1286,9 @@ class Maker:
         missing = [i + 1 for i in range(len(chapters)) if not chapter_file(self.jobdir, i).exists()]
         if missing:
             raise RuntimeError(f"Chapter {missing[0]} wasn't read aloud. Press Resume to try again.")
+        self._wait_while_paused()
+        if self._stop.is_set():
+            raise Stopped()
         return assemble(self.jobdir, lambda f, m: self.say(0.95 + 0.05 * f, m, None))
 
     def _gpu(self, order, partial, lock):
@@ -1127,6 +1304,7 @@ class Maker:
             log.close()
             raise
         self.procs["gpu"] = p
+        self._started(p)
         try:
             for line in p.stdout:
                 try:
@@ -1172,6 +1350,7 @@ class Maker:
             log.close()
             raise
         self.procs[i] = p
+        self._started(p)
         try:
             for line in p.stdout:
                 try:
@@ -1193,7 +1372,7 @@ class Maker:
             text = (self.jobdir / f"worker_{i:04d}.log").read_text(encoding="utf8", errors="ignore")
             if "MemoryError" in text or "bad allocation" in text or "1455" in text:
                 raise RuntimeError("The computer ran low on memory. Close other programs and press "
-                                   "Make audiobook again: it carries on where it stopped.")
+                                   "Resume: it carries on where it stopped.")
             raise RuntimeError(f"Chapter {i + 1} couldn't be read aloud.\n\n{text.strip()[-600:]}")
         (self.jobdir / f"worker_{i:04d}.log").unlink(missing_ok=True)
 

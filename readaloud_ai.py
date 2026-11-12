@@ -25,6 +25,7 @@ import json
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -415,7 +416,7 @@ def direct_chunk(job, chapters, cast_data, ci, pis, cache, k):
     return data
 
 
-def direct(jobdir, progress=None, stop=None):
+def direct(jobdir, progress=None, stop=None, paused=None):
     """Ask for the directions (or take them from the cache) and rewrite the job's chapters with
     them. Returns a short summary for the report."""
     say = progress or (lambda f, m: None)
@@ -442,6 +443,10 @@ def direct(jobdir, progress=None, stop=None):
 
     def loop():
         while not errors and not (stop and stop.is_set()):
+            while paused and paused.is_set() and not (stop and stop.is_set()):
+                time.sleep(0.25)            # Pause: no new part is asked for until Resume
+            if stop and stop.is_set():
+                return
             with lock:
                 if not todo:
                     return
