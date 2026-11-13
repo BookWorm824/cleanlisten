@@ -229,7 +229,7 @@ def apply(st, asr, add_passage, add_word=None):
         if ss and all(s in kept for s in ss) and sc.get("cut", True):
             sc["cut"] = False
             src = ("you kept this before" if all(s in d["kept"] for s in ss) else
-                   "Claude said this was fine before" if all(s in d["claude_kept"] for s in ss) else
+                   "the AI said this was fine before" if all(s in d["claude_kept"] for s in ss) else
                    "learned this is fine")
             sc["ai_note"] = "Learned: fine"
             sc["learned"] = src

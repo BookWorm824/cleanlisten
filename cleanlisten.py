@@ -142,6 +142,35 @@ def get_language_model(progress=None, cancel=None, log=print):
         cvlang.install_model(told)
 
 
+# What the windows, notes and progress lines call whichever of Claude, ChatGPT or Gemini is
+# helping, everywhere but the step where one is chosen and set up and the messages that send you
+# there (1.17.34, as CleanView 1.18.86; the owner, 2026-11-13, there: "Not in the Claud, chat,
+# gemini section, but everywhere else in clean view, instead of saying "claude" say "Ai""; asked
+# about the book apps: "yes"). Which one it was is still kept with the book (st["reviewer"]) and
+# in the findings. The helper on this PC is still "the AI helper" / "AI on this PC".
+AI = "AI"
+THE_AI = "The AI"
+_AI_NAMES = r"(?:Claude|ChatGPT|Gemini)"
+_AI_LABEL = re.compile(rf"^{_AI_NAMES}(?=:| unsure\b| suggests\b| agrees\b| chat\b)")
+_AI_FIRST = re.compile(rf"^{_AI_NAMES}(?='s\b| )")
+_AI_AFTER = re.compile(rf"\b(by|Asked|per) {_AI_NAMES}\b")
+_AI_IN_BRACKETS = re.compile(rf"\({_AI_NAMES} (differs|questioned it)\)")
+_AI_QUOTED = re.compile(rf"“{_AI_NAMES} unsure”")
+
+
+def plain_ai(text):
+    """One of CleanListen's own notes or labels from a book checked before 1.17.34, saying "AI"
+    where it named Claude, ChatGPT or Gemini: "Claude: fine" -> "AI: fine", "Claude suggests" ->
+    "AI suggests", "Found by Claude" -> "Found by AI", "Claude read the whole book" -> "The AI
+    read the whole book", "Your call (Claude differs)" -> "Your call (the AI differs)". Only for
+    words CleanListen wrote itself: a book can have a Claude in it."""
+    text = _AI_LABEL.sub(AI, str(text or ""))
+    text = _AI_FIRST.sub(THE_AI, text)
+    text = _AI_AFTER.sub(lambda m: m.group(1) + " AI", text)
+    text = _AI_IN_BRACKETS.sub(lambda m: "(the AI " + m.group(1) + ")", text)
+    return _AI_QUOTED.sub("“AI unsure”", text)
+
+
 # small words that tell the languages apart (as ReadAloud's guess; a few thousand words do)
 _GUESS_WORDS = {
     "en": "the and of to was he she it that you his her with for had but not they".split(),
@@ -3421,7 +3450,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         except KeyboardInterrupt:
             raise                        # (the AI on this PC sees the same cancel and stops)
         except Exception as ex:
-            st["claude_note"] = (f"Claude couldn't check this book ({ex}). The results below are "
+            st["claude_note"] = (f"{THE_AI} couldn't check this book ({ex}). The results below are "
                                  "from the word lists" + (" and the AI helper." if use_ai else "."))
         log(st.get("claude_note", ""))
         if ai_job:

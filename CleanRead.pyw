@@ -1280,11 +1280,10 @@ class App(tk.Tk):
 
     # ---------- ask Claude about the cuts (Jason, 2026-11-03: "like the view one") ----------
     def _ai_name(self):
-        try:
-            import cleanlisten_claude as cc
-            return cc.name(cc.saved_provider())
-        except Exception:
-            return "Claude"
+        """What CleanRead calls whichever of Claude, ChatGPT or Gemini is helping: "AI"
+        (1.17.34, as CleanView 1.18.86; the owner, 2026-11-13: "instead of saying "claude" say
+        "Ai""). Only the message that sends you to sign in names it."""
+        return engine.E.AI
 
     def _sync_ticks(self):
         for v, c in getattr(self, "cut_vars", []):
@@ -1326,7 +1325,7 @@ class App(tk.Tk):
                 return
         w = tk.Toplevel(self)
         self.chat_win = w
-        w.title(f"Ask {N} about this book")
+        w.title(f"Ask {self._ai_name()} about this book")
         w.configure(bg=BG)
         try:
             w.iconbitmap(str(HERE / "cleanread.ico"))
@@ -1334,12 +1333,12 @@ class App(tk.Tk):
             pass
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         w.geometry(f"{int(600 * scale)}x{int(620 * scale)}")
-        tk.Label(w, text=f"Ask {N}", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
-        tk.Label(w, text=(f"{N} reads the whole book and everything CleanRead found. Tell it what "
+        tk.Label(w, text=f"Ask {self._ai_name()}", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
+        tk.Label(w, text=("The AI reads the whole book and everything CleanRead found. Tell it what "
                           "isn't a problem (“the flying is a dream, not magic”, “angels are fine”). It "
                           "marks those right away, and it remembers what you tell it for next time."
                           if mode == "check" else
-                          f"{N} reads the whole book and everything CleanRead plans to take out. Tell it "
+                          "The AI reads the whole book and everything CleanRead plans to take out. Tell it "
                           "what's fine and what isn't (“drinking at dinner is fine”, “just cut the part "
                           "about the gun”). It changes your list right away, and it remembers what you "
                           "tell it for next time."), bg=BG, fg=MUTED, font=(FONT, 9),
@@ -1377,7 +1376,7 @@ class App(tk.Tk):
                        command=lambda q=q: self._chat_send(q)).pack(side="left", padx=(0, 8))
         for who, text in data.get("chat_history", []):
             self._chat_say(who, text)
-        self._chat_say("info", f"Tip: {N} looks over the whole book every time you ask, so answers "
+        self._chat_say("info", "Tip: the AI looks over the whole book every time you ask, so answers "
                                "can take a minute or two.")
         self.chat_entry.focus_set()
         if about:
@@ -1430,7 +1429,7 @@ class App(tk.Tk):
         self.chat_entry.delete("1.0", "end")
         self._chat_say("me", q)
         self.chat.an.setdefault("chat_history", []).append(("me", q))
-        self._chat_say("info", f"{self._ai_name()} is reading the book…")
+        self._chat_say("info", "The AI is reading the book…")
         self.chat_send.configure(state="disabled")
         self._sync_ticks()
         chat = self.chat

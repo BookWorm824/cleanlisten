@@ -718,6 +718,33 @@ furniture, scraper, brush...), and knows "stripper clip" and "asset stripper". C
 immodest-clothing list (`IMMODEST`, now a function over `_IMMODEST`) leaves the tool alone the same
 way. `tests/test_stripper.py`.
 
+**"AI", not "Claude"** (1.17.34, as CleanView 1.18.86; the owner, 2026-11-13, there: "Not in the
+Claud, chat, gemini section, but everywhere else in clean view, instead of saying "claude" say "Ai"";
+asked whether the book apps should say the same: "yes").
+- Still named: the step where Claude, ChatGPT or Gemini is chosen and set up ("Final check by Claude,
+  ChatGPT or Gemini", the choice, "✓ Claude is ready", "Claude model:") and the messages that send
+  you there or are about your plan ("... isn't set up or signed in yet", "Sign in to ...", "Your ...
+  usage limit was reached", the plan-limit line on the books page). In CleanListen.pyw that name
+  comes from `App._provider()`.
+- Everywhere else the windows say "AI" in labels and "the AI" in sentences: "Ask AI…", "Ask AI about
+  this…", "Check everything with AI", "Undo the AI's last change", "Open the AI's findings ...",
+  "AI: <reason>", "The AI is checking the book…", "final check by AI". `App._ai_name()` returns
+  `cleanlisten.AI` in both apps.
+- The engine's own notes and progress lines too (`cleanlisten_claude.apply_review` / `review` /
+  `Chat`): "AI: fine", "AI agrees", "AI unsure", "AI suggests", "Found by AI", "AI: trimmed", "AI
+  chat", "Your call (the AI differs)", "Muted (the AI questioned it)", "The AI is reading the book ·
+  section 2 of 5", "The AI read the whole book: ...". The helper on this PC is still "AI helper" /
+  "AI on this PC", so the two can share a label ("AI agrees").
+- Which one helped is still kept and sent in: `st["reviewer"] = name()`, the findings spreadsheet,
+  the settings. Only what's shown changed.
+- A book checked before 1.17.34 is shown the new way through `cleanlisten.plain_ai(text)`, applied
+  where the windows show a note CleanListen wrote itself (`claude_note`, a passage's `ai_note`, a
+  word's `note`); never to the book's own words (a book can have a Claude in it).
+- Left as it is on purpose: "Save a list of everything for Claude…" and "Drag this file into your
+  chat with Claude" (that's the owner's chat with the one who works on CleanListen), the list file
+  itself, the prompts, and file and function names.
+`tests/test_say_ai.py`, `tests/test_apply_review.py`. ReadAloud's wording is its own session's.
+
 **A language drop-down, a brief update line, answers that fit** (1.17.32, as CleanView 1.18.84 and
 1.18.85; the owner, 2026-11-13, asked whether to bring them to the book apps: "all"). In `cllook.py`:
 - `dropdown(parent, variable, options, command)`: a rounded drop-down list (`ttk.Combobox`,

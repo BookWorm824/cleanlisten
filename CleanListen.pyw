@@ -1347,6 +1347,14 @@ class App(tk.Tk):
             return None
 
     def _ai_name(self):
+        """What CleanListen calls whichever of Claude, ChatGPT or Gemini is helping: "AI",
+        everywhere but where one is chosen and set up (1.17.34, as CleanView 1.18.86; the owner,
+        2026-11-13: "instead of saying "claude" say "Ai"", and of the book apps: "yes")."""
+        return engine.AI
+
+    def _provider(self):
+        """Its own name (Claude, ChatGPT or Gemini): only for the step where it's chosen and
+        set up, and the messages that send you there."""
         cc = self._cc()
         return cc.name() if cc else "Claude"
 
@@ -1393,7 +1401,7 @@ class App(tk.Tk):
         self.claude_state = st
         if not getattr(self, "claude_lbl", None) or not self.claude_lbl.winfo_exists():
             return
-        N = self._ai_name()
+        N = self._provider()
         prog = {"ChatGPT": "Codex (for ChatGPT)",
                 "Gemini": "Antigravity CLI (for Gemini)"}.get(N, "Claude Code")
         text = {"ok": f"\u2713 {N} is ready", "signed_out": f"{N} isn't signed in yet",
@@ -1469,7 +1477,7 @@ class App(tk.Tk):
             messagebox.showerror("CleanListen", "Claude files are missing. Reopen CleanListen to update.")
             return
         self._sync_ticks()
-        self.show_working("Claude is checking the book\u2026", quick="claude")
+        self.show_working("The AI is checking the book\u2026", quick="claude")
         self.claude_job = job = getattr(self, "claude_job", 0) + 1
         self.cancel_flag = False
         # Claude works on a copy: Cancel goes straight back to the list as it was (the owner,
@@ -1513,7 +1521,7 @@ class App(tk.Tk):
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         w.geometry(f"{int(620 * scale)}x{int(640 * scale)}")
         tk.Label(w, text=f"Ask {N}", bg=BG, fg=INK, font=(FONT, 16, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
-        tk.Label(w, text=f"{N} can read the whole book and everything CleanListen found. Ask it to "
+        tk.Label(w, text="The AI can read the whole book and everything CleanListen found. Ask it to "
                  "look for anything missed, or anything flagged that isn't really a problem, or tell "
                  "it what to change. Changes show up on your list right away, with an Undo button.",
                  bg=BG, fg=MUTED,
@@ -1547,7 +1555,7 @@ class App(tk.Tk):
                           "anything flagged that isn't really a problem under my rules?")):
             ttk.Button(quick, text=label, style="Plain.TButton",
                        command=lambda q=q: self._chat_send(q)).pack(side="left", padx=(0, 8))
-        self._chat_say("info", f"Tip: {N} looks over the whole book every time you ask, so "
+        self._chat_say("info", "Tip: the AI looks over the whole book every time you ask, so "
                                "answers can take a minute or two.")
 
     # ---------- ask about one passage or word, right on the review list ----------
@@ -1593,7 +1601,7 @@ class App(tk.Tk):
                 except tk.TclError:
                     picked = ""
             btn.configure(state="disabled")
-            status.config(text=f"{N} is reading\u2026")
+            status.config(text="The AI is reading\u2026")
             status.pack(anchor="w")
             self._sync_ticks()
             try:
@@ -1683,7 +1691,7 @@ class App(tk.Tk):
             c.destroy()
         self._chat_say("me", q)
         self._chat_history().append(("me", q))
-        self._chat_say("info", f"{self._ai_name()} is reading the book\u2026")
+        self._chat_say("info", "The AI is reading the book\u2026")
         self.chat_send.configure(state="disabled")
         self._sync_ticks()
 
@@ -1913,7 +1921,7 @@ class App(tk.Tk):
             state = getattr(self, "claude_state", None) or (cc.status() if cc else "broken")
             if state != "ok":
                 chime()
-                if not messagebox.askyesno("CleanListen", f"{self._ai_name()} isn't set up or signed "
+                if not messagebox.askyesno("CleanListen", f"{self._provider()} isn't set up or signed "
                                            "in yet, so the final check can't run.\n\nStart without "
                                            "it? (You can still run it from the review screen later.)"):
                     return
@@ -1963,11 +1971,11 @@ class App(tk.Tk):
     def show_working(self, title, quick=False):
         dur = sum(engine.probe_duration(a) for a in self.audio) if self.audio else 0
         if quick == "claude":
-            sub = ("Claude is reading the whole book with everything that was found. Long books "
+            sub = ("The AI is reading the whole book with everything that was found. Long books "
                    "take a few minutes. Cancel keeps the list as it was.")
         elif quick:
             sub = ("Already listened to, so this skips straight to checking. It takes a few "
-                   "minutes (longer with the AI helper or Claude check on).")
+                   "minutes (longer with the AI helper or the final check on).")
         else:
             sub = (f"This book is {fmt_len(dur)} long. You can leave this running "
                    "and come back — closing the window pauses it, and it picks up "
@@ -2024,7 +2032,7 @@ class App(tk.Tk):
                 self.show_review()
         elif kind == "claude_fail":
             if msg[2] == getattr(self, "claude_job", None) and self.page_name == "working":
-                messagebox.showerror("Claude check", msg[1])
+                messagebox.showerror("AI check", msg[1])
                 self.show_review()
         elif kind == "play":
             self._play_ready(*msg[1:])
@@ -2286,7 +2294,7 @@ class App(tk.Tk):
                             if bk.get("cover") else ", no cover picture")
                          + ", in " + os.path.normpath(str(Path(bk["file"]).parent)) + ".")
         if (job.get("found") or {}).get("claude_note"):
-            lines.append(job["found"]["claude_note"])
+            lines.append(engine.plain_ai(job["found"]["claude_note"]))
         for line in lines:
             tk.Label(d, text=line, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=360,
                      justify="left", anchor="w").pack(anchor="w")
@@ -2496,8 +2504,8 @@ class App(tk.Tk):
                 anchor="w"))
             self.updated_note.pack(fill="x", pady=(0, 8))
         # what the checks said, folded to one line ("More" shows all of it)
-        notes = [n for n in (a.get("claude_note"), a.get("learn_note"), a.get("ai_note"),
-                             a.get("ebook_note")) if n]
+        notes = [n for n in (engine.plain_ai(a.get("claude_note")), a.get("learn_note"),
+                             a.get("ai_note"), a.get("ebook_note")) if n]
         if notes:
             nrow = tk.Frame(p, bg=BG)
             nrow.pack(fill="x", pady=(0, 4))
@@ -2526,16 +2534,18 @@ class App(tk.Tk):
                                   else f"Check everything with {N}"), style="Plain.TButton",
                        command=self.claude_check).pack(side="left", padx=(8, 0))
         if getattr(self, "_undo", None):
-            ttk.Button(bar, text=f"Undo {N}'s last change", style="Plain.TButton",
+            ttk.Button(bar, text="Undo the AI's last change", style="Plain.TButton",
                        command=self._undo_last).pack(side="left", padx=(8, 0))
         # the things used now and then go in one menu
         more_btn = ttk.Menubutton(bar, text="More", style="Plain.TMenubutton", width=6)
         menu = tk.Menu(more_btn, tearoff=0, font=(FONT, 10), bg=CARD, fg=INK,
                        activebackground=ACCENT, activeforeground="white")
-        menu.add_command(label=f"Save a list of everything for {N}…", command=self.export_findings)
-        menu.add_command(label=f"Open {N}'s findings for this book (spreadsheet)",
+        # (this list is for your chat with Claude, the one who works on CleanListen, so it
+        # still says so, as "Drag this file into your chat with Claude" does)
+        menu.add_command(label="Save a list of everything for Claude…", command=self.export_findings)
+        menu.add_command(label="Open the AI's findings for this book (spreadsheet)",
                          command=lambda: self._open_findings(this_book=True))
-        menu.add_command(label=f"Open {N}'s findings for every book (spreadsheet)",
+        menu.add_command(label="Open the AI's findings for every book (spreadsheet)",
                          command=self._open_findings)
         cc = self._cc()
         if cc and cc.PROVIDER == "claude":
@@ -2676,11 +2686,11 @@ class App(tk.Tk):
                 link(top, "▶ Play", CARD, lambda l, it=sc: self._play(it, l)).pack(side="left", padx=(16, 0))
                 if sc.get("ai_note"):
                     good = _yellow(sc["ai_note"])
-                    tk.Label(top, text=sc["ai_note"], bg=YELLOW if good else TINT,
+                    tk.Label(top, text=engine.plain_ai(sc["ai_note"]), bg=YELLOW if good else TINT,
                              fg=YELLOW_INK if good else ACCENT_DK, font=(FONT, 9),
                              padx=6).pack(side="right")
                 if sc.get("claude_reason"):
-                    tk.Label(card, text=a.get("reviewer", "Claude") + ": " + sc["claude_reason"], bg=CARD,
+                    tk.Label(card, text=engine.AI + ": " + sc["claude_reason"], bg=CARD,
                              fg=MUTED, font=(FONT, 9, "italic"), wraplength=680, justify="left"
                              ).pack(anchor="w", pady=(4, 0))
                 txt = tk.Text(card, wrap="word", width=20, height=min(8, 1 + len(sc["text"]) // 95),
@@ -2734,7 +2744,7 @@ class App(tk.Tk):
                 link(row, "▶ Play", rbg, lambda l, it=m: self._play(it, l), padx=4).pack(side="right")
                 if m.get("note"):
                     good = _yellow(m["note"])
-                    tk.Label(row, text=m["note"], bg=YELLOW if good else TINT,
+                    tk.Label(row, text=engine.plain_ai(m["note"]), bg=YELLOW if good else TINT,
                              fg=YELLOW_INK if good else ACCENT_DK, font=(FONT, 8),
                              padx=4).pack(side="right")
                 elif m.get("src", "audio") != "audio":
@@ -2751,7 +2761,7 @@ class App(tk.Tk):
                     word = m.get("word_raw" if revealed else "word", "")
                     after = m.get("ctx_after_raw" if revealed else "ctx_after", "")
                     if revealed and m.get("claude_reason"):
-                        after += "   (" + self.analysis.get("reviewer", "Claude") + ": " + m["claude_reason"] + ")"
+                        after += "   (" + engine.AI + ": " + m["claude_reason"] + ")"
                     t.configure(state="normal")
                     t.delete("1.0", "end")
                     if before:

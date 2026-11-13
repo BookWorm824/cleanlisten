@@ -72,7 +72,7 @@ def test_remove_reticks_a_passage(book):
     c = decide(st, asr, d("P1", "remove"))
     sc = st["scenes"][0]
     assert sc["cut"] is True
-    assert sc["ai_note"] == "Claude agrees"
+    assert sc["ai_note"] == "AI agrees"
     assert sc["claude_verdict"] == "remove"
     assert c["on"] == 1 and c["agree"] == 1
 
@@ -82,7 +82,7 @@ def test_keep_sure_unticks_a_passage(book):
     st["scenes"].append(passage(asr, st["sentences"], 1, 2, 2))
     c = decide(st, asr, d("P1", "keep"))
     assert st["scenes"][0]["cut"] is False
-    assert st["scenes"][0]["ai_note"] == "Claude: fine"
+    assert st["scenes"][0]["ai_note"] == "AI: fine"
     assert c["off"] == 1
 
 
@@ -91,7 +91,7 @@ def test_keep_unsure_leaves_passage_in(book):
     st["scenes"].append(passage(asr, st["sentences"], 1, 2, 2))
     c = decide(st, asr, d("P1", "keep", "medium"))
     assert st["scenes"][0]["cut"] is False
-    assert st["scenes"][0]["ai_note"] == "Claude unsure"
+    assert st["scenes"][0]["ai_note"] == "AI unsure"
     assert c["unsure"] == 1
 
 
@@ -100,7 +100,7 @@ def test_doubtful_religion_stays_cut(book):
     st["scenes"].append(passage(asr, st["sentences"], 1, 4, 4, kind="religion"))
     decide(st, asr, d("P1", "keep", "medium"))
     assert st["scenes"][0]["cut"] is True
-    assert st["scenes"][0]["ai_note"] == "Claude unsure"
+    assert st["scenes"][0]["ai_note"] == "AI unsure"
 
 
 def test_ids_are_matched_loosely_and_unknown_ids_ignored(book):
@@ -112,8 +112,8 @@ def test_ids_are_matched_loosely_and_unknown_ids_ignored(book):
 
 
 # --- the family's own ticks are never overridden ---------------------------------------
-@pytest.mark.parametrize("verdict, note", [("keep", "Your call (Claude differs)"),
-                                           ("remove", "Claude agrees")])
+@pytest.mark.parametrize("verdict, note", [("keep", "Your call (the AI differs)"),
+                                           ("remove", "AI agrees")])
 def test_by_you_passage_never_changes(book, verdict, note):
     st, asr = book
     st["scenes"].append(passage(asr, st["sentences"], 1, 2, 2, by_you=True))
@@ -129,7 +129,7 @@ def test_by_you_word_never_changes(book):
     st["mutes"].append(mute(asr, 1, "damn", "mild", on=False, by_you=True))
     decide(st, asr, d("W1", "remove"))
     assert st["mutes"][0]["on"] is False
-    assert st["mutes"][0]["note"] == "Your call (Claude differs)"
+    assert st["mutes"][0]["note"] == "Your call (the AI differs)"
 
 
 def test_by_you_passage_is_not_trimmed(book):
@@ -149,7 +149,7 @@ def test_listed_swear_stays_muted_when_claude_says_keep(book):
     m = st["mutes"][0]
     assert m["on"] is True
     assert m["claude_verdict"] == "unsure"
-    assert m["note"] == "Muted (Claude questioned it)"
+    assert m["note"] == "Muted (the AI questioned it)"
     assert c["off"] == 0
 
 
@@ -166,7 +166,7 @@ def test_misheard_word_can_be_unticked(book):
     st["mutes"].append(mute(asr, 1, "sex", "sexual"))
     decide(st, asr, d("W1", "keep", misheard=True))
     assert st["mutes"][0]["on"] is False
-    assert st["mutes"][0]["note"] == "Claude: fine"
+    assert st["mutes"][0]["note"] == "AI: fine"
 
 
 def test_innocent_word_can_be_unticked(book):
@@ -188,7 +188,7 @@ def test_unsure_keep_never_unticks_a_word(book):
     st["mutes"].append(mute(asr, 1, "damn", "mild", word_raw="hell"))
     c = decide(st, asr, d("W1", "keep", "medium"))
     assert st["mutes"][0]["on"] is True
-    assert st["mutes"][0]["note"] == "Claude unsure"
+    assert st["mutes"][0]["note"] == "AI unsure"
     assert c["unsure"] == 1
 
 
@@ -209,7 +209,7 @@ def test_trim_shrinks_passage_to_the_problem_sentence(book):
     assert sc["cut"] is True and sc["trimmed"] is True
     assert sc["text"] == SENTENCES[2]
     assert (sc["s"], sc["e"]) == E.span_times(asr, sents[2][0], sents[2][1])
-    assert sc["ai_note"] == "Claude: trimmed"
+    assert sc["ai_note"] == "AI: trimmed"
     assert c["trim"] == 1
 
 
@@ -237,7 +237,7 @@ def test_just_the_word_keeps_sentence_and_mutes_word(book):
     c = decide(st, asr, d("P1", "just_the_word", words="damn", word_type="mild language"))
     sc = st["scenes"][0]
     assert sc["cut"] is False
-    assert sc["ai_note"] == "Claude: just the word"
+    assert sc["ai_note"] == "AI: just the word"
     assert sc["claude_word"] == "damn"
     [m] = st["mutes"]
     assert m["cat"] == "mild" and m["on"] is True and m["src"] == "claude"
@@ -267,17 +267,17 @@ def test_just_the_word_not_found_unsure_leaves_it(book):
     st["scenes"].append(passage(asr, st["sentences"], 1, 2, 2))
     c = decide(st, asr, d("P1", "just_the_word", "medium", words="nowhere"))
     assert st["scenes"][0]["cut"] is True
-    assert st["scenes"][0]["ai_note"] == "Claude unsure"
+    assert st["scenes"][0]["ai_note"] == "AI unsure"
     assert c["unsure"] == 1
 
 
-# --- the reviewer's name shows in the notes -------------------------------------------
-def test_notes_name_chatgpt(book, monkeypatch):
+# --- the notes say "AI" whichever one helped (the owner, 2026-11-13; tests/test_say_ai.py) ---
+def test_notes_say_ai_with_chatgpt_too(book, monkeypatch):
     monkeypatch.setattr(cc, "PROVIDER", "chatgpt")
     st, asr = book
     st["scenes"].append(passage(asr, st["sentences"], 1, 2, 2))
     decide(st, asr, d("P1", "keep"))
-    assert st["scenes"][0]["ai_note"] == "ChatGPT: fine"
+    assert st["scenes"][0]["ai_note"] == "AI: fine"
 
 
 # --- the whole review() loop with a stand-in for Claude --------------------------------
@@ -308,7 +308,7 @@ def test_review_adds_missed_items(book, monkeypatch):
     assert kinds == [("ref", SENTENCES[2], True), ("religion", SENTENCES[4], True)]
     [m] = st["mutes"]
     assert m["word_raw"] == "quiet" and m["cat"] == "moderate"
-    assert m["on"] is False and m["note"] == "Claude suggests"     # medium confidence: unticked
+    assert m["on"] is False and m["note"] == "AI suggests"     # medium confidence: unticked
     assert st["claude_checked"] is True
     assert "found 1 more" in st["claude_note"] and "suggested 1" in st["claude_note"]
 
@@ -326,7 +326,7 @@ def test_retarded_stays_muted_when_claude_says_keep(book):
     st["mutes"].append(mute(asr, 1, "sex", "moderate", word_raw="retarded"))
     decide(st, asr, d("W1", "keep"))
     assert st["mutes"][0]["on"] is True
-    assert st["mutes"][0]["note"] == "Muted (Claude questioned it)"
+    assert st["mutes"][0]["note"] == "Muted (the AI questioned it)"
     assert not E.may_untick_word({"cat": "moderate", "word_raw": "retard"})
 
 

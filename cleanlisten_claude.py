@@ -433,7 +433,7 @@ def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=N
         except err as ex:
             raise ClaudeError(str(ex))
         if not isinstance(answer, dict):
-            raise ClaudeError(f"{name()} didn't return its answer in the expected form.")
+            raise ClaudeError(f"{E.THE_AI} didn't return its answer in the expected form.")
         return {"data": answer, "session_id": sid}
     exe = find_claude()
     if not exe:
@@ -834,7 +834,7 @@ def _norm_cat(t, cats):
 def apply_review(st, data, counts, asr=None):
     """Apply one section's answer. counts collects totals for the summary line.
     Anything the family set themselves keeps their choice (only the reason is shown)."""
-    N = name()
+    N = E.AI        # "AI", not which one (the owner, 2026-11-13); st["reviewer"] keeps that
     by_id = {f"P{sc['id']}": ("P", sc) for sc in st["scenes"]}
     by_id.update({f"W{m['id']}": ("W", m) for m in st["mutes"]})
     cats = (st.get("filters") or {}).get("cats", [])
@@ -852,7 +852,8 @@ def apply_review(st, data, counts, asr=None):
                                 "trim": "trimmed"}.get(verdict, "remove")
         if it.get("by_you"):
             it["ai_note" if kind == "P" else "note"] = (
-                f"{N} agrees" if (verdict == "remove") == bool(it.get(key, True)) else f"Your call ({N} differs)")
+                f"{N} agrees" if (verdict == "remove") == bool(it.get(key, True)) else
+                "Your call (the AI differs)")
             continue
         if verdict == "trim" and kind == "P" and asr is not None:
             # cut only the sentences that need it; the rest of the passage stays
@@ -890,7 +891,7 @@ def apply_review(st, data, counts, asr=None):
                     it[key] = True            # e.g. unticked earlier by the AI on this PC
                     counts["on"] += 1
                 it["claude_verdict"] = "unsure"
-                note = f"Muted ({N} questioned it)"
+                note = "Muted (the AI questioned it)"
             elif sure:
                 it[key] = False
                 note = f"{N}: fine"
@@ -918,9 +919,9 @@ def review(st, asr, progress=None, cancel=None):
     say = progress or (lambda f, m: None)
     if not st.get("sentences"):
         raise ClaudeError("this result is from an older version - press Re-check first")
-    N = name()
-    if status() != "ok":
-        raise ClaudeError(f"{N} isn't set up or signed in yet")
+    N = E.AI
+    if status() != "ok":        # (this one sends you to set it up, so it names it)
+        raise ClaudeError(f"{name()} isn't set up or signed in yet")
     for n, m in enumerate(st["mutes"], 1):
         m.setdefault("id", n)
     try:
@@ -939,7 +940,7 @@ def review(st, asr, progress=None, cancel=None):
     for n, (a, b) in enumerate(secs):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / len(secs), f"{N} is reading the book · section {n + 1} of {len(secs)}")
+        say(n / len(secs), f"{E.THE_AI} is reading the book · section {n + 1} of {len(secs)}")
         ctx0 = max(0, a - CONTEXT_SENTS)
         lines = []
         if ctx0 < a:
@@ -993,7 +994,7 @@ def review(st, asr, progress=None, cancel=None):
                 counts["found" if sure else "suggested"] += 1
     st["scenes"].sort(key=lambda x: (x["part"], x["s"]))
     say(1.0, f"{N} check done")
-    note = (f"{N} read the whole book: agreed with {counts['agree']}, unticked {counts['off']} it "
+    note = (f"{E.THE_AI} read the whole book: agreed with {counts['agree']}, unticked {counts['off']} it "
             f"says aren't an issue, found {counts['found']} more (ticked) and suggested "
             f"{counts['suggested']} for you to decide (unticked)."
             + (f" For {counts['word']} it mutes just the bad word and keeps the sentence." if counts["word"] else "")
@@ -1001,7 +1002,7 @@ def review(st, asr, progress=None, cancel=None):
                if counts["trim"] else "")
             + (f" {counts['unsure']} it wasn't sure about are marked “{N} unsure”." if counts["unsure"] else ""))
     if unread and len(unread) == len(secs):
-        raise ClaudeError(errors[0] if errors else f"{N} couldn't read the book.")
+        raise ClaudeError(errors[0] if errors else f"{E.THE_AI} couldn't read the book.")
     # the parts it couldn't read: there the word lists and the AI on this PC decide (_merge_ai)
     st["claude_unchecked"] = [sp for a, b in unread for sp in _spans(st, asr, a, b)]
     if errors:
@@ -1011,7 +1012,7 @@ def review(st, asr, progress=None, cancel=None):
     E.apply_explicit_findings(st, asr)  # and explicit coroner findings stay cut
     st["claude_note"] = note
     st["claude_checked"] = True
-    st["reviewer"] = N
+    st["reviewer"] = name()      # which one it was is still kept (only what's shown says "AI")
     if learn is not None:
         try:   # Claude's calls teach the AI on this PC, and go in the findings spreadsheet
             learn.record_claude(st, book=st.get("title", ""))
@@ -1196,7 +1197,7 @@ class Chat:
                 if hit:
                     key, it = hit
                     it[key] = a == "tick"
-                    it["ai_note" if key == "cut" else "note"] = f"{name()} chat"
+                    it["ai_note" if key == "cut" else "note"] = f"{E.AI} chat"
                     it["by_you"] = True
                     if reason:
                         it["claude_reason"] = reason
@@ -1205,7 +1206,7 @@ class Chat:
                 hit = by_id.get(str(c.get("id", "")).strip().upper())
                 if hit and hit[0] == "cut" and _trim(self.st, self.asr, hit[1], _snum(c.get("from")),
                                                      _snum(c.get("to"))):
-                    hit[1].update(cut=True, by_you=True, ai_note=f"{name()} chat: trimmed")
+                    hit[1].update(cut=True, by_you=True, ai_note=f"{E.AI} chat: trimmed")
                     done += 1
             elif a == "just_the_word":
                 hit = by_id.get(str(c.get("id", "")).strip().upper())
@@ -1215,20 +1216,20 @@ class Chat:
                     sa, sb = loc.span(sc)
                     cat = _norm_cat(c.get("type"), cats) or (cats[0] if cats else "moderate")
                     if any(_add_word(self.st, self.asr, si, c.get("words", ""), cat, True,
-                                     f"{name()} chat", reason) for si in range(sa, sb + 1)):
-                        sc.update(cut=False, by_you=True, ai_note=f"{name()} chat: just the word")
+                                     f"{E.AI} chat", reason) for si in range(sa, sb + 1)):
+                        sc.update(cut=False, by_you=True, ai_note=f"{E.AI} chat: just the word")
                         done += 1
             elif a == "add_passage":
                 k = _norm_kind(c.get("type"), kinds)
                 pa, pb = _snum(c.get("from")), _snum(c.get("to"))
                 if k and pa is not None and _add_passage(self.st, self.asr, pa, pb if pb is not None else pa,
-                                                         k, True, f"{name()} chat", reason):
+                                                         k, True, f"{E.AI} chat", reason):
                     done += 1
             elif a == "add_word":
                 cat = _norm_cat(c.get("type"), cats) or (cats[0] if cats else "moderate")
                 si = _snum(c.get("sentence"))
                 if si is not None and _add_word(self.st, self.asr, si, c.get("words", ""), cat, True,
-                                                f"{name()} chat", reason):
+                                                f"{E.AI} chat", reason):
                     done += 1
         self.st["scenes"].sort(key=lambda x: (x["part"], x["s"]))
         return done
