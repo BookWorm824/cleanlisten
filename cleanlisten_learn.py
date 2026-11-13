@@ -165,6 +165,8 @@ def record(st):
             # which filled the "kept" memory and pushed out what you really chose.
             continue
         for s in _sentences(sc.get("text", "")):
+            if not on and _hard_rule(s):
+                continue        # fart, condom, semen are never learned as fine (hard rule, 2026-11-13)
             _remember(d["cut"] if on else d["kept"], s, d["kept"] if on else d["cut"])
             if on and sc.get("kind") and sc.get("kind") != "added":
                 d["cut_for"][norm(s)] = sc["kind"]    # cut for this filter (see _for_filters)
@@ -174,6 +176,8 @@ def record(st):
         if not w or (not m.get("on", True) and not m.get("by_you")
                      and m.get("_learned_as") is None):
             continue
+        if not m.get("on", True) and _hard_rule(w):
+            continue            # never learned as "you usually keep this" (hard rule)
         _count(d["words"], w, m, bool(m.get("on", True)), "muted", "kept")
         # words the lists don't know (added by you, Claude/ChatGPT or the AI): remember them
         # with the words around them, so they're muted again when that sentence comes back
@@ -328,9 +332,20 @@ def examples_text(title=""):
     return t
 
 
+def _hard_rule(text):
+    """Has it fart, condom or semen (the owner's hard rule, 2026-11-13: never learned as fine)?"""
+    try:
+        import cleanlisten as E
+        return E.has_hard_rule_word([E.norm(w) for w in str(text).split() if E.norm(w)])
+    except Exception:
+        return False
+
+
 def _may_be_fine(phrase_):
     """Only words that can be innocent ("dinner at hell") are ever learned as fine in a phrase;
     listed words like "sexual" are always muted (this also drops older wrong entries)."""
+    if _hard_rule(phrase_):
+        return False
     try:
         import cleanlisten as E
         words = phrase_.split()
@@ -358,7 +373,7 @@ def record_claude(st, book=""):
         for s in _sentences(sc.get("text", "")):
             if v == "remove":
                 _remember(d["claude_cut"], s)
-            elif v in ("keep", "just the word"):
+            elif v in ("keep", "just the word") and not _hard_rule(s):
                 _remember(d["claude_kept"], s)
         rows.append([f"Part {sc['part'] + 1} " + t(sc["s"]), "passage", sc.get("kind", ""),
                      sc.get("text", "")[:400], v, sc.get("claude_word", ""), sc.get("claude_reason", "")])

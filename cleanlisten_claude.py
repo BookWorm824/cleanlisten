@@ -1005,6 +1005,7 @@ def review(st, asr, progress=None, cancel=None):
     if errors:
         note += (f" {len(unread)} of {len(secs)} sections couldn't be checked ({errors[0]}); "
                  "there the word lists and the AI on this PC decide.")
+    E.apply_hard_rule(st, asr)          # fart, condom, semen stay muted whatever it said (2026-11-13)
     st["claude_note"] = note
     st["claude_checked"] = True
     st["reviewer"] = N

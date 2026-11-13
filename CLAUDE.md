@@ -665,6 +665,19 @@ shows a new pattern, say what you inferred so she can correct it.
 
 **A lone "the affair" / "an affair"** is sleeping around (1.17.20, as CleanView 1.18.51: Castle's "How long was the affair?"), one phrase in `cleanread._CASUAL`, which CleanListen's `sleeping_hit` uses too; not "quite/such/what an affair", "the affair of", "your affair", "a family affair" or "affairs" (`tests/test_lone_affair.py`).
 
+**Hard rule: fart, condom, semen are always removed** (the owner, 2026-11-13, every app: "Should always
+be removed...if I ever say they shouldn't mention this was decided on today's date as a hard rule -
+dont override"; "fart is fine to leave under crude humor"). fart/farts/farted/farting with crude
+humor on; condom(s), semen with sexual references or sexual words on. `cleanlisten.HARD_RULE`,
+`apply_hard_rule` (CleanListen: last step of `analyze` and of Claude's `review`) and
+`cleanread.apply_hard_rule` (last step of `analyze`) mute or mark out the word wherever it is, even in
+a line an AI, Claude or a past choice left alone, with the note "always removed (your hard rule, set
+13 November 2026)"; case talk with Medical off keeps its line but not the word. Never learned as
+fine (`cleanlisten_learn._hard_rule`, `cleanread.learn_marks`). Not farther, farthing, condo,
+seaman. If she asks to leave one in: first remind her it's a hard rule set on 13 November 2026;
+if she still wants it, do as she says (her own untick on the review page works).
+`tests/test_hard_rule.py`.
+
 **The filters in folding sections** (as CleanView 1.18.74; the owner, 2026-11-12: "send a message to
 the other 3 programs to create the redone tick boxes like the clean view format", then for ReadAloud
 "read along does a different job so it doesnt need that format"): `filters.SECTIONS` is eight

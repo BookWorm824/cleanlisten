@@ -1780,6 +1780,8 @@ def learn_marks(marks):
     for kind, key, text, fine in marks:
         if not key:
             continue
+        if fine and E.has_hard_rule_word([E.norm(w) for w in str(text).split() if E.norm(w)]):
+            continue      # fart, condom, semen are never learned as fine (hard rule, 2026-11-13)
         lst = [e for e in d["fine"].get(kind, []) if e[0] != key]
         if fine:
             lst.append([key, " ".join(str(text).split())[:200]])
@@ -2362,6 +2364,10 @@ def analyze(book, opts, progress=None, cancel=None):
             m["on"], m["note"] = False, ("You kept this before" if m["key"] in mine.get(
                 "word", ()) else "Kept by families before")
             known += 1
+    # last of all: the hard-rule words (fart, condom, semen), whatever the AI or learning said
+    if apply_hard_rule(book, mutes, opts):
+        for n, m in enumerate(mutes, 1):
+            m["id"] = n
     learn_note = f"Left {known} thing(s) unticked that were kept before." if known else ""
     say(1.0, "Done")
     return {"cuts": cuts, "mutes": mutes, "ai_note": ai_note, "learn_note": learn_note,
@@ -2380,6 +2386,30 @@ def _mute(book, q, a, b, cat, doubt=""):
             "ctx_raw": " ".join(t[lo:a].split()), "ctx_after_raw": " ".join(t[b:hi].split()),
             "key": word_key(t[lo:a], word, t[b:hi]),
             "on": not doubt, **({"note": doubt} if doubt else {})}
+
+
+def apply_hard_rule(book, mutes, opts):
+    """The owner's hard rule (2026-11-13, cleanlisten.HARD_RULE): fart (crude humor), condom and
+    semen (sexual references or sexual words) are marked out wherever they are, with their filter
+    on, whatever the AI or a past choice said. Returns how many it ticked or added."""
+    on = dict(crude=bool(opts.get("crude")), refs=bool(opts.get("refs")),
+              sexual=bool(opts.get("sexual")))
+    changed = 0
+    for i, w in enumerate(book.wn):
+        k = E.hard_rule_kind(w)
+        if not k or not E.hard_rule_on(k, **on):
+            continue
+        q, a, b = book.words[i]
+        m = next((m for m in mutes if m["para"] == q and m["a"] < b and a < m["b"]), None)
+        if m is None:
+            m = _mute(book, q, a, b, "sexual" if k == "sexual" else "rude")
+            mutes.append(m)
+            changed += 1
+        elif not m.get("on", True):
+            changed += 1
+        m.update(on=True, note=E.HARD_RULE_NOTE, hard_rule=True)
+    mutes.sort(key=lambda m: (m["para"], m["a"]))
+    return changed
 
 
 def _sent_cut(book, kind, run_):

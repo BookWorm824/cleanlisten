@@ -1953,6 +1953,64 @@ CRUDE_PHRASES = [("pull", "my", "finger"), ("butt", "crack"), ("skid", "marks"),
                  ("broke", "wind"), ("whoopee", "cushion"), ("number", "two")]
 
 
+# Hard rule (the owner, 2026-11-13, in every app): "these words: Fart (...), Condom (always falls under
+# sexual reference), Seman (always falls under sexual reference). Should always be removed...if I ever
+# say they shouldn't mention this was decided on today's date as a hard rule - dont override", then
+# "fart is fine to leave under crude humor". With its filter on, the word is muted (marked out in a
+# book) wherever it's said, even in a line an AI, Claude or a past choice left alone, and it's never
+# learned as fine. Not farther, farthing, condo, seaman. If she asks to leave one in: remind her it's a
+# hard rule set on 13 November 2026; if she still wants it, do as she says (her own untick works).
+HARD_RULE_NOTE = "always removed (your hard rule, set 13 November 2026)"
+HARD_RULE = {"crude": _c([r"farts?", r"farted", r"farting"]), "sexual": _c([r"condoms?", r"semen"])}
+
+
+def hard_rule_kind(w):
+    """"crude" (fart...), "sexual" (condom, semen) or None for one normalised word."""
+    return next((k for k, pats in HARD_RULE.items() if any(p.match(w) for p in pats)), None)
+
+
+def has_hard_rule_word(words):
+    return any(hard_rule_kind(w) for w in words)
+
+
+def hard_rule_on(kind, crude=False, refs=False, sexual=False):
+    """Is the filter a hard-rule word falls under ticked? fart: crude humor; condom and semen:
+    sexual references (or the sexual words)."""
+    return crude if kind == "crude" else refs or sexual
+
+
+def apply_hard_rule(st, asr):
+    """Mute every hard-rule word whose filter is on (st["filters"]), last of all: a mute that's
+    there is ticked again, a missing one is added. Returns how many it ticked or added."""
+    f = st.get("filters") or {}
+    kinds, cats = set(f.get("kinds") or []), set(f.get("cats") or [])
+    on = dict(crude="crude" in kinds, refs="ref" in kinds, sexual="sexual" in cats)
+    asr_t = [w["t"] for w in asr]
+    asr_n = [w.get("n") or norm(w["t"]) for w in asr]
+    changed = 0
+    for i, w in enumerate(asr_n):
+        k = hard_rule_kind(w)
+        if not k or not hard_rule_on(k, **on):
+            continue
+        part, s_, e_ = asr[i]["part"], asr[i]["s"], asr[i]["e"]
+        m = next((m for m in st["mutes"] if m["part"] == part and not (e_ < m["s"] or s_ > m["e"])), None)
+        if m is not None:
+            if not m.get("on", True) or m.get("note") != HARD_RULE_NOTE:
+                changed += not m.get("on", True)
+                m.update(on=True, note=HARD_RULE_NOTE, hard_rule=True)
+            continue
+        b, a = clean_context(asr_t, asr_n, i, i + 1)
+        st["mutes"].append({"id": max([x.get("id", 0) for x in st["mutes"]] + [0]) + 1,
+                            "part": part, "s": s_, "e": e_, "cat": "sexual" if k == "sexual" else "rude",
+                            "src": "audio", "word": shown(asr_t[i:i + 1], asr_n[i:i + 1]),
+                            "ctx": b, "ctx_after": a, "i": i, "j": i + 1,
+                            **raw_fields(asr_t, i, i + 1), "on": True, "note": HARD_RULE_NOTE,
+                            "hard_rule": True})
+        changed += 1
+    st["mutes"].sort(key=lambda m: (m["part"], m["s"]))
+    return changed
+
+
 def crude_hit(words):
     if any(any(p.match(w) for p in CRUDE_WORDS) for w in words):
         return True
@@ -3082,6 +3140,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             finally:
                 free_ai_memory()
             log(st["ai_note"])
+    # last of all: the hard-rule words (fart, condom, semen) whatever the AI, Claude or learning said
+    apply_hard_rule(st, asr)
     write_safely(work / "analysis.json", json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st
