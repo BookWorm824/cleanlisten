@@ -705,9 +705,18 @@ the owner first (she said it "does a different job" about the sections).
 **"Stripper pole"** (1.17.30; the owner in CleanView's chat on Castle S2E1, 2026-11-13: "if pole ever
 comes after stripper it should be muted, keep pole other instances"): the two words together are a
 sexual phrase (`SEXUAL_PHRASES`: stripper/strippers/stripper's + pole/poles), muted with sexual words
-ticked in CleanListen and marked out in CleanRead. "Pole" anywhere else is left alone. "Stripper" on
-its own is not on CleanListen's word lists (CleanRead's immodest-clothing filter lists it); the owner
-hasn't asked for that. `tests/test_castle_sexref_words.py`.
+ticked in CleanListen and marked out in CleanRead. "Pole" anywhere else is left alone.
+`tests/test_castle_sexref_words.py`.
+
+**"Stripper" the person, not the tool** (1.17.31; the owner, 2026-11-13: "read the context. like a
+paint stripper would be ok. but a person stripper isnt. a pole by itself is fine but with stripper it
+isn't"). "Stripper(s)" is a sexual word (`SEXUAL_WORDS`), so it's muted or marked out with sexual words
+ticked and its sentence counts as a sexual reference, unless the words around it show it's the tool or
+the chemical: `stripper_tool(words, i)` looks at the three words before and the five after for what
+it strips or the work it's part of (`STRIPPER_THINGS`: paint, varnish, wallpaper, wire, cable,
+furniture, scraper, brush...), and knows "stripper clip" and "asset stripper". CleanRead's
+immodest-clothing list (`IMMODEST`, now a function over `_IMMODEST`) leaves the tool alone the same
+way. `tests/test_stripper.py`.
 
 **Books in other languages, Spanish and French first** (1.17.30, as CleanView 1.18.80 and
 1.18.81; the owner, 2026-11-13: "ask clean view about the language", "update"; in CleanView's

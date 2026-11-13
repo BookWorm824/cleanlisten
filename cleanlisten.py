@@ -467,6 +467,8 @@ SEXUAL_WORDS = [
     r"condoms?", r"boobs?", r"boobies", r"penis(es)?", r"vaginas?", r"genital.*",
     r"nipples?", r"porn.*", r"foreplay", r"intercourse", r"masturbat.*", r"climaxed",
     r"hookers?", r"blowjobs?", r"threesomes?", r"lingerie", r"panties",
+    # a person who strips, not the tool or the chemical (stripper_tool() below)
+    r"stripper('s|s)?",
     # crude words for body parts and sex (from CleanView's TV and film list)
     r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
     r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
@@ -501,6 +503,7 @@ SEXUAL_PHRASES = [
     # Castle S2E1 (CleanView 1.18.84; the owner, 2026-11-13: "if pole ever comes after stripper it
     # should be muted, keep pole other instances"): the two words together, as CleanView mutes
     # them. Not the North Pole, a fishing pole, the flag pole, pole vault or tent poles.
+    # ("Stripper" on its own is a sexual word too, when it's a person: stripper_tool().)
     ("stripper", "pole"), ("stripper", "poles"), ("strippers", "pole"), ("strippers", "poles"),
     ("stripper's", "pole"), ("stripper's", "poles"),
     ("forced", "penetration"), ("signs", "of", "penetration"), ("evidence", "of", "penetration"),
@@ -759,6 +762,32 @@ CASE_TALK_NEXT = {"assault", "assaults", "assaulted", "offender", "offenders", "
                   "offence", "offences", "crime", "crimes", "trafficking", "trafficker", "traffickers",
                   "abuse", "abused", "abuser", "abusers", "predator", "predators", "harassment",
                   "exploitation"}
+# "Stripper" the person is a sexual word; the tool and the chemical aren't (the owner, 2026-11-13:
+# "read the context. like a paint stripper would be ok. but a person stripper isnt. a pole by
+# itself is fine but with stripper it isn't"). It's the thing when what it strips, or the work it's
+# part of, is named close by ("paint stripper", "wire strippers", "the stripper took the varnish
+# off", "brush the stripper on"), and in "stripper clip" (a rifle's) or "asset stripper".
+STRIPPER_THINGS = {
+    "paint", "paints", "painted", "paintwork", "varnish", "varnished", "lacquer", "enamel", "stain",
+    "shellac", "finish", "coating", "sealer", "sealant", "wax", "polish", "wallpaper", "glue",
+    "adhesive", "rust", "wire", "wires", "wiring", "cable", "cables", "insulation", "floor",
+    "floors", "floorboards", "furniture", "woodwork", "chemical", "chemicals", "solvent", "solvents",
+    "scraper", "sandpaper", "sander", "sanding", "sanded", "brush", "brushed", "pliers", "cutters",
+    "crimper", "toolbox", "hardware"}
+STRIPPER_NEXT = {"clip", "clips", "well", "wells"}
+STRIPPER_PREV = {"asset", "weed", "tobacco", "cotton"}
+
+
+def stripper_tool(words, i):
+    """True if the "stripper" at words[i] is the tool or the chemical, from the words around it:
+    the three before and the five after."""
+    if (words[i + 1] if i + 1 < len(words) else "") in STRIPPER_NEXT:
+        return True
+    if (words[i - 1] if i else "") in STRIPPER_PREV:
+        return True
+    return any(w in STRIPPER_THINGS for w in words[max(0, i - 3):i] + words[i + 1:i + 6])
+
+
 INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
                  **{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
@@ -1117,6 +1146,7 @@ def _find_language(words, cats, breaks=()):
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w == "gay" and gay_happy(words, i) or
                         w == "bondage" and bondage_slavery(words, i) or
+                        w.startswith("stripper") and stripper_tool(words, i) or
                         w.startswith("safeword") and (words[i + 1] if i + 1 < n else "") in SAFE_WORD_NOT_NEXT or
                         w in ("jesus", "christ") and reverent(words, i)):
                     break     # "pussy cat", "Moby Dick", "summa cum laude", "the love of Christ"

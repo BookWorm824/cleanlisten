@@ -991,11 +991,18 @@ IMPLIED = Matcher(
              "wrapped in a|her|his towel|sheet",
              "under the sheets !with", "bare back|backs|shoulders|chest", "skinny dipping|dip|dipped",
              "nothing on but", "wasn't|weren't|was not wearing anything"])
-IMMODEST = Matcher(
+_IMMODEST = Matcher(
     words=[r"bikinis?", r"lingerie", r"thongs?", r"negligees?", r"miniskirts?", r"striptease",
            r"strippers?"],
     phrases=["in her|his|their underwear|bra|panties|boxers", "low cut dress|top|neckline", "lowcut dress|top|neckline",
              "pole|lap dance|dancing|dancer", "skimpy|revealing outfit|dress|top|clothes|swimsuit"])
+def IMMODEST(words, near=None):
+    """Immodest clothing. A paint or wire stripper isn't a person (the owner, 2026-11-13: "read
+    the context. like a paint stripper would be ok. but a person stripper isnt")."""
+    return [sp for sp in _IMMODEST(words, near)
+            if not (words[sp[0]].startswith("stripper") and E.stripper_tool(words, sp[0]))]
+
+
 GESTURES = Matcher(
     phrases=["flipped|flip|flips|flipping him|her|them|me|us|you|everyone off",
              "flipped|flip|flips|flipping him|her|them|me|us|you the bird",
