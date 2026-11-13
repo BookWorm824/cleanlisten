@@ -300,8 +300,9 @@ class App(tk.Tk):
     # saying what's chosen; one step on the right; Back / Next; Make audiobook always there.
     STEPS = [("Ebook", "Choose the book to read aloud. The original is never changed."),
              ("Voice", "Who reads the book, and how fast."),
-             ("Reading director", "Claude, ChatGPT or Gemini goes through the book first and directs "
-                                  "the reading. Optional."),
+             # "AI" outside the choice of which one (the owner, 2026-11-13, of CleanView: "instead of
+             # saying "claude" say "Ai""; for ReadAloud: "all except claud isn't setup on this computer")
+             ("Reading director", "An AI goes through the book first and directs the reading. Optional."),
              ("What to read", "The parts nobody wants read aloud (contents, copyright pages) are "
                               "already left out."),
              ("Save to", "Where the audiobook goes.")]
@@ -316,7 +317,7 @@ class App(tk.Tk):
         if n == 3:
             if self._lang() != "en":
                 return "English books only"
-            return AI_NAMES[self._ai()] if self.director_var.get() else "Off"
+            return "AI" if self.director_var.get() else "Off"
         if n == 4:
             if not self.book:
                 return "Choose a book first"

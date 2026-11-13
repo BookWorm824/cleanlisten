@@ -112,3 +112,15 @@ def test_the_updated_line_goes_and_the_lists_are_round(window, monkeypatch):
     _pump(app, 0.6)
     assert not said[0].winfo_exists()
     assert app.voice_box.cget("style") == app.speed_box.cget("style") == "Round.TCombobox"
+
+
+def test_ai_outside_the_choice_of_which_one(window):
+    # the owner, 2026-11-13: "all except claud isn't setup on this computer"
+    win, app = window
+    sp = app.steps_page
+    app.director_var.set(True)
+    app._director_changed(check=False)
+    assert sp.rows[2][3].cget("text") == "AI"
+    assert dict(win.App.STEPS)["Reading director"].startswith("An AI goes through the book")
+    src = (REPO / "ReadAloud.pyw").read_text("utf8")
+    assert "isn't set up on this computer, so it can't go" in src and 'f"{AI_NAMES[ai]} isn\'t set up' in src
