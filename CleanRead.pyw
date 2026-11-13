@@ -16,6 +16,8 @@ sys.path.insert(0, str(HERE))
 import cleanread as engine  # noqa: E402
 import filters as F
 import logo as LOGO  # noqa: E402  (the filters, shared with CleanListen)
+import cvlook as look  # noqa: E402  (the drawn look: cards, switches, pill buttons; CleanView's)
+import cllook as CL  # noqa: E402  (the step-by-step start page, shared with CleanListen)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanListen)
 
 
@@ -39,17 +41,34 @@ def app_version():
         return "?"
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 SETTINGS = APP_DATA / "cleanread_settings.json"
-BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
-    "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
-# The one main step on each page (start, Save clean copy, Clean another book) is a big
-# green button, so it's easy to spot; grey buttons have an edge. Its green is the logo's and the
-# green text's (ACCENT), not a brighter one (the owner, 2026-11-09: "the start cleaning button is a
-# different green than the main logo and other green text").
-GO, GO_DK, BUTTON_EDGE = ACCENT, ACCENT_DK, "#B9AFA2"
-GO_OFF = "#A9C2BC"     # greyed out (the same as the other green buttons)
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
-CHIP = {"none": ("#EEF1EE", "#6D7A72"), "mentioned": ("#E6F0FA", "#2B5B8A"),
-        "some": ("#FFF1D6", "#8A5A00"), "a lot": ("#FBE1DC", "#9A2F1F")}
+# Light and dark (as CleanView 1.18.78; the owner, 2026-11-13: "ask cleann view aabout dark mode
+# built. lets move that here also"). Every colour this window uses is a name from cllook.py with a
+# value for each look; `use_theme` sets them here (BG, CARD, INK, GO...), so code that builds a
+# page always reads the look in use. Never write a colour into a page: name it in cllook.py.
+# The one main step on each page is a big green button (GO: the logo's green, ACCENT, the owner,
+# 2026-11-09: "i want to stay consistent"); in CleanListen's list a book that is ready keeps a
+# brighter green (READY_GREEN), so it looks different from a done one (ACCENT_DK).
+THEME = "light"
+
+
+def use_theme(name):
+    """Light or dark: sets every colour name in this module. Pages built after it are in that look."""
+    global THEME
+    THEME = CL.use_theme(name)
+    globals().update(CL.colours())
+
+
+use_theme("light")          # the saved choice is read when the window opens (App.__init__)
+HEAD = CL.HEAD
+
+
+def chip(rating):
+    """A rating chip's (background, words) colours in the look in use."""
+    return {"none": CHIP_NONE, "mentioned": CHIP_MENTIONED, "some": CHIP_SOME,
+            "a lot": CHIP_LOT}[rating]
+
+
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt"), ("All files", "*.*")]
 
 STYLE = [("dash", "Replace with a dash  ( — )"), ("stars", "First letter and stars  (d***)"),
@@ -107,6 +126,8 @@ class App(tk.Tk):
         self.job = 0              # the check/find being worked on; Cancel moves on (2026-11-09)
         self.paused = False       # Pause on the working page (2026-11-12)
         self.settings = load_settings()
+        use_theme(F.load().get("theme"))      # light or dark, before anything is drawn
+        self.configure(bg=BG)
         self.book_path = None
         self.book = None          # parsed book, kept while the same file is loaded
         self.mode = tk.StringVar(value=self.settings.get("mode", "check"))
@@ -116,92 +137,42 @@ class App(tk.Tk):
         self._style()
         self.page = None
         self.show_setup()
+        self.after(50, lambda: CL.title_bar(self))
         self.watch = freezes.Watch(self, 'CleanRead', APP_DATA, 'cleanread_')
         self.watch.start()
         self.after(100, self._poll)
 
     # ---------- look ----------
-    @staticmethod
-    def _tick_image(size, fill, border, tick):
-        """A rounded tick box drawn pixel by pixel (tkinter can't load SVG); CleanListen's."""
-        img = tk.PhotoImage(width=size, height=size)
-        r = size * 0.22
-
-        def inside(x, y, inset):
-            lo, hi, rr = inset, size - inset, max(0.0, r - inset)
-            px, py = x + 0.5, y + 0.5
-            if not (lo <= px <= hi and lo <= py <= hi):
-                return False
-            cx = min(max(px, lo + rr), hi - rr)
-            cy = min(max(py, lo + rr), hi - rr)
-            return (px - cx) ** 2 + (py - cy) ** 2 <= rr * rr
-
-        def near_tick(x, y):
-            px, py = (x + 0.5) / size, (y + 0.5) / size
-            for (ax, ay), (bx, by) in (((0.24, 0.52), (0.43, 0.70)), ((0.43, 0.70), (0.77, 0.32))):
-                dx, dy = bx - ax, by - ay
-                k = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
-                if (px - ax - k * dx) ** 2 + (py - ay - k * dy) ** 2 <= 0.075 ** 2:
-                    return True
-            return False
-
-        width = max(1.0, size / 14)
-        for y in range(size):
-            for x in range(size):
-                if not inside(x, y, 0):
-                    continue
-                c = fill if inside(x, y, width) else border
-                if tick and near_tick(x, y):
-                    c = "#FFFFFF"
-                img.put(c, (x, y))
-        return img
-
     def _style(self):
         s = ttk.Style(self)
         s.theme_use("clam")
         s.configure(".", background=BG, foreground=INK, font=(FONT, 10))
         s.configure("TCheckbutton", background=CARD, font=(FONT, 10))
         s.map("TCheckbutton", background=[("active", CARD)])
-        # rounded tick boxes with a real tick, as CleanListen's (the owner, 2026-11-12: "Yes, real
-        # ticks"): the built-in ones show an ✗, which read as "not taken out" beside the sections
-        try:
-            size = round(15 * max(1.0, self.winfo_fpixels("1i") / 96.0))
-            self._ticks = {k: self._tick_image(size, *v) for k, v in {
-                "off": ("#FFFFFF", "#9C958C", False), "hover": ("#FFFFFF", ACCENT, False),
-                "on": (ACCENT, ACCENT, True), "on_hover": (ACCENT_DK, ACCENT_DK, True),
-                "off_dis": ("#F1EEEA", "#C9C3BB", False), "on_dis": ("#A9C2BC", "#A9C2BC", True)}.items()}
-            t = self._ticks
-            s.element_create("Tick.indicator", "image", t["off"],
-                             ("disabled", "selected", t["on_dis"]), ("disabled", t["off_dis"]),
-                             ("active", "selected", t["on_hover"]), ("selected", t["on"]),
-                             ("active", t["hover"]), width=size + round(size * 0.5), sticky="w")
-            s.layout("TCheckbutton", [("Checkbutton.padding", {"sticky": "nswe", "children": [
-                ("Tick.indicator", {"side": "left", "sticky": ""}),
-                ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
-                    ("Checkbutton.label", {"sticky": "nswe"})]})]})])
-        except tk.TclError:
-            pass      # keep the built-in tick boxes
         s.configure("TRadiobutton", background=CARD, font=(FONT, 11, "bold"))
         s.map("TRadiobutton", background=[("active", CARD)])
         s.configure("Accent.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 12, "bold"), padding=(22, 10), borderwidth=0)
-        s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", DISABLED)])
         s.configure("Main.TButton", background=GO, foreground="white",
                     font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
         s.map("Main.TButton", background=[("active", GO_DK), ("disabled", GO_OFF)])
         s.configure("Go.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 11, "bold"), padding=(14, 5), borderwidth=0)
-        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
-        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": "#ECE7E0", "darkcolor": "#ECE7E0"}
-        s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
+        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", DISABLED)])
+        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": GREY, "darkcolor": GREY}
+        s.configure("Plain.TButton", background=GREY, foreground=INK, padding=(14, 6),
                     borderwidth=1, font=(FONT, 10), **edge)
-        s.map("Plain.TButton", background=[("active", "#E0D9CF")])
-        s.configure("Small.TButton", background="#ECE7E0", foreground=INK, padding=(8, 1),
+        s.map("Plain.TButton", background=[("active", GREY_HOVER)])
+        s.configure("Small.TButton", background=GREY, foreground=INK, padding=(8, 1),
                     borderwidth=1, font=(FONT, 9), **edge)
-        s.map("Small.TButton", background=[("active", "#E0D9CF")])
-        s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
-                    background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
+        s.map("Small.TButton", background=[("active", GREY_HOVER)])
+        s.configure("Green.Horizontal.TProgressbar", troughcolor=TROUGH,
+                    background=ACCENT, bordercolor=TROUGH, lightcolor=ACCENT, darkcolor=ACCENT)
         s.configure("TCombobox", padding=4)
+        # the drawn look (the owner, 2026-11-13, as CleanView 1.18.77): rounded buttons, thin scroll
+        # bars, a rounded progress bar, soft fields and smooth tick boxes with a real tick
+        CL.style(self, s)
 
     def destroy(self):
         if getattr(self, "watch", None):     # stops the freeze watcher; the crash log is closed
@@ -215,20 +186,22 @@ class App(tk.Tk):
             self.unbind_all(seq)
         if self.page:
             self.page.destroy()
+        X = self._px
         self.page = tk.Frame(self, bg=BG)
-        self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
+        self.page.pack(fill="both", expand=True, padx=X(34), pady=(X(22), X(16)))
         self.footer = tk.Frame(self.page, bg=BG)
-        self.footer.pack(side="bottom", fill="x", pady=(12, 0))
+        self.footer.pack(side="bottom", fill="x", pady=(X(10), 0))
+        tk.Frame(self.footer, bg=LINE, height=1).pack(side="top", fill="x", pady=(0, X(12)))
         self.name_lbl = None
         if name:                # which book this is (Jason: "you don't know what you've cleaned")
-            self.name_lbl = tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
+            self.name_lbl = tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
                                      wraplength=760, justify="left")
-            self.name_lbl.pack(anchor="w", pady=(0, 2))
-        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold"),
+            self.name_lbl.pack(anchor="w", pady=(0, X(2)))
+        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(HEAD, 21),
                  wraplength=760, justify="left").pack(anchor="w")
         if subtitle:
-            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
-                     wraplength=740, justify="left").pack(anchor="w", pady=(2, 12))
+            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
+                     wraplength=740, justify="left").pack(anchor="w", pady=(X(4), X(14)))
         # the version and "Check for updates" on every page, as in CleanListen (Jason,
         # 2026-11-06: "Clean read doesn't have anything on top that says current version")
         self._page_title = title
@@ -337,131 +310,224 @@ class App(tk.Tk):
         self.bind_all("<Button-4>", lambda e: wheel(-2))
         self.bind_all("<Button-5>", lambda e: wheel(2))
         self._canvas = canvas
+        inner._canvas = canvas
         return inner
 
-    def _card(self, parent, step, heading, note=""):
-        outer = tk.Frame(parent, bg=LINE)
-        outer.pack(fill="x", pady=6)
-        c = tk.Frame(outer, bg=CARD, padx=16, pady=12)
-        c.pack(fill="x", padx=1, pady=1)
-        top = tk.Frame(c, bg=CARD)
-        top.pack(fill="x")
-        tk.Label(top, text=step, bg=ACCENT, fg="white", font=(FONT, 10, "bold"),
-                 width=2).pack(side="left", padx=(0, 10))
-        tk.Label(top, text=heading, bg=CARD, fg=INK, font=(FONT, 12, "bold")).pack(side="left")
-        if note:
-            tk.Label(top, text=note, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=8)
-        body = tk.Frame(c, bg=CARD)
-        body.pack(fill="x", pady=(8, 0), padx=(32, 0))
-        return body
+    def _px(self, n):
+        return look.px(self, n)
 
-    def _note(self, parent, text, bg=CARD):
-        tk.Label(parent, text=text, bg=bg, fg=MUTED, font=(FONT, 9), wraplength=640,
+    def _scroll_to(self, w):
+        """Scroll the page w is on so w can be seen."""
+        inner = w                       # the scroll area's own frame (a look.Card is a canvas too)
+        while inner is not None and getattr(inner, "_canvas", None) is None:
+            inner = inner.master
+        if inner is None:
+            return
+        self.update_idletasks()
+        h = inner.winfo_height()
+        if h > 0:
+            inner._canvas.yview_moveto(max(0.0, (w.winfo_rooty() - inner.winfo_rooty() - 120) / h))
+
+    def _note(self, parent, text, bg=None):
+        tk.Label(parent, text=text, bg=bg or CARD, fg=MUTED, font=(FONT, 9), wraplength=640,
                  justify="left").pack(anchor="w", padx=(22, 0))
 
-    def _link(self, parent, text, cmd, bg=BG):
-        l = tk.Label(parent, text=text, bg=bg, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
+    def _link(self, parent, text, cmd, bg=None):
+        l = tk.Label(parent, text=text, bg=bg or BG, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
         l.bind("<Button-1>", lambda e: cmd())
         return l
 
-    # ---------- page 1: choose a book and what to do ----------
-    def show_setup(self):
+    # ---------- page 1: choose a book and what to do, one step at a time ----------
+    # The owner, 2026-11-13 (CleanView 1.18.77's "B, step by step"): the steps down the left, each
+    # saying what's chosen, one step on the right, Back / Next, and the green button always there.
+    def _steps(self):
+        first = [("Ebook", "Choose the book. The original is never changed."),
+                 ("What to do", "Check what's in a book before your kids read it, or make a clean "
+                                "copy with the language and content you don't want taken out.")]
+        if self.mode.get() == "check":
+            return first + [("AI helper", "It reads for what word lists can't spot. Optional.")]
+        return first + [("What to take out", "Bad words are marked out; everything else is listed "
+                                             "for you to check before anything is cut."),
+                        ("Options", "How the clean copy looks, and the AI helper."),
+                        ("Save to", "Where the clean copy goes.")]
+
+    def _theme_var(self):
+        self.theme_var = tk.StringVar(value=THEME)
+        return self.theme_var
+
+    def _step_summary(self, n):
+        """What's chosen in step n, in a few words, for the list on the left."""
+        check = self.mode.get() == "check"
+        if n == 1:
+            return Path(self.book_path).name if self.book_path else "No book chosen yet"
+        if n == 2:
+            return "Check the content" if check else "Make a clean copy"
+        ai = getattr(self, "ai_var", None)
+        ai = "AI helper on" if ai is not None and ai.get() else "AI helper off"
+        if check:
+            return ai
+        if n == 3:
+            card = getattr(self, "filter_card", None)
+            return dict(F.PROFILES).get(card.profile.get(), "") if card else ""
+        if n == 4:
+            return ai
+        if self.outdir:
+            return Path(self.outdir).name or str(self.outdir)
+        return "Next to the book"
+
+    def show_setup(self, step=1):
         if getattr(self, "chat_win", None) and self.chat_win.winfo_exists():
             self.chat_win.destroy()
-        p = self._new_page(APP, "Check what's in a book before your kids read it, or make a clean "
-                                "copy with the language and content you don't want taken out.")
-        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
-        if upd:
-            tk.Label(p, text="✓ " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
-                     padx=10, pady=6, anchor="w").pack(fill="x", pady=(0, 8))
+        if getattr(self, "watch", None):
+            self.watch.doing["page"] = APP
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.unbind_all(seq)
+        if self.page:
+            self.page.destroy()
+        X = self._px
+        p = self.page = tk.Frame(self, bg=BG)
+        p.pack(fill="both", expand=True)
+        self.name_lbl = None
+        self._page_title = APP
         try:
             ver = json.loads((HERE / "version.json").read_text())["version"]
             self.title(f"{APP} {ver}")
         except Exception:
             pass
-        self.start_btn = ttk.Button(self.footer, text="", style="Main.TButton",
-                                    command=self.start, state="disabled")
-        self.start_btn.pack(side="right")
-        # as in CleanView (Jason, 2026-11-06: "No check for update button like clean view")
-        ttk.Button(self.footer, text="\u21bb Check for updates", style="Plain.TButton",
-                   command=self.check_updates).pack(side="left")
-        body = self._scroll_area(p)
+        st = self.settings
+        check = self.mode.get() == "check"
+        sp = self.steps_page = CL.StepPage(
+            self, p, APP, LOGO.logo_png("cleanread.ico", X(40))[0], self._steps(),
+            self._step_summary, ("Start checking" if check else "Start cleaning", self.start),
+            links=[(f"v{app_version()} \u00b7 Check for updates", self.check_updates, "refresh")],
+            done=lambda i: i == 1 and bool(self.book_path), scroll_area=self._scroll_area,
+            start=step, theme=(self._theme_var(), self._set_theme))
+        self.footer = sp.nav
+        self.start_btn = sp.main_btn
+        self.start_btn.config(state="disabled")
+        self._upd_lbl = next(iter(sp.links.values())).label
+        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
+        if upd:
+            tk.Label(sp.top, text="\u2713 " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                     padx=X(12), pady=X(7), anchor="w").pack(fill="x", pady=(0, X(12)))
 
-        b1 = self._card(body, "1", "Ebook", "EPUB, PDF or TXT — not copy-protected")
-        row = tk.Frame(b1, bg=CARD)
-        row.pack(fill="x")
-        ttk.Button(row, text="Choose ebook…", style="Go.TButton",
-                   command=self.pick_book).pack(side="left")
-        self.book_lbl = tk.Label(row, text="No book chosen yet", bg=CARD, fg=MUTED, font=(FONT, 10),
-                                 wraplength=520, justify="left")
-        self.book_lbl.pack(side="left", padx=12)
+        # ----- step 1: the book
+        drop = look.Card(sp.pane(1), fill=SOFT, edge=SOFT_EDGE, radius=16, pad=(20, 18))
+        drop.pack(fill="x", padx=(0, X(4)))
+        look.Badge(drop.body, "folder", size=54, icon_size=20).pack(side="left")
+        words = tk.Frame(drop.body, bg=SOFT)
+        words.pack(side="left", fill="x", expand=True, padx=(X(16), X(12)))
+        tk.Label(words, text="Choose an ebook", bg=SOFT, fg=INK, font=(HEAD, 13),
+                 anchor="w").pack(anchor="w")
+        tk.Label(words, text="EPUB, PDF or TXT \u2014 not copy-protected.", bg=SOFT, fg=MUTED,
+                 font=(FONT, 9), anchor="w", wraplength=X(260), justify="left").pack(
+                     anchor="w", pady=(X(2), 0))
+        self.choose_btn = look.Pill(drop.body, "Choose ebook\u2026", self.pick_book, size=12,
+                                    pad=(22, 11))
+        self.choose_btn.pack(side="right")
+        self.book_lbl = tk.Label(sp.pane(1), text="No book chosen yet", bg=BG, fg=MUTED,
+                                 font=(FONT, 10), wraplength=X(560), justify="left", anchor="w")
+        self.book_lbl.pack(anchor="w", pady=(X(12), 0))
 
-        b2 = self._card(body, "2", "What do you want to do?")
-        for val, head, sub in (
+        # ----- step 2: check it, or make a clean copy
+        mv = tk.StringVar(value=self.mode.get())
+
+        def chosen(*_):
+            if mv.get() != self.mode.get():
+                self.mode.set(mv.get())
+                self.after_idle(self._mode_changed)
+        mv.trace_add("write", chosen)
+        choices = tk.Frame(sp.pane(2), bg=BG)
+        choices.pack(fill="x")
+        for c in range(2):
+            choices.columnconfigure(c, weight=1, uniform="mode")
+        for n, (val, head, sub, icon) in enumerate((
                 ("check", "Check the content",
-                 "Reads the whole book and makes a report for parents: witches, dark magic, vampires, "
-                 "werewolves, bullying, disrespect toward parents, romance, language and more — "
-                 "with the actual sentences and where they are."),
+                 "Reads the whole book and makes a report for parents: witches, dark magic, "
+                 "vampires, bullying, disrespect toward parents, romance, language and more, with "
+                 "the actual sentences and where they are.", "info"),
                 ("clean", "Make a clean copy",
                  "Marks out bad words and cuts the content you choose, using the same filters as "
-                 "CleanListen and CleanView. You see everything before it's saved.")):
-            ttk.Radiobutton(b2, text=head, value=val, variable=self.mode,
-                            command=self._mode_changed).pack(anchor="w", pady=(4, 0))
-            tk.Label(b2, text=sub, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640,
-                     justify="left").pack(anchor="w", padx=(22, 0), pady=(0, 4))
+                 "CleanListen and CleanView. You see everything before it's saved.", "spark"))):
+            card = look.OptionCard(choices, val, mv, head, sub, icon=icon)
+            card.sub.config(wraplength=X(210))
+            card.grid(row=0, column=n, sticky="nsew", padx=(0, X(10)), pady=(0, X(10)))
+        self._mode_var = mv
 
-        self.opt_host = tk.Frame(body, bg=BG)
-        self.opt_host.pack(fill="x")
-        self._build_options()
+        self._built_mode = self.mode.get()
+        if check:
+            # ----- step 3 (checking): the AI helper
+            self.ai_var = tk.BooleanVar(value=st.get("check_ai", False))
+            CL.switch_row(sp.card(3), self.ai_var,
+                          "AI helper  (reads for what word lists can't spot)",
+                          "Catches things like a child sneaking around or mocking their parents "
+                          "when no warning words are used. Runs on your PC. Without it the check "
+                          "takes under a minute; with it, the check takes longer (20\u201360 minutes "
+                          "for a novel).", command=sp.refresh).pack(fill="x")
+        else:
+            # ----- step 3 (a clean copy): the same filters as CleanListen and CleanView
+            self.filter_card = F.FilterPanel(sp.pane(3), on_change=sp.refresh, wrap=560,
+                                             scroll_to=self._scroll_to)
+            # ----- step 4: how it looks, and the AI helper
+            b = sp.card(4)
+            row = tk.Frame(b, bg=CARD)
+            row.pack(anchor="w", fill="x")
+            tk.Label(row, text="How marked-out words look", bg=CARD, fg=INK,
+                     font=(HEAD, 10)).pack(side="left")
+            self.style_box = ttk.Combobox(row, state="readonly", width=30,
+                                          values=[label for _, label in STYLE])
+            self.style_box.current([k for k, _ in STYLE].index(st.get("style", "dash")))
+            self.style_box.pack(side="left", padx=(X(12), 0))
+            self.marker_var = tk.BooleanVar(value=st.get("marker", True))
+            CL.switch_row(sp.card(4, top=12), self.marker_var,
+                          "Show [\u2026] where something was cut",
+                          "So a jump in the story makes sense.").pack(fill="x")
+            self.ai_var = tk.BooleanVar(value=st.get("clean_ai", True))
+            CL.switch_row(sp.card(4, top=12), self.ai_var,
+                          "AI helper  (double-checks every filter)",
+                          "Catches what the word lists missed and unticks anything flagged by "
+                          "mistake. Runs on your PC. The check takes longer with it on "
+                          "(20\u201360 minutes for a novel).", command=sp.refresh).pack(fill="x")
+            # ----- step 5: where the clean copy goes
+            b = sp.card(5)
+            row = tk.Frame(b, bg=CARD)
+            row.pack(fill="x")
+            look.Pill(row, "Change\u2026", self.pick_out, kind="secondary", size=10,
+                      pad=(16, 8)).pack(side="right")
+            self.out_lbl = tk.Label(row, text="Next to the original book", bg=CARD, fg=MUTED,
+                                    font=(FONT, 10), wraplength=X(400), justify="left")
+            self.out_lbl.pack(side="left")
+            tk.Label(sp.pane(5), text="The original is never changed. EPUB books stay EPUB (with "
+                     "\u201c(Clean)\u201d added to the title); a PDF comes out as a plain EPUB; a TXT "
+                     "stays TXT.", bg=BG, fg=FAINT, font=(FONT, 9), wraplength=X(560),
+                     justify="left").pack(anchor="w", pady=(X(14), 0))
         self._refresh()
+        sp.go(step)
 
     def _mode_changed(self):
         self._save_opts()
-        self._build_options()
-        self._refresh()
+        self.show_setup(step=2)
 
-    def _build_options(self):
-        for w in self.opt_host.winfo_children():
-            w.destroy()
-        st = self.settings
-        self._built_mode = self.mode.get()
-        if self.mode.get() == "check":
-            b3 = self._card(self.opt_host, "3", "Options")
-            self.ai_var = tk.BooleanVar(value=st.get("check_ai", False))
-            ttk.Checkbutton(b3, text="AI helper  (reads for what word lists can't spot)",
-                            variable=self.ai_var).pack(anchor="w")
-            self._note(b3, "Catches things like a child sneaking around or mocking their parents when "
-                       "no warning words are used. Runs on your PC. Without it the check takes under "
-                       "a minute; with it, the check takes longer (20–60 minutes for a novel).")
+    def _keep_for_rebuild(self):
+        self._save_opts()
+
+    # ---------- light or dark ----------
+    def _set_theme(self, name=None):
+        """Light or dark, from the choice under the steps: the start page is built again in that
+        look, keeping what's chosen and the step. Kept for next time, for CleanListen and CleanRead."""
+        name = "dark" if (name or self.theme_var.get()) == "dark" else "light"
+        if name == THEME:
             return
-        b3 = self._card(self.opt_host, "3", "What to take out")
-        # the same filters as CleanListen and CleanView, right here on the page as in CleanView
-        # (Jason, 2026-11-07: "it opens a different screen to see them ... Should it be the same?")
-        self.filter_card = F.FilterPanel(b3, wrap=600)
-        row = tk.Frame(b3, bg=CARD)
-        row.pack(anchor="w", pady=(10, 0))
-        tk.Label(row, text="How marked-out words look:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
-        self.style_box = ttk.Combobox(row, state="readonly", width=30, values=[l for _, l in STYLE])
-        self.style_box.current([k for k, _ in STYLE].index(st.get("style", "dash")))
-        self.style_box.pack(side="left", padx=(8, 0))
-        self.marker_var = tk.BooleanVar(value=st.get("marker", True))
-        ttk.Checkbutton(b3, text="Show […] where something was cut  (so a jump in the story "
-                        "makes sense)", variable=self.marker_var).pack(anchor="w", pady=(12, 0))
-        self.ai_var = tk.BooleanVar(value=st.get("clean_ai", True))
-        ttk.Checkbutton(b3, text="AI helper  (double-checks every filter)",
-                        variable=self.ai_var).pack(anchor="w", pady=(6, 0))
-        self._note(b3, "Catches what the word lists missed and unticks anything flagged by mistake. "
-                   "Runs on your PC. The check takes longer with it on (20–60 minutes for a novel).")
-        b4 = self._card(self.opt_host, "4", "Save to")
-        row = tk.Frame(b4, bg=CARD)
-        row.pack(fill="x")
-        ttk.Button(row, text="Change…", style="Plain.TButton", command=self.pick_out).pack(side="right")
-        self.out_lbl = tk.Label(row, text="Next to the original book", bg=CARD, fg=MUTED,
-                                font=(FONT, 10), wraplength=520, justify="left")
-        self.out_lbl.pack(side="left")
-        tk.Label(b4, text="The original is never changed. EPUB books stay EPUB (with “(Clean)” "
-                 "added to the title); a PDF comes out as a plain EPUB; a TXT stays TXT.",
-                 bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640, justify="left").pack(anchor="w", pady=(6, 0))
+        self._keep_for_rebuild()
+        d = F.load()
+        d["theme"] = name
+        F.save(d)
+        use_theme(name)
+        self.configure(bg=BG)
+        self._style()                       # the ttk styles and tick boxes in that look
+        CL.title_bar(self)
+        self.show_setup(step=getattr(getattr(self, "steps_page", None), "now", 1))
+
 
     def _refresh(self):
         if self.book_path:
@@ -475,6 +541,9 @@ class App(tk.Tk):
                 self.out_lbl.config(text=os.path.normpath(self.outdir), fg=INK)
             elif self.book_path:
                 self.out_lbl.config(text=os.path.normpath(str(Path(self.book_path).parent)), fg=INK)
+        sp = getattr(self, "steps_page", None)
+        if sp is not None:
+            sp.refresh()
 
     def pick_book(self):
         f = filedialog.askopenfilename(title="Choose the ebook", filetypes=BOOK_TYPES)
@@ -544,12 +613,13 @@ class App(tk.Tk):
 
     def show_working(self, title, sub=""):
         p = self._new_page(title, sub, name=self._book_name())
-        box = tk.Frame(p, bg=BG)
-        box.pack(fill="x", pady=40)
+        card = look.Card(p, radius=14, pad=(24, 22))
+        card.pack(fill="x", pady=self._px(26))
+        box = card.body
         self.pb = ttk.Progressbar(box, style="Green.Horizontal.TProgressbar", maximum=1000, length=640)
         self.pb.pack(fill="x")
-        self.status = tk.Label(box, text="Starting…", bg=BG, fg=INK, font=(FONT, 12))
-        self.status.pack(anchor="w", pady=(12, 0))
+        self.status = tk.Label(box, text="Starting…", bg=CARD, fg=INK, font=(FONT, 11))
+        self.status.pack(anchor="w", pady=(self._px(12), 0))
         self.job += 1
         self.paused = False
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
@@ -752,7 +822,7 @@ class App(tk.Tk):
             ttk.Button(self.footer, text=f"Ask {self._ai_name()}…", style="Plain.TButton",
                        command=lambda: self.open_chat("check")).pack(side="left", padx=(10, 0))
         body = self._scroll_area(p)
-        tip = tk.Frame(body, bg="#E3EFEC", padx=12, pady=8)
+        tip = tk.Frame(body, bg=TINT, padx=12, pady=8)
         tip.pack(fill="x", pady=(0, 8))
         # Jason, 2026-11-03: "It says send what you marked. But I can't mark anything" - say
         # where the button is
@@ -761,7 +831,7 @@ class App(tk.Tk):
                  f"press “Ask {self._ai_name()}” beside it (or at the bottom) and tell it in your own words. What "
                  "you mark is left out of the report, and CleanRead remembers it next time. When "
                  "you're done, click “Send what you marked” so CleanRead can get better.",
-                 bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), wraplength=720,
+                 bg=TINT, fg=ACCENT_DK, font=(FONT, 10), wraplength=720,
                  justify="left").pack(anchor="w")
         tk.Label(body, text="The full report (with every sentence, printable) is saved as:\n"
                  + os.path.normpath(r["report_path"]), bg=BG, fg=MUTED, font=(FONT, 9),
@@ -802,10 +872,9 @@ class App(tk.Tk):
             self._canvas.yview_moveto(place)
 
     def _report_row(self, parent, c):
-        outer = tk.Frame(parent, bg=LINE)
+        outer = CL.card(parent, pad=(14, 8))          # rounded (the new look, 2026-11-13)
         outer.pack(fill="x", pady=3)
-        card = tk.Frame(outer, bg=CARD, padx=14, pady=8)
-        card.pack(fill="x", padx=1, pady=1)
+        card = outer.body
         top = tk.Frame(card, bg=CARD)
         top.pack(fill="x")
         chip = tk.Label(top, bg=CARD, font=(FONT, 9, "bold"), padx=8)
@@ -820,7 +889,7 @@ class App(tk.Tk):
 
         def show_counts():
             engine.recount(c)
-            bg, fg = CHIP[c["rating"]]
+            bg, fg = chip(c["rating"])
             chip.config(text=engine.RATING_LABEL[c["rating"]], bg=bg, fg=fg)
             fine = len(c["items"]) - c["count"]
             count.config(text=str(c["count"]) + (f"  (+{fine} not a problem)" if fine else ""))
@@ -904,9 +973,9 @@ class App(tk.Tk):
             hl = [(len(it["before"]) + 2, len(it["before"]) + 2 + len(it["word"]))]
         else:
             text, hl = it["text"], it.get("hl") or []
-        t = tk.Text(holder, wrap="word", width=20, height=1, font=(FONT, 10), bg="#FBFAF8", fg=INK,
+        t = tk.Text(holder, wrap="word", width=20, height=1, font=(FONT, 10), bg=QUOTE, fg=INK,
                     relief="flat", padx=8, pady=4, borderwidth=0, highlightthickness=0)
-        t.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
+        t.tag_configure("w", background=WORD_BG, foreground=WORD_INK, font=(FONT, 10, "bold"))
         t.insert("1.0", text)
         for a, b in hl:
             t.tag_add("w", f"1.0+{a}c", f"1.0+{b}c")
@@ -919,9 +988,9 @@ class App(tk.Tk):
             if not mark.winfo_exists():
                 return
             mark.config(text="✓ Not a problem  ·  Undo" if fine else "Not a problem")
-            t.configure(fg="#A49E96" if fine else INK)
-            t.tag_configure("w", background="#EEEAE4" if fine else "#F3E3DF",
-                            foreground="#A49E96" if fine else "#8A3B2E")
+            t.configure(fg=FINE_INK if fine else INK)
+            t.tag_configure("w", background=FINE_BG if fine else WORD_BG,
+                            foreground=FINE_INK if fine else WORD_INK)
 
         def flip():
             it["fine"] = not it.get("fine")
@@ -1038,9 +1107,9 @@ class App(tk.Tk):
             group = []
             section(engine.CLEAN_LABELS[kind] + " to cut", len(items), group)
             for c in items:
-                card = tk.Frame(body, bg=CARD, padx=14, pady=10, highlightbackground=LINE,
-                                highlightthickness=1)
-                card.pack(fill="x", pady=4)
+                rc = CL.card(body)
+                rc.pack(fill="x", pady=4)
+                card = rc.body
                 v = tk.BooleanVar(value=c.get("cut", True))
                 self.cut_vars.append((v, c))
                 group.append((v, c))
@@ -1056,15 +1125,15 @@ class App(tk.Tk):
                 if c.get("ai_note"):
                     soft = c["ai_note"] in ("AI thinks this one is fine", "AI suggests", "You kept this before",
                                            "Kept by families before", "Kept by chat")
-                    tk.Label(top, text=c["ai_note"], bg="#FFF4D6" if soft else "#E3EFEC",
-                             fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 9), padx=6).pack(side="right")
+                    tk.Label(top, text=c["ai_note"], bg=YELLOW if soft else TINT,
+                             fg=YELLOW_INK if soft else ACCENT_DK, font=(FONT, 9), padx=6).pack(side="right")
                 shown = len(c["text"]) + len(c.get("before", "")) + len(c.get("after", ""))
                 txt = tk.Text(card, wrap="word", width=20, height=min(7, 2 + shown // 95),
-                              font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat", padx=8, pady=6,
+                              font=(FONT, 10), bg=QUOTE, fg=INK, relief="flat", padx=8, pady=6,
                               borderwidth=0)
                 if c.get("part"):       # the rest of the sentence stays: grey, the cut part in red
                     txt.tag_configure("keep", foreground=MUTED)
-                    txt.tag_configure("cut", background="#F3E3DF", foreground="#8A3B2E")
+                    txt.tag_configure("cut", background=WORD_BG, foreground=WORD_INK)
                     def gap(s):         # no space before a comma or full stop
                         return "" if not s or s[0] in ",.;:!?…”’)" else " "
                     before, after = c.get("before", ""), c.get("after", "")
@@ -1079,10 +1148,11 @@ class App(tk.Tk):
         self.mute_vars = []
         if mutes:
             section("Words to mark out", len(mutes), self.mute_vars)
-            box = tk.Frame(body, bg=CARD, highlightbackground=LINE, highlightthickness=1)
-            box.pack(fill="x", pady=4)
+            rc = CL.card(body, pad=(8, 8))
+            rc.pack(fill="x", pady=4)
+            box = rc.body
             for n, m in enumerate(mutes):
-                row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
+                row = tk.Frame(box, bg=CARD if n % 2 == 0 else SHADE, padx=10, pady=3)
                 row.pack(fill="x")
                 rbg = row.cget("bg")
                 v = tk.BooleanVar(value=m.get("on", True))
@@ -1099,11 +1169,11 @@ class App(tk.Tk):
                 show.pack(side="right")
                 if m.get("note"):
                     soft = m["note"].startswith(("AI thinks", "AI suggests", "probably", "You kept"))
-                    tk.Label(row, text=m["note"], bg="#FFF4D6" if soft else "#E3EFEC",
-                             fg="#7A5A00" if soft else ACCENT_DK, font=(FONT, 8), padx=4).pack(side="right")
+                    tk.Label(row, text=m["note"], bg=YELLOW if soft else TINT,
+                             fg=YELLOW_INK if soft else ACCENT_DK, font=(FONT, 8), padx=4).pack(side="right")
                 line = tk.Text(row, wrap="word", width=20, height=1, font=(FONT, 10), bg=rbg, fg=MUTED,
                                relief="flat", borderwidth=0, highlightthickness=0, cursor="arrow")
-                line.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E", font=(FONT, 10, "bold"))
+                line.tag_configure("w", background=WORD_BG, foreground=WORD_INK, font=(FONT, 10, "bold"))
 
                 def fill(t=line, m=m, revealed=False):
                     before = m["ctx_raw" if revealed else "ctx"]
@@ -1246,6 +1316,7 @@ class App(tk.Tk):
         row = tk.Frame(bottom, bg=BG)
         row.pack(fill="x")
         self.chat_entry = tk.Text(row, height=3, wrap="word", font=(FONT, 10), width=20,
+                                  bg=CARD, fg=INK, insertbackground=INK, highlightcolor=ACCENT,
                                   relief="flat", highlightthickness=1, highlightbackground=LINE)
         self.chat_entry.pack(side="left", fill="x", expand=True)
         self.chat_send = ttk.Button(row, text="Send", style="Go.TButton", command=lambda: self._chat_send())
@@ -1397,9 +1468,10 @@ class App(tk.Tk):
         for big, small in [(str(res["mutes"]), "words marked out"),
                            (str(res["cut_sents"] + res.get("cut_parts", 0)), "sentences cut or shortened"),
                            (str(res["cut_paras"]), "paragraphs cut")]:
-            box = tk.Frame(stats, bg=CARD, padx=24, pady=14, highlightbackground=LINE, highlightthickness=1)
-            box.pack(side="left", padx=(0, 12))
-            tk.Label(box, text=big, bg=CARD, fg=ACCENT, font=(FONT, 26, "bold")).pack()
+            rc = CL.card(stats, radius=14, pad=(20, 14), width=220)
+            rc.pack(side="left", padx=(0, 12))
+            box = rc.body
+            tk.Label(box, text=big, bg=CARD, fg=ACCENT, font=(HEAD, 26)).pack()
             tk.Label(box, text=small, bg=CARD, fg=MUTED, font=(FONT, 10)).pack()
         tk.Label(p, text=f"Saved as:  {os.path.normpath(res['out'])}", bg=BG, fg=INK, font=(FONT, 10),
                  wraplength=740, justify="left").pack(anchor="w", pady=(4, 6))

@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cleanlisten as engine  # noqa: E402
 import filters as F  # noqa: E402  (the filters, shared with CleanRead)
 import logo as LOGO  # noqa: E402  (the logo in a page's empty space)
+import cvlook as look  # noqa: E402  (the drawn look: cards, switches, pill buttons; CleanView's)
+import cllook as CL  # noqa: E402  (the step-by-step start page, shared with CleanRead)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanRead)
 import bookqueue as BQ  # noqa: E402  (several books at once, each in its own worker)
 import dropfiles  # noqa: E402  (dropping the cover picture on the window)
@@ -80,17 +82,25 @@ def app_version():
         return json.loads((HERE / "version.json").read_text())["version"]
     except Exception:
         return "?"
-BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
-    "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
-# The one main step on each page (Start cleaning, Save clean audiobook, Clean another book)
-# is a big green button, so it's easy to spot; grey buttons have an edge. Its green is the logo's
-# and the green text's (ACCENT), as in CleanRead and CleanView (the owner, 2026-11-09: "i want to
-# stay consistent. it just looked brighter").
-GO, GO_DK, BUTTON_EDGE = ACCENT, ACCENT_DK, "#B9AFA2"
-GO_OFF = "#A9C2BC"     # greyed out (the same as the other green buttons)
-# A book in the list that is ready keeps the bright green, so it looks different from a done one
-# (ACCENT_DK)
-READY_GREEN = "#1E7E34"
+# Light and dark (as CleanView 1.18.78; the owner, 2026-11-13: "ask cleann view aabout dark mode
+# built. lets move that here also"). Every colour this window uses is a name from cllook.py with a
+# value for each look; `use_theme` sets them here (BG, CARD, INK, GO...), so code that builds a
+# page always reads the look in use. Never write a colour into a page: name it in cllook.py.
+# The one main step on each page is a big green button (GO: the logo's green, ACCENT, the owner,
+# 2026-11-09: "i want to stay consistent"); in CleanListen's list a book that is ready keeps a
+# brighter green (READY_GREEN), so it looks different from a done one (ACCENT_DK).
+THEME = "light"
+
+
+def use_theme(name):
+    """Light or dark: sets every colour name in this module. Pages built after it are in that look."""
+    global THEME
+    THEME = CL.use_theme(name)
+    globals().update(CL.colours())
+
+
+use_theme("light")          # the saved choice is read when the window opens (App.__init__)
+HEAD = CL.HEAD
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 
 
@@ -283,6 +293,9 @@ class App(tk.Tk):
         self.audio, self.ebook, self.outdir = [], None, None
         self.analysis, self.workdir = None, None
         self.saved_opts = {}   # filter ticks, kept when re-checking a book
+        use_theme(F.load().get("theme"))      # light or dark, before anything is drawn
+        self.configure(bg=BG)
+        self.after(50, lambda: CL.title_bar(self))
         # the books being prepared, ready to review or saving (the "Your books" page); each
         # runs in its own worker process, so one book's trouble never stops the window
         self.books = BQ.BookQueue(QUEUE)
@@ -315,80 +328,27 @@ class App(tk.Tk):
         s.map("TCheckbutton", background=[("active", CARD)])
         s.configure("Accent.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 12, "bold"), padding=(22, 10), borderwidth=0)
-        s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        s.map("Accent.TButton", background=[("active", ACCENT_DK), ("disabled", DISABLED)])
         s.configure("Main.TButton", background=GO, foreground="white",
                     font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
         s.map("Main.TButton", background=[("active", GO_DK), ("disabled", GO_OFF)])
         s.configure("Go.TButton", background=ACCENT, foreground="white",
                     font=(FONT, 11, "bold"), padding=(14, 4), borderwidth=0)
-        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
+        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", DISABLED)])
         s.configure("Bg.TCheckbutton", background=BG, font=(FONT, 10))
         s.map("Bg.TCheckbutton", background=[("active", BG)])
-        # rounded tick boxes with a real tick (the built-in ones show an old-fashioned X)
-        try:
-            size = round(15 * max(1.0, self.winfo_fpixels("1i") / 96.0))
-            self._ticks = {k: self._tick_image(size, *v) for k, v in {
-                "off": ("#FFFFFF", "#9C958C", False), "hover": ("#FFFFFF", ACCENT, False),
-                "on": (ACCENT, ACCENT, True), "on_hover": (ACCENT_DK, ACCENT_DK, True),
-                "off_dis": ("#F1EEEA", "#C9C3BB", False), "on_dis": ("#A9C2BC", "#A9C2BC", True)}.items()}
-            t = self._ticks
-            s.element_create("Tick.indicator", "image", t["off"],
-                             ("disabled", "selected", t["on_dis"]), ("disabled", t["off_dis"]),
-                             ("active", "selected", t["on_hover"]), ("selected", t["on"]),
-                             ("active", t["hover"]), width=size + round(size * 0.5), sticky="w")
-            for name in ("TCheckbutton", "Bg.TCheckbutton"):
-                s.layout(name, [("Checkbutton.padding", {"sticky": "nswe", "children": [
-                    ("Tick.indicator", {"side": "left", "sticky": ""}),
-                    ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
-                        ("Checkbutton.label", {"sticky": "nswe"})]})]})])
-        except tk.TclError:
-            pass      # keep the built-in tick boxes
-        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": "#ECE7E0", "darkcolor": "#ECE7E0"}
-        s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
+        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": GREY, "darkcolor": GREY}
+        s.configure("Plain.TButton", background=GREY, foreground=INK, padding=(14, 6),
                     borderwidth=1, font=(FONT, 10), **edge)
-        s.map("Plain.TButton", background=[("active", "#E0D9CF")])
-        s.configure("Plain.TMenubutton", background="#ECE7E0", foreground=INK, padding=(14, 6),
+        s.map("Plain.TButton", background=[("active", GREY_HOVER)])
+        s.configure("Plain.TMenubutton", background=GREY, foreground=INK, padding=(14, 6),
                     borderwidth=1, font=(FONT, 10), arrowcolor=INK, **edge)
-        s.map("Plain.TMenubutton", background=[("active", "#E0D9CF")])
-        s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
-                    background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
-
-    @staticmethod
-    def _tick_image(size, fill, border, tick):
-        """A rounded tick box drawn pixel by pixel (tkinter can't load SVG)."""
-        img = tk.PhotoImage(width=size, height=size)
-        r = size * 0.22
-
-        def inside(x, y, inset):
-            # is pixel (x, y) inside the rounded square shrunk by `inset`?
-            lo, hi, rr = inset, size - inset, max(0.0, r - inset)
-            px, py = x + 0.5, y + 0.5
-            if not (lo <= px <= hi and lo <= py <= hi):
-                return False
-            cx = min(max(px, lo + rr), hi - rr)
-            cy = min(max(py, lo + rr), hi - rr)
-            return (px - cx) ** 2 + (py - cy) ** 2 <= rr * rr
-
-        def near_tick(x, y):
-            # the tick: two strokes, short one down to the right, long one up to the right
-            px, py = (x + 0.5) / size, (y + 0.5) / size
-            for (ax, ay), (bx, by) in (((0.24, 0.52), (0.43, 0.70)), ((0.43, 0.70), (0.77, 0.32))):
-                dx, dy = bx - ax, by - ay
-                k = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
-                if (px - ax - k * dx) ** 2 + (py - ay - k * dy) ** 2 <= 0.075 ** 2:
-                    return True
-            return False
-
-        width = max(1.0, size / 14)
-        for y in range(size):
-            for x in range(size):
-                if not inside(x, y, 0):
-                    continue
-                c = fill if inside(x, y, width) else border
-                if tick and near_tick(x, y):
-                    c = "#FFFFFF"
-                img.put(c, (x, y))
-        return img
+        s.map("Plain.TMenubutton", background=[("active", GREY_HOVER)])
+        s.configure("Green.Horizontal.TProgressbar", troughcolor=TROUGH,
+                    background=ACCENT, bordercolor=TROUGH, lightcolor=ACCENT, darkcolor=ACCENT)
+        # the drawn look (the owner, 2026-11-13, as CleanView 1.18.77): rounded buttons, thin scroll
+        # bars, a rounded progress bar, soft fields and smooth tick boxes with a real tick
+        CL.style(self, s, checks=("TCheckbutton", "Bg.TCheckbutton"))
 
     def destroy(self):
         self._stop_books()
@@ -418,10 +378,11 @@ class App(tk.Tk):
         # even when the window is short.
         self.footer = tk.Frame(self.page, bg=BG)
         self.footer.pack(side="bottom", fill="x", pady=(8, 0))
+        tk.Frame(self.footer, bg=LINE, height=1).pack(side="top", fill="x", pady=(0, self._px(10)))
         if name:                # which book this is (Jason: "you don't know what you've cleaned")
-            tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
+            tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
                      wraplength=560, justify="left").pack(anchor="w", pady=(0, 2))
-        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold")).pack(anchor="w")
+        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(HEAD, 21)).pack(anchor="w")
         self.page_name = "other"
         # "Check for updates" on every screen: updates and comes straight back to where you were
         self._upd_lbl = tk.Label(self.page, text=f"v{app_version()} \u00b7 Check for updates", bg=BG,
@@ -436,9 +397,24 @@ class App(tk.Tk):
             self._books_lbl.bind("<Button-1>", lambda e: self._to_books())
             self._show_books_count()
         if subtitle:
-            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
-                     wraplength=700, justify="left").pack(anchor="w", pady=(2, 12))
+            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
+                     wraplength=700, justify="left").pack(anchor="w", pady=(4, 12))
         return self.page
+
+    def _px(self, n):
+        return look.px(self, n)
+
+    def _scroll_to(self, w):
+        """Scroll the page w is on so w can be seen."""
+        inner = w                       # the scroll area's own frame (a look.Card is a canvas too)
+        while inner is not None and getattr(inner, "_canvas", None) is None:
+            inner = inner.master
+        if inner is None:
+            return
+        self.update_idletasks()
+        h = inner.winfo_height()
+        if h > 0:
+            inner._canvas.yview_moveto(max(0.0, (w.winfo_rooty() - inner.winfo_rooty() - 120) / h))
 
     def _scroll_area(self, parent, stacked=False):
         """A vertically scrolling area that fills the remaining space. Returns the frame to put
@@ -508,6 +484,7 @@ class App(tk.Tk):
 
         inner = add_block()
         self._inner = inner
+        inner._canvas = canvas
         canvas.bind("<Configure>", refresh)
         canvas.configure(yscrollcommand=scrolled)
         if stacked:
@@ -539,122 +516,186 @@ class App(tk.Tk):
         except Exception:
             return 1
 
-    def _card(self, parent, step, heading, note=""):
-        outer = tk.Frame(parent, bg=LINE)
-        outer.pack(fill="x", pady=3)
-        c = tk.Frame(outer, bg=CARD, padx=16, pady=6)
-        c.pack(fill="x", padx=1, pady=1)
-        top = tk.Frame(c, bg=CARD)
-        top.pack(fill="x")
-        tk.Label(top, text=step, bg=ACCENT, fg="white", font=(FONT, 10, "bold"),
-                 width=2).pack(side="left", padx=(0, 10))
-        tk.Label(top, text=heading, bg=CARD, fg=INK, font=(FONT, 12, "bold")).pack(side="left")
-        if note:
-            tk.Label(top, text=note, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=8)
-        body = tk.Frame(c, bg=CARD)
-        body.pack(fill="x", pady=(4, 0), padx=(32, 0))
-        return body
+    # ---------- page 1: setup, one step at a time ----------
+    # The owner, 2026-11-13 (CleanView 1.18.77's "B, step by step"): the steps down the left, each
+    # saying what's chosen, one step on the right, Back / Next, and the green button always there.
+    STEPS = [("Audiobook", "Choose the book to clean. Your original files are never changed."),
+             ("What to remove", "Bad words are muted; everything else is listed for you to check "
+                                "before anything is cut."),
+             ("Extra checks", "Optional helpers that catch what the word lists miss."),
+             ("Save to", "Where the clean audiobook goes, and what else to make.")]
 
-    # ---------- page 1: setup ----------
-    def show_setup(self):
-        p = self._new_page("CleanListen", "Clean up an audiobook you own: mute bad language "
-                           "and remove explicit scenes.")
-        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
-        if upd:
-            tk.Label(p, text="\u2713 " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
-                     padx=10, pady=6, anchor="w").pack(fill="x", pady=(0, 8))
-        left = self._left_review()
-        if left:
-            bar = tk.Frame(p, bg="#E3EFEC")
-            bar.pack(fill="x", pady=(0, 6))
-            tk.Label(bar, text="Your review of \u201c" + (left.get("title") or "a book") +
-                     "\u201d is kept.", bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), padx=10,
-                     anchor="w").pack(side="left")
-            ttk.Button(bar, text="Pick up where I left off", style="Plain.TButton",
-                       command=self._pick_up).pack(side="right", padx=4, pady=2)
-        if self.books.jobs:   # the books already added: back to them with one click
-            self._drop_books_link()
-            bar = tk.Frame(p, bg="#E3EFEC")
-            bar.pack(fill="x", pady=(0, 6))
-            ready = self.books.count(BQ.READY)
-            busy = len(self.books.unfinished()) - ready
-            bits = ([f"{ready} ready to review"] if ready else []) + (
-                [f"{busy} being worked on"] if busy else [])
-            tk.Label(bar, text="Your books: " + (", ".join(bits) if bits else "all saved") + ".",
-                     bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10, "bold" if ready else "normal"),
-                     padx=10, anchor="w").pack(side="left")
-            ttk.Button(bar, text="See your books", style="Plain.TButton",
-                       command=self.show_queue).pack(side="right", padx=4, pady=2)
-        self._show_books_count()
-        self.start_btn = ttk.Button(self.footer, text="Start cleaning", style="Main.TButton",
-                                    command=self.start, state="disabled")
-        self.start_btn.pack(side="right")
+    def _theme_var(self):
+        self.theme_var = tk.StringVar(value=THEME)
+        return self.theme_var
+
+    def _keep_for_rebuild(self):
+        """The start page's choices that are only read when Start is pressed, kept while the page
+        is built again (a new look)."""
+        try:
+            self.saved_opts.update(ai=self.ai_var.get(), claude=self.claude_var.get(),
+                                   split=self.split_var.get(), m4b=self.m4b_var.get())
+            self.author = self.author_var.get()
+            self.series, self.series_no = self.series_var.get(), self.series_no_var.get()
+        except (AttributeError, tk.TclError):
+            pass
+
+    # ---------- light or dark ----------
+    def _set_theme(self, name=None):
+        """Light or dark, from the choice under the steps: the start page is built again in that
+        look, keeping what's chosen and the step. Kept for next time, for CleanListen and CleanRead."""
+        name = "dark" if (name or self.theme_var.get()) == "dark" else "light"
+        if name == THEME:
+            return
+        self._keep_for_rebuild()
+        d = F.load()
+        d["theme"] = name
+        F.save(d)
+        use_theme(name)
+        self.configure(bg=BG)
+        self._style()                       # the ttk styles and tick boxes in that look
+        CL.title_bar(self)
+        self.show_setup(step=getattr(getattr(self, "steps_page", None), "now", 1))
+
+    def _step_summary(self, n):
+        """What's chosen in step n, in a few words, for the list on the left."""
+        if n == 1:
+            k = len(self.audio or ())
+            return ("No audiobook chosen yet" if not k else "1 file chosen" if k == 1 else
+                    f"{k} files chosen")
+        if n == 2:
+            card = getattr(self, "filter_card", None)
+            return dict(F.PROFILES).get(card.profile.get(), "") if card else ""
+        if n == 3:
+            ai = getattr(self, "ai_var", None) is not None and self.ai_var.get()
+            final = getattr(self, "claude_var", None) is not None and self.claude_var.get()
+            return ("AI helper and final check" if ai and final else "AI helper" if ai else
+                    "Final check" if final else "Off")
+        if self.outdir:
+            return Path(self.outdir).name or str(self.outdir)
+        return "A Clean folder next to it"
+
+    def show_setup(self, step=1):
+        if getattr(self, "watch", None):
+            self.watch.doing["page"] = "CleanListen"
+        self._stop_playing()
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.unbind_all(seq)
+        if self.page:
+            self.page.destroy()
+        X = self._px
+        p = self.page = tk.Frame(self, bg=BG)
+        p.pack(fill="both", expand=True)
+        self.page_name = "other"
+        self._books_lbl = None
         try:
             have_past = bool(past_books())
         except Exception:
             have_past = False
+        links = [(f"v{app_version()} \u00b7 Check for updates", self.check_updates, "refresh")]
         if have_past:
-            ttk.Button(self.footer, text="Re-check a book I've already done\u2026",
-                       style="Plain.TButton", command=self.show_past).pack(side="left")
-        ttk.Button(self.footer, text="Send what CleanListen learned\u2026", style="Plain.TButton",
-                   command=self.share_learned).pack(side="left", padx=(8, 0))
-        self.start_hint = tk.Label(self.footer, text="Choose an audiobook first", bg=BG, fg=MUTED,
+            links.append(("Re-check a book I've already done\u2026", self.show_past, "back"))
+        links.append(("Send what CleanListen learned\u2026", self.share_learned, "send"))
+        sp = self.steps_page = CL.StepPage(
+            self, p, "CleanListen", LOGO.logo_png("icon.ico", X(40))[0], self.STEPS,
+            self._step_summary, ("Start cleaning", self.start), links=links,
+            done=lambda i: i == 1 and bool(self.audio), scroll_area=self._scroll_area, start=step,
+            theme=(self._theme_var(), self._set_theme))
+        self.footer = sp.nav
+        self.start_btn = sp.main_btn
+        self.start_btn.config(state="disabled")
+        self._upd_lbl = sp.links[links[0][0]].label
+        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
+        if upd:
+            tk.Label(sp.top, text="\u2713 " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                     padx=X(12), pady=X(7), anchor="w").pack(fill="x", pady=(0, X(10)))
+
+        def bar(text, button, command, bold=False):
+            box = look.Card(sp.top, fill=TINT, edge=TINT_EDGE, radius=12, pad=(16, 9))
+            box.pack(fill="x", pady=(0, X(10)))
+            tk.Label(box.body, text=text, bg=TINT, fg=ACCENT_DK, anchor="w", justify="left",
+                     font=(HEAD if bold else FONT, 10), wraplength=X(380)).pack(side="left")
+            look.Pill(box.body, button, command, kind="secondary", size=10, pad=(16, 7)).pack(
+                side="right")
+        left = self._left_review()
+        if left:
+            bar("Your review of \u201c" + (left.get("title") or "a book") + "\u201d is kept.",
+                "Pick up where I left off", self._pick_up)
+        if self.books.jobs:   # the books already added: back to them with one click
+            self._drop_books_link()
+            ready = self.books.count(BQ.READY)
+            busy = len(self.books.unfinished()) - ready
+            bits = ([f"{ready} ready to review"] if ready else []) + (
+                [f"{busy} being worked on"] if busy else [])
+            bar("Your books: " + (", ".join(bits) if bits else "all saved") + ".",
+                "See your books", self.show_queue, bold=bool(ready))
+        self._show_books_count()
+        self.start_hint = tk.Label(sp.nav, text="Choose an audiobook first", bg=BG, fg=MUTED,
                                    font=(FONT, 9))
-        self.start_hint.pack(side="right", padx=(0, 10))
-        body = self._scroll_area(p)
-        self.heard_lbl = tk.Label(body, text="", bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
-                                  padx=10, pady=6, anchor="w", justify="left", wraplength=680)
+        self.start_hint.pack(side="right", padx=(0, X(10)))
 
-        b1 = self._card(body, "1", "Audiobook")
-        self.b1_outer = b1.master.master
-        row = tk.Frame(b1, bg=CARD)
-        row.pack(fill="x")
-        ttk.Button(row, text="Choose folder…", style="Go.TButton",
-                   command=self.pick_folder).pack(side="left", anchor="n")
-        ttk.Button(row, text="Choose files…", style="Go.TButton",
-                   command=self.pick_audio).pack(side="left", anchor="n", padx=(8, 0))
-        self.audio_lbl = tk.Label(row, text="No audiobook chosen yet", bg=CARD, fg=MUTED,
-                                  font=(FONT, 10), wraplength=380, justify="left")
-        self.audio_lbl.pack(side="left", padx=(12, 0))
-        row = tk.Frame(b1, bg=CARD)
-        row.pack(fill="x", pady=(8, 0))
-        tk.Label(row, text="Ebook (optional):", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
-        ttk.Button(row, text="Choose ebook…", style="Plain.TButton",
-                   command=self.pick_ebook).pack(side="left", padx=(8, 0))
-        self.ebook_lbl = tk.Label(row, text="catches words the narrator mumbles", bg=CARD, fg=MUTED,
-                                  font=(FONT, 9), wraplength=400, justify="left")
-        self.ebook_lbl.pack(side="left", padx=10)
+        # ----- step 1: the audiobook
+        p1 = sp.pane(1)
+        self.heard_lbl = tk.Label(p1, text="", bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                                  padx=X(12), pady=X(7), anchor="w", justify="left",
+                                  wraplength=X(540))
+        drop = look.Card(p1, fill=SOFT, edge=SOFT_EDGE, radius=16, pad=(20, 18))
+        drop.pack(fill="x", padx=(0, X(4)))
+        self.b1_outer = drop
+        look.Badge(drop.body, "folder", size=54, icon_size=20).pack(side="left")
+        words = tk.Frame(drop.body, bg=SOFT)
+        words.pack(side="left", fill="x", expand=True, padx=(X(16), X(12)))
+        tk.Label(words, text="Choose an audiobook", bg=SOFT, fg=INK, font=(HEAD, 13),
+                 anchor="w").pack(anchor="w")
+        tk.Label(words, text="A folder of its files, or the files themselves.", bg=SOFT, fg=MUTED,
+                 font=(FONT, 9), anchor="w", wraplength=X(200), justify="left").pack(
+                     anchor="w", pady=(X(2), 0))
+        look.Pill(drop.body, "Choose files\u2026", self.pick_audio, kind="secondary", size=11,
+                  pad=(18, 10)).pack(side="right")
+        look.Pill(drop.body, "Choose folder\u2026", self.pick_folder, size=11,
+                  pad=(18, 10)).pack(side="right", padx=(0, X(8)))
+        self.audio_lbl = tk.Label(p1, text="No audiobook chosen yet", bg=BG, fg=MUTED,
+                                  font=(FONT, 10), wraplength=X(560), justify="left", anchor="w")
+        self.audio_lbl.pack(anchor="w", pady=(X(12), 0))
+        b = sp.card(1, top=14)
+        look.Badge(b, "text", size=30).pack(side="left", anchor="n")
+        words = tk.Frame(b, bg=CARD)
+        words.pack(side="left", fill="x", expand=True, padx=(X(14), X(12)))
+        tk.Label(words, text="Ebook  (optional)", bg=CARD, fg=INK, font=(HEAD, 10),
+                 anchor="w").pack(anchor="w")
+        self.ebook_lbl = tk.Label(words, text="catches words the narrator mumbles", bg=CARD,
+                                  fg=MUTED, font=(FONT, 9), wraplength=X(330), justify="left",
+                                  anchor="w")
+        self.ebook_lbl.pack(anchor="w", pady=(X(2), 0))
+        look.Pill(b, "Choose ebook\u2026", self.pick_ebook, kind="secondary", size=10,
+                  pad=(16, 8)).pack(side="right")
 
-        b3 = self._card(body, "2", "What to remove")
-        # the same filters as CleanRead and CleanView, chosen in their own window (filters.py)
-        self.filter_card = F.FilterCard(b3, wrap=660)
+        # ----- step 2: what to remove (the same filters as CleanRead and CleanView)
+        self.filter_card = F.FilterPanel(sp.pane(2), on_change=sp.refresh, wrap=560,
+                                         scroll_to=self._scroll_to)
 
-        b4 = self._card(body, "3", "Extra checks", "optional")
+        # ----- step 3: extra checks
         self.ai_var = tk.BooleanVar(value=self.saved_opts.get("ai", True))
-        ttk.Checkbutton(b4, text="AI helper on this PC  (double-checks every filter)",
-                        variable=self.ai_var).pack(anchor="w")
-        tk.Label(b4, text="Catches what the word lists miss. Downloads about 4 GB the first time. "
-                 "Works alongside the final check.", bg=CARD, fg=MUTED, font=(FONT, 9),
-                 wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
+        CL.switch_row(sp.card(3), self.ai_var, "AI helper on this PC  (double-checks every filter)",
+                      "Catches what the word lists miss. Downloads about 4 GB the first time. "
+                      "Works alongside the final check.", command=sp.refresh).pack(fill="x")
+        b4 = sp.card(3, top=12)
         self.claude_var = tk.BooleanVar(value=self.saved_opts.get("claude", False))
-        ttk.Checkbutton(b4, text="Final check by Claude, ChatGPT or Gemini  (reads the whole book)",
-                        variable=self.claude_var).pack(anchor="w", pady=(8, 0))
-        tk.Label(b4, text="Uses your own plan. Only the book's words are sent, never the audio.",
-                 bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=620, justify="left").pack(anchor="w", padx=(24, 0))
+        CL.switch_row(b4, self.claude_var,
+                      "Final check by Claude, ChatGPT or Gemini  (reads the whole book)",
+                      "Uses your own plan. Only the book's words are sent, never the audio.",
+                      command=sp.refresh).pack(fill="x")
         cc = self._cc()
-        # which one, sign-in and model: only shown while the final check is ticked
+        # which one, sign-in and model: only shown while the final check is on
         self.claude_more = tk.Frame(b4, bg=CARD)
         prow = tk.Frame(self.claude_more, bg=CARD)
-        prow.pack(anchor="w", padx=(22, 0), pady=(4, 0), fill="x")
+        prow.pack(anchor="w", padx=(X(54), 0), pady=(X(10), 0), fill="x")
         self.provider_var = tk.StringVar(value=cc.PROVIDER if cc else "claude")
-        for val, label in (("claude", "Claude"), ("chatgpt", "ChatGPT"),
-                           ("gemini", "Gemini  (your Google account)")):
-            tk.Radiobutton(prow, text=label, value=val, variable=self.provider_var, bg=CARD,
-                           activebackground=CARD, font=(FONT, 9),
-                           command=self._provider_changed).pack(side="left", padx=(0, 14))
+        look.Segmented(prow, [("claude", "Claude"), ("chatgpt", "ChatGPT"), ("gemini", "Gemini")],
+                       self.provider_var, command=self._provider_changed, size=9).pack(side="left")
         crow = tk.Frame(self.claude_more, bg=CARD)
-        crow.pack(anchor="w", padx=(22, 0), pady=(2, 0), fill="x")
-        self.claude_lbl = tk.Label(crow, text="Checking…", bg=CARD, fg=MUTED,
+        crow.pack(anchor="w", padx=(X(54), 0), pady=(X(6), 0), fill="x")
+        self.claude_lbl = tk.Label(crow, text="Checking\u2026", bg=CARD, fg=MUTED,
                                    font=(FONT, 9))
         self.claude_lbl.pack(side="left")
         self.claude_btn = ttk.Button(crow, text="Set up / sign in", style="Plain.TButton",
@@ -664,7 +705,8 @@ class App(tk.Tk):
         self.claude_var.trace_add("write", lambda *_: self._show_claude_more())
         self._show_claude_more()
 
-        b5 = self._card(body, "4", "Save to")
+        # ----- step 4: where it goes
+        b5 = sp.card(4)
         row = tk.Frame(b5, bg=CARD)
         row.pack(fill="x")
         ttk.Button(row, text="Change…", style="Plain.TButton",
@@ -739,6 +781,7 @@ class App(tk.Tk):
             v.trace_add("write", lambda *_: self._abs_preview())
         self._m4b_shown()
         self._refresh_labels()
+        sp.go(step)
 
     def _m4b_shown(self):
         if self.m4b_var.get():
@@ -1035,8 +1078,8 @@ class App(tk.Tk):
                     except tk.TclError:
                         img = None
                 b = tk.Button(grid, text=p["label"], image=img, compound="top", wraplength=130,
-                              bg=CARD, activebackground=CARD, relief="flat", cursor="hand2",
-                              font=(FONT, 9), padx=6, pady=6,
+                              bg=CARD, fg=INK, activebackground=CARD, activeforeground=INK,
+                              relief="flat", cursor="hand2", font=(FONT, 9), padx=6, pady=6,
                               command=lambda f=p["file"]: pick(f))
                 b.image = img
                 b.grid(row=i // 4, column=i % 4, padx=6, pady=6, sticky="n")
@@ -1310,7 +1353,7 @@ class App(tk.Tk):
         text = {"ok": f"\u2713 {N} is ready", "signed_out": f"{N} isn't signed in yet",
                 "missing": f"{prog} isn't set up yet (one time, about a minute)",
                 "broken": f"{N} files are missing \u2014 reopen CleanListen to update"}.get(st, st)
-        self.claude_lbl.config(text=text, fg=ACCENT_DK if st == "ok" else "#8A5A00")
+        self.claude_lbl.config(text=text, fg=ACCENT_DK if st == "ok" else AMBER)
         if st in ("signed_out", "missing"):
             self.claude_btn.pack(side="left", padx=(10, 0))
         else:
@@ -1445,6 +1488,7 @@ class App(tk.Tk):
         entry_row = tk.Frame(bottom, bg=BG)
         entry_row.pack(fill="x")
         self.chat_entry = tk.Text(entry_row, height=3, wrap="word", font=(FONT, 10), width=20,
+                                  bg=CARD, fg=INK, insertbackground=INK, highlightcolor=ACCENT,
                                   relief="flat", highlightthickness=1, highlightbackground=LINE)
         self.chat_entry.pack(side="left", fill="x", expand=True)
         self.chat_send = ttk.Button(entry_row, text="Send", style="Accent.TButton",
@@ -1476,17 +1520,17 @@ class App(tk.Tk):
             return
         link._open = True
         N = self._ai_name()
-        box = tk.Frame(holder, bg="#EEF5F3", padx=8, pady=6)
+        box = tk.Frame(holder, bg=TINT, padx=8, pady=6)
         box.pack(fill="x", pady=(4, 0), side="bottom" if kind == "W" else None)
         hint = ("Tip: highlight part of the text above first to point at it. " if txt is not None else "")
         tk.Label(box, text=hint + "e.g. \u201cjust cut the bed line\u201d, \u201ckeep this\u201d, "
-                 "\u201cmute only that word\u201d", bg="#EEF5F3", fg=MUTED, font=(FONT, 8),
+                 "\u201cmute only that word\u201d", bg=TINT, fg=MUTED, font=(FONT, 8),
                  wraplength=640, justify="left").pack(anchor="w")
-        row = tk.Frame(box, bg="#EEF5F3")
+        row = tk.Frame(box, bg=TINT)
         row.pack(fill="x", pady=(2, 0))
         entry = ttk.Entry(row)
         entry.pack(side="left", fill="x", expand=True)
-        status = tk.Label(box, text="", bg="#EEF5F3", fg=ACCENT_DK, font=(FONT, 9))
+        status = tk.Label(box, text="", bg=TINT, fg=ACCENT_DK, font=(FONT, 9))
 
         def send(_e=None):
             q = entry.get().strip()
@@ -1663,12 +1707,15 @@ class App(tk.Tk):
         if heard:
             self.heard_lbl.config(text="✓ This book has already been listened to, so the "
                                   "listening step is skipped — it goes straight to checking. "
-                                  "Change the ticks below if you like, then press “Re-check this book”.")
+                                  "Change what to remove if you like, then press “Re-check this book”.")
             self.heard_lbl.pack(fill="x", pady=(0, 6), before=self.b1_outer)
             self.start_btn.config(text="Re-check this book")
         else:
             self.heard_lbl.pack_forget()
             self.start_btn.config(text="Start cleaning")
+        sp = getattr(self, "steps_page", None)
+        if sp is not None:
+            sp.refresh()
 
     def _job_dirs(self):
         new = APP_DATA / "jobs" / job_key(sorted(self.audio, key=natural_key))
@@ -1696,10 +1743,9 @@ class App(tk.Tk):
         body = self._scroll_area(p)
         import time as _t
         for b in past_books():
-            outer = tk.Frame(body, bg=LINE)
+            outer = CL.card(body)                 # rounded (the new look, 2026-11-13)
             outer.pack(fill="x", pady=4)
-            c = tk.Frame(outer, bg=CARD, padx=14, pady=10)
-            c.pack(fill="x", padx=1, pady=1)
+            c = outer.body
             ttk.Button(c, text="Re-check", style="Plain.TButton",
                        command=lambda b=b: self._load_past(b)).pack(side="right")
             if (b["dir"] / "analysis.json").exists():
@@ -2075,10 +2121,10 @@ class App(tk.Tk):
     def _book_row(self, parent, job):
         key, step = job["key"], job["step"]
         ready = step == BQ.READY
-        outer = tk.Frame(parent, bg=READY_GREEN if ready else LINE)
-        outer.pack(fill="x", pady=4)
-        c = tk.Frame(outer, bg=CARD, padx=14, pady=10)
-        c.pack(fill="x", padx=2 if ready else 1, pady=2 if ready else 1)
+        outer = CL.card(parent, edge=READY_GREEN if ready else LINE, edge_w=2.0 if ready else 1.0,
+                        pad=(16, 12))
+        outer.pack(fill="x", pady=4, padx=(0, self._px(4)))
+        c = outer.body
         btns = tk.Frame(c, bg=CARD)
         btns.pack(side="right", anchor="n", padx=(10, 0))
         if ready:
@@ -2114,7 +2160,7 @@ class App(tk.Tk):
         if short:
             tk.Label(left, text=short, bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w",
                      wraplength=360, justify="left").pack(anchor="w")
-        color = {BQ.READY: READY_GREEN, BQ.DONE: ACCENT_DK, BQ.FAILED: "#A3362B"}.get(step, INK)
+        color = {BQ.READY: READY_GREEN, BQ.DONE: ACCENT_DK, BQ.FAILED: FAIL}.get(step, INK)
         status = tk.Label(left, text=self._job_status(job), bg=CARD, fg=color,
                           font=(FONT, 10, "bold" if step in (BQ.READY, BQ.DONE) else "normal"),
                           wraplength=360, justify="left", anchor="w")
@@ -2386,7 +2432,7 @@ class App(tk.Tk):
         note = getattr(self, "resume_note", None)
         if note:
             self.resume_note = None
-            tk.Label(p, text="✓ " + note, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10), padx=10,
+            tk.Label(p, text="✓ " + note, bg=TINT, fg=ACCENT_DK, font=(FONT, 10), padx=10,
                      pady=6, anchor="w").pack(fill="x", pady=(0, 8))
         # what the checks said, folded to one line ("More" shows all of it)
         notes = [n for n in (a.get("claude_note"), a.get("learn_note"), a.get("ai_note"),
@@ -2423,7 +2469,8 @@ class App(tk.Tk):
                        command=self._undo_last).pack(side="left", padx=(8, 0))
         # the things used now and then go in one menu
         more_btn = ttk.Menubutton(bar, text="More", style="Plain.TMenubutton", width=6)
-        menu = tk.Menu(more_btn, tearoff=0, font=(FONT, 10))
+        menu = tk.Menu(more_btn, tearoff=0, font=(FONT, 10), bg=CARD, fg=INK,
+                       activebackground=ACCENT, activeforeground="white")
         menu.add_command(label=f"Save a list of everything for {N}…", command=self.export_findings)
         menu.add_command(label=f"Open {N}'s findings for this book (spreadsheet)",
                          command=lambda: self._open_findings(this_book=True))
@@ -2431,7 +2478,8 @@ class App(tk.Tk):
                          command=self._open_findings)
         cc = self._cc()
         if cc and cc.PROVIDER == "claude":
-            models = tk.Menu(menu, tearoff=0, font=(FONT, 10))
+            models = tk.Menu(menu, tearoff=0, font=(FONT, 10), bg=CARD, fg=INK,
+                             activebackground=ACCENT, activeforeground="white", selectcolor=INK)
             self._model_var = tk.StringVar(value=cc.get_model())
             for key, label in cc.MODELS:
                 models.add_radiobutton(label=label, value=key, variable=self._model_var,
@@ -2551,10 +2599,10 @@ class App(tk.Tk):
             group_vars = []
             section(heading, short, len(items), group_vars)
             for sc in items:
-                card = tk.Frame(body(), bg=CARD, padx=14, pady=10, highlightbackground=LINE,
-                                highlightthickness=1)
-                self._item_widgets[id(sc)] = card
-                card.pack(fill="x", pady=4)
+                rc = CL.card(body())
+                self._item_widgets[id(sc)] = rc
+                rc.pack(fill="x", pady=4, padx=(0, self._px(4)))
+                card = rc.body
                 v = tk.BooleanVar(value=sc.get("cut", True))
                 self.scene_vars.append((v, sc))
                 group_vars.append((v, sc))
@@ -2567,22 +2615,22 @@ class App(tk.Tk):
                 link(top, "▶ Play", CARD, lambda l, it=sc: self._play(it, l)).pack(side="left", padx=(16, 0))
                 if sc.get("ai_note"):
                     good = _yellow(sc["ai_note"])
-                    tk.Label(top, text=sc["ai_note"], bg="#FFF4D6" if good else "#E3EFEC",
-                             fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 9),
+                    tk.Label(top, text=sc["ai_note"], bg=YELLOW if good else TINT,
+                             fg=YELLOW_INK if good else ACCENT_DK, font=(FONT, 9),
                              padx=6).pack(side="right")
                 if sc.get("claude_reason"):
                     tk.Label(card, text=a.get("reviewer", "Claude") + ": " + sc["claude_reason"], bg=CARD,
                              fg=MUTED, font=(FONT, 9, "italic"), wraplength=680, justify="left"
                              ).pack(anchor="w", pady=(4, 0))
                 txt = tk.Text(card, wrap="word", width=20, height=min(8, 1 + len(sc["text"]) // 95),
-                              font=(FONT, 10), bg="#FBFAF8", fg=INK, relief="flat",
+                              font=(FONT, 10), bg=QUOTE, fg=INK, relief="flat",
                               padx=8, pady=6, borderwidth=0)
                 txt.insert("1.0", sc["text"])
                 txt.configure(state="disabled")
                 txt.pack(fill="x", pady=(6, 0))
                 txt.bind("<Configure>", lambda e, t=txt: fit(t))
                 if sc.get("chat_answer"):
-                    tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg="#EEF5F3", fg=ACCENT_DK,
+                    tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg=TINT, fg=ACCENT_DK,
                              font=(FONT, 9), wraplength=680, justify="left", padx=8, pady=4,
                              anchor="w").pack(fill="x", pady=(6, 0))
                 if a.get("sentences"):
@@ -2597,10 +2645,11 @@ class App(tk.Tk):
             section("Words to mute", "Words", len(shown_mutes), self.mute_vars)
             for n, m in enumerate(shown_mutes):
                 if n % WORDS_PER_BOX == 0:     # (a box of its own every so many words)
-                    box = tk.Frame(body(new=True), bg=CARD, highlightbackground=LINE,
-                                   highlightthickness=1)
-                    box.pack(fill="x", pady=(4 if n == 0 else 0, 4 if n + WORDS_PER_BOX >= len(shown_mutes) else 0))
-                row = tk.Frame(box, bg=CARD if n % 2 == 0 else "#FAF8F5", padx=10, pady=3)
+                    rc = CL.card(body(new=True), pad=(8, 8))
+                    rc.pack(fill="x", padx=(0, self._px(4)),
+                            pady=(4 if n == 0 else 0, 4 if n + WORDS_PER_BOX >= len(shown_mutes) else 0))
+                    box = rc.body
+                row = tk.Frame(box, bg=CARD if n % 2 == 0 else SHADE, padx=10, pady=3)
                 self._item_widgets[id(m)] = row
                 row.pack(fill="x")
                 rbg = row.cget("bg")
@@ -2622,8 +2671,8 @@ class App(tk.Tk):
                 link(row, "▶ Play", rbg, lambda l, it=m: self._play(it, l), padx=4).pack(side="right")
                 if m.get("note"):
                     good = _yellow(m["note"])
-                    tk.Label(row, text=m["note"], bg="#FFF4D6" if good else "#E3EFEC",
-                             fg="#7A5A00" if good else ACCENT_DK, font=(FONT, 8),
+                    tk.Label(row, text=m["note"], bg=YELLOW if good else TINT,
+                             fg=YELLOW_INK if good else ACCENT_DK, font=(FONT, 8),
                              padx=4).pack(side="right")
                 elif m.get("src", "audio") != "audio":
                     tk.Label(row, text="from ebook", bg=rbg, fg=ACCENT, font=(FONT, 8)).pack(side="right")
@@ -2631,7 +2680,7 @@ class App(tk.Tk):
                 line = tk.Text(row, wrap="word", width=20, height=1, font=(FONT, 10), bg=rbg,
                                fg=MUTED, relief="flat", borderwidth=0, highlightthickness=0,
                                cursor="arrow")
-                line.tag_configure("w", background="#F3E3DF", foreground="#8A3B2E",
+                line.tag_configure("w", background=WORD_BG, foreground=WORD_INK,
                                    font=(FONT, 10, "bold"))
 
                 def fill(t=line, m=m, revealed=False):
@@ -2743,6 +2792,7 @@ class App(tk.Tk):
         frame = tk.Frame(w, bg=BG)
         frame.pack(fill="both", expand=True, padx=16)
         lb = tk.Listbox(frame, selectmode="extended", font=(FONT, 10), activestyle="none",
+                        bg=CARD, fg=INK, selectbackground=ACCENT, selectforeground="white",
                         relief="flat", highlightthickness=1, highlightbackground=LINE)
         sb = ttk.Scrollbar(frame, orient="vertical", command=lb.yview)
         lb.configure(yscrollcommand=sb.set)

@@ -15,6 +15,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
+import cvlook as look
+
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
 SAVED = APP_DATA / "filters.json"
 OLD_CLEANREAD = APP_DATA / "cleanread_settings.json"   # CleanRead's ticks before 1.11.0
@@ -263,35 +265,19 @@ class FilterCard:
         self.on_change()
 
 
-_HEAD_IMGS = {}
+SECTION_ICONS = {"Bad language": "mute", "Sex and nudity": "eye", "Romance and relationships": "heart",
+                 "Violence": "warning", "Medical": "health", "Attitude": "smile",
+                 "Smoking, drinking and drugs": "cup", "Faith, holidays and magic": "star"}
+KISS_SHORT = {"Keep": "Keep", "Cut passionate kisses": "Passionate", "Cut all kisses": "All kisses"}
+HEAD_FONT = "Segoe UI Semibold" if os.name == "nt" else "DejaVu Sans"
 
 
-def head_images(w):
-    """The section boxes: ticked, empty, and a dash for some (drawn, so both apps look alike)."""
-    key = str(w.tk)
-    if key in _HEAD_IMGS:
-        return _HEAD_IMGS[key]
+def _hex(widget, colour):
+    """A colour as #RRGGBB (a plain window's own is a name like SystemButtonFace)."""
     try:
-        n = max(15, round(15 * w.winfo_fpixels("1i") / 96.0))
+        return "#%02X%02X%02X" % tuple(c // 257 for c in widget.winfo_rgb(colour))
     except tk.TclError:
-        n = 15
-    gap = max(6, n // 2)
-    imgs = {}
-    for name, fill, edge in (("off", "#FFFFFF", "#8C857C"), ("on", ACCENT, ACCENT), ("some", ACCENT, ACCENT)):
-        img = tk.PhotoImage(master=w, width=n + gap, height=n)
-        img.put(edge, to=(0, 0, n, n))
-        img.put(fill, to=(1, 1, n - 1, n - 1))
-        imgs[name] = img
-    t = max(2, round(n / 7))
-    pts = [(0.2, 0.52), (0.42, 0.74), (0.8, 0.28)]
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-        for k in range(2 * n + 1):
-            x = round((x0 + (x1 - x0) * k / (2 * n)) * n - t / 2)
-            y = round((y0 + (y1 - y0) * k / (2 * n)) * n - t / 2)
-            imgs["on"].put("#FFFFFF", to=(max(0, x), max(0, y), min(n, x + t), min(n, y + t)))
-    imgs["some"].put("#FFFFFF", to=(round(n * 0.25), (n - t) // 2, round(n * 0.75), (n - t) // 2 + t))
-    _HEAD_IMGS[key] = imgs
-    return imgs
+        return BG
 
 
 def _is_on(v):
@@ -299,68 +285,94 @@ def _is_on(v):
     return val != "Keep" if isinstance(val, str) else bool(val)
 
 
-def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600, opened=None,
-                on_fold=None, heads=None):
-    """Every filter's tick box, in sections by topic as in CleanView 1.18.74, packed into `parent`.
-    Each section is one line until opened: a box that ticks (or, when all are, unticks) all of it,
-    shown ticked, empty or with a dash for some; its name; "3 of 5 ticked"; "Choose which…".
-    opened: the set of open section names (changed in place; on_fold() is called after). heads:
-    a dict filled with name -> (box, count label, tick_all, show) for tests.
+def build_boxes(parent, cur, mywords, on_change=None, padx=0, wrap=560, opened=None,
+                on_fold=None, heads=None, scroll_to=None):
+    """Every filter, in sections by topic as in CleanView 1.18.77, packed into `parent`: a grid of
+    tiles, each with its icon, its name, a switch for the whole section (on, off, or pale for
+    some), "3 of 5 on" or "Off", and "Choose ›". Choose opens that section's tick boxes in a card
+    under the tiles (one section at a time) and outlines its tile in green.
+    opened: the set of open section names (changed in place; on_fold() is called after).
+    heads: a dict filled with name -> (switch, count label, tick_all, show) for tests.
+    scroll_to(widget): asked to bring the opened section into view.
     Returns (vars, words box). on_change() is called whenever a tick or a choice changes."""
     on_change = on_change or (lambda: None)
     on_fold = on_fold or (lambda: None)
     opened = set() if opened is None else opened
     heads = {} if heads is None else heads
-    imgs = head_images(parent)
+    C = look.C
+    # the look in use (light or dark), not this module's light colours
+    CARD, INK, MUTED, LINE, ACCENT = C["card"], C["ink"], C["muted"], C["line"], C["accent"]
+    bg = _hex(parent, parent.cget("bg"))
+    X = lambda n: look.px(parent, n)          # noqa: E731
     vars_ = {}
     words = None
-    box = tk.Frame(parent, bg=CARD, highlightbackground=LINE, highlightthickness=1)
-    box.pack(fill="x", padx=padx, pady=4)
-    for heading, cols, items in SECTIONS:
-        head = tk.Frame(box, bg=CARD)
-        head.pack(fill="x", padx=12, pady=(7, 0))
-        body = tk.Frame(box, bg=CARD)
-        master = tk.Label(head, image=imgs["off"], bg=CARD, cursor="hand2")
-        master.pack(side="left")
-        name = tk.Label(head, text=heading, bg=CARD, fg=INK, font=(FONT, 11, "bold"), cursor="hand2")
-        name.pack(side="left")
-        count = tk.Label(head, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
-        count.pack(side="left", padx=(10, 0))
-        more = tk.Label(head, text="", bg=CARD, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
-        more.pack(side="left", padx=(10, 0))
+    tiles = tk.Frame(parent, bg=bg)
+    tiles.pack(fill="x", padx=padx, pady=(X(6), 0))
+    for c in range(3):
+        tiles.columnconfigure(c, weight=1, uniform="tiles")
+    detail = look.Card(parent, radius=14, pad=(18, 14), bg=bg)
+    dhead = tk.Frame(detail.body, bg=CARD)
+    dhead.pack(fill="x", pady=(0, X(8)))
+    dname = tk.Label(dhead, text="", bg=CARD, fg=INK, font=(HEAD_FONT, 12), anchor="w")
+    dname.pack(side="left")
+    dbody = tk.Frame(detail.body, bg=CARD)
+    dbody.pack(fill="x")
+    shows = {}
+    if len(opened) > 1:                     # one at a time now
+        keep = sorted(opened)[0]
+        opened.clear()
+        opened.add(keep)
+    for n_sec, (heading, cols, items) in enumerate(SECTIONS):
+        tile = look.Card(tiles, radius=14, pad=(13, 11))
+        tile.grid(row=n_sec // 3, column=n_sec % 3, sticky="nsew", padx=(0, X(10)), pady=(0, X(10)))
+        top = tk.Frame(tile.body, bg=CARD)
+        top.pack(fill="x")
+        badge = look.Badge(top, SECTION_ICONS.get(heading, "star"), size=30)
+        badge.pack(side="left", anchor="n")
+        switch = look.Switch(top)
+        switch.pack(side="right", anchor="n", pady=(X(4), 0))
+        name = tk.Label(tile.body, text=heading, bg=CARD, fg=INK, font=(HEAD_FONT, 10), anchor="w",
+                        justify="left", wraplength=X(150), cursor="hand2")
+        name.pack(fill="x", pady=(X(8), 0))
+        low = tk.Frame(tile.body, bg=CARD)
+        low.pack(fill="x", side="bottom", pady=(X(4), 0))
+        count = tk.Label(low, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
+        count.pack(side="left")
+        body = tk.Frame(dbody, bg=CARD)
         grid = tk.Frame(body, bg=CARD)
-        grid.pack(fill="x", padx=(34, 12), pady=(2, 4))
+        grid.pack(fill="x")
         got, parts = [], {}            # the section's own choices; religion's parts (by its name)
+        ctl = {}                       # this section's "Choose" link (made below)
         n = 0
         for key, label, default in items:
             if isinstance(default, str):            # a kissing level
                 row = tk.Frame(grid, bg=CARD)
-                row.grid(row=n, column=0, columnspan=cols, sticky="w", pady=1)
+                row.grid(row=n, column=0, columnspan=cols, sticky="w", pady=X(3))
                 tk.Label(row, text=label, bg=CARD, fg=INK, font=(FONT, 10), width=20,
                          anchor="w").pack(side="left")
                 v = tk.StringVar(value=dict(KISS_LEVELS).get(cur.get(key), "Keep"))
                 vars_[key] = v
                 got.append(v)
-                ttk.Combobox(row, textvariable=v, values=[n_ for _, n_ in KISS_LEVELS],
-                             state="readonly", width=22).pack(side="left")
+                look.Segmented(row, [(full, KISS_SHORT[full]) for _, full in KISS_LEVELS], v,
+                               size=9).pack(side="left")
                 n += cols
                 continue
             v = tk.BooleanVar(value=bool(cur.get(key)))
             vars_[key] = v
             got.append(v)
             ttk.Checkbutton(grid, text=label, variable=v).grid(
-                row=n // cols, column=n % cols, sticky="w", padx=(0, 24), pady=1)
+                row=n // cols, column=n % cols, sticky="w", padx=(0, X(24)), pady=X(2))
             n += 1
             if key == "religion":                   # its parts (Jason)
                 row = tk.Frame(grid, bg=CARD)
-                row.grid(row=n // cols, column=0, columnspan=cols, sticky="w", padx=(24, 0))
+                row.grid(row=n // cols, column=0, columnspan=cols, sticky="w", padx=(X(24), 0))
                 boxes = []
                 for p, plabel in RELIGION_PARTS:
                     pv = tk.BooleanVar(value=bool(cur.get("religion_" + p)))
                     vars_["religion_" + p] = pv
                     parts[str(v)] = parts.get(str(v), []) + [pv]
                     boxes.append(ttk.Checkbutton(row, text=plabel, variable=pv))
-                    boxes[-1].pack(side="left", padx=(0, 10))
+                    boxes[-1].pack(side="left", padx=(0, X(10)))
                 show_parts = lambda *_, bs=boxes, rv=v: [b.state(["!disabled"] if rv.get() else
                                                                  ["disabled"]) for b in bs]
                 v.trace_add("write", show_parts)
@@ -368,29 +380,33 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600, opened=
                 n += cols
         if heading == "Bad language":
             tk.Label(body, text="Your own words and phrases to mark out or mute  (one per line, "
-                     "for every age)", bg=CARD, fg=INK, font=(FONT, 10)).pack(anchor="w", padx=(34, 12))
-            words = tk.Text(body, height=4, font=(FONT, 10), wrap="none", relief="solid",
-                            borderwidth=1, highlightthickness=0, padx=6, pady=4)
+                     "for every age)", bg=CARD, fg=INK, font=(HEAD_FONT, 10)).pack(
+                         anchor="w", pady=(X(12), X(4)))
+            words = tk.Text(body, height=4, font=(FONT, 10), wrap="none", relief="flat",
+                            borderwidth=0, highlightthickness=1, highlightbackground=LINE,
+                            highlightcolor=ACCENT, bg=C["soft"], fg=INK, insertbackground=INK,
+                            padx=X(8), pady=X(6))
             words.insert("1.0", "\n".join(mywords))
-            words.pack(fill="x", padx=(34, 12))
+            words.pack(fill="x")
             words.bind("<KeyRelease>", lambda e: on_change())
             words.bind("<FocusOut>", lambda e: on_change())
             tk.Label(body, text="Taken out wherever they come up, the whole phrase: for example "
                      "\u201cgrow some stones\u201d. Whole words only, so \u201cstones\u201d on "
                      "its own wouldn't touch \u201cmilestones\u201d.", bg=CARD, fg=MUTED,
-                     font=(FONT, 9), wraplength=wrap, justify="left").pack(anchor="w", padx=(34, 12),
-                                                                          pady=(2, 8))
+                     font=(FONT, 9), wraplength=X(wrap - 40), justify="left").pack(
+                         anchor="w", pady=(X(4), 0))
 
         def on(v, parts=parts):
-            # religion counts as ticked only with at least one of its parts
+            # religion counts as on only with at least one of its parts
             return _is_on(v) and (str(v) not in parts or any(p.get() for p in parts[str(v)]))
 
-        def refresh(*_, got=got, master=master, count=count, on=on):
-            if not master.winfo_exists():
+        def refresh(*_, got=got, switch=switch, count=count, badge=badge, on=on):
+            if not switch.winfo_exists():
                 return
             k = sum(on(v) for v in got)
-            master.config(image=imgs["on" if k == len(got) else "off" if k == 0 else "some"])
-            count.config(text=f"{k} of {len(got)} ticked")
+            switch.set("on" if k == len(got) else "off" if k == 0 else "some")
+            count.config(text=f"{k} of {len(got)} on" if k else "Off")
+            badge.set(fill=C["tint"] if k else C["side"], fg=C["accent"] if k else C["faint"])
 
         def tick_all(_=None, got=got, parts=parts, on=on):
             want = not all(on(v) for v in got)
@@ -400,27 +416,49 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=16, wrap=600, opened=
                     for p in parts.get(str(v), ()):
                         p.set(True)
 
-        def show(opening, heading=heading, body=body, head=head, more=more):
+        def show(opening, heading=heading, body=body, tile=tile, ctl=ctl):
             if opening:
-                body.pack(fill="x", after=head)
+                for t, other in shows.items():
+                    if t != heading:
+                        other(False)
+                body.pack(fill="x")
+                dname.config(text=heading)
+                detail.pack(fill="x", padx=(padx, X(10)), pady=(X(2), X(6)))
+                opened.clear()
                 opened.add(heading)
             else:
                 body.pack_forget()
-                opened.discard(heading)
-            more.config(text="Hide" if opening else "Choose which\u2026")
+                if heading in opened:
+                    opened.discard(heading)
+                    detail.pack_forget()
+            tile.recolour(edge=C["accent"] if opening else C["line"], edge_w=2.0 if opening else 1.0)
+            ctl["more"].label.config(text="Hide \u2039" if opening else "Choose \u203a")
 
         def flip(_=None, heading=heading, show=show):
-            show(heading not in opened)
+            opening = heading not in opened
+            show(opening)
             on_fold()
-        master.bind("<Button-1>", tick_all)
-        for w in (name, more):
-            w.bind("<Button-1>", flip)
+            if opening and scroll_to:
+                parent.after(50, lambda: scroll_to(dname))
+        ctl["more"] = look.link(low, "Choose \u203a", flip, size=9)
+        ctl["more"].pack(side="right")
+        switch._command = tick_all
+        for w in (badge, name):
+            look.on_click(w, flip)
         for v in got + [p for ps in parts.values() for p in ps]:
             v.trace_add("write", refresh)
         refresh()
-        show(heading in opened)
-        heads[heading] = (master, count, tick_all, show)
-    tk.Label(box, text="", bg=CARD).pack(pady=1)
+        shows[heading] = show
+        heads[heading] = (switch, count, tick_all, show)
+
+    def all_done():
+        for sh in shows.values():
+            sh(False)
+        on_fold()
+    look.link(dhead, "Done", all_done, size=9).pack(side="right")
+    for t in list(opened):
+        if t in shows:
+            shows[t](True)
     for v in vars_.values():
         v.trace_add("write", lambda *_: on_change())
     return vars_, words
@@ -435,32 +473,29 @@ def read_boxes(vars_, words):
 
 
 class FilterPanel:
-    """Every filter on the page itself, as in CleanView (CleanRead's "What to take out"):
-    "Filtering for" (the ages) and the tick boxes. Every change is kept at once, for the age
-    chosen; CleanListen's "Choose filters" window shows the same ticks."""
+    """Every filter on the page itself, as in CleanView: "Filtering for" (the ages, one rounded
+    choice) and the sections as tiles. Every change is kept at once, for the age chosen;
+    CleanListen and CleanRead show the same ticks."""
 
-    def __init__(self, parent, on_change=None, wrap=600):
+    def __init__(self, parent, on_change=None, wrap=560, scroll_to=None):
         self.d = load()
         self.on_change = on_change or (lambda: None)
-        row = tk.Frame(parent, bg=CARD)
+        self.scroll_to = scroll_to
+        MUTED = look.C["muted"]             # the look in use (light or dark)
+        bg = _hex(parent, parent.cget("bg"))
+        X = lambda n: look.px(parent, n)          # noqa: E731
+        row = tk.Frame(parent, bg=bg)
         row.pack(fill="x")
-        tk.Label(row, text="Filtering for:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
         self.profile = tk.StringVar(value=self.d["profile"])
-        for key, label in PROFILES:
-            tk.Radiobutton(row, text=label, value=key, variable=self.profile, bg=CARD,
-                           activebackground=CARD, font=(FONT, 10),
-                           command=self._profile_changed).pack(side="left", padx=(8, 0))
-        bottom = tk.Frame(parent, bg=CARD)
-        bottom.pack(fill="x", pady=(4, 2))
-        self.std = tk.Label(bottom, text="", bg=CARD, fg=ACCENT, font=(FONT, 9, "underline"),
-                            cursor="hand2")
-        self.std.pack(side="left")
-        self.std.bind("<Button-1>", lambda e: self.standard())
-        tk.Label(bottom, text="Each age remembers its own ticks. CleanListen and CleanRead share "
-                 "them.", bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
+        look.Segmented(row, PROFILES, self.profile, command=self._profile_changed).pack(side="left")
+        self.std = look.link(row, "Reset to standard", self.standard, size=9)
+        self.std.pack(side="right", padx=(0, X(10)))
+        tk.Label(parent, text="Each age remembers its own choices. CleanListen and CleanRead share "
+                 "them.", bg=bg, fg=MUTED, font=(FONT, 9), wraplength=X(wrap),
+                 justify="left").pack(anchor="w", pady=(X(8), 0))
         self.wrap = wrap
-        self.body = tk.Frame(parent, bg=CARD)
-        self.body.pack(fill="x", pady=(4, 0))
+        self.body = tk.Frame(parent, bg=bg)
+        self.body.pack(fill="x", pady=(X(4), 0))
         self._build()
 
     def _build(self):
@@ -471,8 +506,7 @@ class FilterPanel:
         self.vars, self.words = build_boxes(self.body, ticks(self.d), self.d["mywords"],
                                             self._changed, padx=0, wrap=self.wrap,
                                             opened=self._opened(), on_fold=self._folded,
-                                            heads=self.heads)
-        self.std.config(text=f"Back to the standard ticks for {dict(PROFILES)[self.d['profile']]}")
+                                            heads=self.heads, scroll_to=self.scroll_to)
         self._quiet = False
 
     def _opened(self):
@@ -494,6 +528,8 @@ class FilterPanel:
         self.on_change()
 
     def _profile_changed(self):
+        if self.d["profile"] == self.profile.get() and getattr(self, "vars", None):
+            return
         self.d["profile"] = self.profile.get()
         save(self.d)
         self._build()

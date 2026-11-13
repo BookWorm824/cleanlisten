@@ -75,7 +75,7 @@ def test_each_age_has_its_own_ticks(root, tmp_path):
     p._profile_changed()
     assert p.vars["violence"].get() is True and p.vars["rude"].get() is False
     assert _saved(tmp_path)["ticks"]["young"]["rude"] is False
-    assert "Adults" in p.std.cget("text")
+    assert p.std.label.cget("text") == "Reset to standard"       # one link for whichever age
 
 
 def test_back_to_the_standard_ticks(root, tmp_path):
@@ -101,10 +101,11 @@ def test_cleanlistens_window_still_works_and_shows_the_same_ticks(root, tmp_path
 
 def test_cleanread_shows_the_boxes_on_its_page():
     src = (REPO / "CleanRead.pyw").read_text(encoding="utf8")
-    assert "F.FilterPanel(b3" in src and "F.FilterCard(" not in src
+    assert "F.FilterPanel(sp.pane(3)" in src and "F.FilterCard(" not in src
     assert "Choose filters" not in src
-    # CleanListen keeps its window for now
-    assert "F.FilterCard(b3" in (REPO / "CleanListen.pyw").read_text(encoding="utf8")
+    # and so does CleanListen now (the step-by-step look, 2026-11-13)
+    listen = (REPO / "CleanListen.pyw").read_text(encoding="utf8")
+    assert "F.FilterPanel(sp.pane(2)" in listen and "F.FilterCard(" not in listen
 
 
 class _CC:

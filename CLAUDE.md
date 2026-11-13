@@ -678,6 +678,40 @@ seaman. If she asks to leave one in: first remind her it's a hard rule set on 13
 if she still wants it, do as she says (her own untick on the review page works).
 `tests/test_hard_rule.py`.
 
+**A new look, step by step** (as CleanView 1.18.77; the owner, 2026-11-13, in CleanView's session: "the
+ui also feels clunky and dated, can you make it feel classy (all of them)"; a repaint wasn't it: "that
+just looks like you changed colors"; she chose "B, step by step"). `cvlook.py` is CleanView's drawn
+pieces, copied as it is (numpy and tkinter only): Card, Pill, Switch, Segmented, OptionCard, Badge,
+link, and the rounded ttk styles. `cllook.py` is ours: `style()` (rounded ttk buttons, thin scroll
+bars, rounded progress bar, soft fields, smooth tick boxes), `switch_row()` and `StepPage` (the
+steps down the left on a soft panel, each saying what's chosen; one step on the right; Back,
+"Next: <step>" and the green button along the bottom; quiet links under the steps). Both are on
+`version.json`'s list. CleanRead's steps: Ebook, What to do (two option cards; choosing one rebuilds
+the page), then for a clean copy What to take out, Options, Save to, or for a check AI helper.
+CleanListen's: Audiobook, What to remove, Extra checks, Save to. The filters are tiles on the page
+in both (`filters.build_boxes`: icon, name, a switch for the whole section, "3 of 5 on"/"Off",
+"Choose ›" opening one section's boxes under the tiles; ages as one segmented choice; kissing as a
+segmented choice); CleanListen no longer has the "Choose filters" window on its start page. The
+working page's progress sits on a rounded card. Same options, keys and saved choices. Gotchas (from
+CleanView): a look.Card is a canvas, so `_scroll_to` looks for the frame with `_canvas`; drawn
+controls need hex colours (`filters._hex`); sizes go through `look.px`. ReadAloud is not done: ask
+the owner first (she said it "does a different job" about the sections).
+
+**Light and dark** (as CleanView 1.18.78; the owner, 2026-11-13: "ask cleann view aabout dark mode
+built. lets move that here also"; in CleanView's session: "yes it should be optional", "just light
+dark button option. no windows choice"). A Light / Dark choice under the steps on each start page
+(`StepPage(theme=...)`, `App._set_theme`: the page is built again in that look, keeping what's chosen
+and the step). Light is the look as it was and the default; the choice is `theme` in filters.json
+(shared by CleanListen and CleanRead) and read in `App.__init__` before anything is drawn. Every
+colour is a name in `cllook.py` with a value for each look (`LIGHT`, `DARK`, CleanView's values plus
+ours: `YELLOW`, `AMBER`, `FAIL`, `READY_GREEN`, `QUOTE`, `FINE_*`, `CHIP_*`); `CL.use_theme` sets the
+drawn pieces' colours and each app's `use_theme` takes the names into its own module (BG, CARD,
+GO...). Never write a colour into a page or use one as a default argument: name it in cllook.py
+(`tests/test_theme.py` checks). `cvlook.py` is CleanView's 1.18.78 copy (ttk pictures redrawn in
+place for a new look). The title bar goes dark where Windows can (`CL.title_bar`). The file chooser
+and question boxes are Windows' own. filters.py's old "Choose filters" window (unused by the apps
+now) is still light only.
+
 **Explicit findings in coroner talk are sexual references** (the owner, 2026-11-13: "any explicit talk
 should be removed from coroner talk regardless of medical /coroner - tearing, vaginal bruising etc";
 how: "whole line on sexual reference , just the word on Sexual words"; and for the hard-rule words:
