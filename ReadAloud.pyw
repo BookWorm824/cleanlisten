@@ -15,15 +15,33 @@ sys.path.insert(0, str(HERE))
 import readaloud as engine  # noqa: E402
 import readaloud_gpu as gpu  # noqa: E402  (the graphics-card voices)
 import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanListen)
+import filters as F  # noqa: E402  (only for the light / dark choice, kept with CleanListen's)
+import logo as LOGO  # noqa: E402
+import cvlook as look  # noqa: E402  (the drawn look: cards, switches, pill buttons; CleanView's)
+import cllook as CL  # noqa: E402  (the step-by-step start page and light / dark, shared)
 
 APP = "ReadAloud"
 APP_DATA = engine.APP_DATA
 SETTINGS = APP_DATA / "readaloud_settings.json"
 SAVE_PLACES = APP_DATA / "save_places.json"     # CleanListen's chosen M4B folder (Audiobookshelf)
-BG, CARD, INK, MUTED, ACCENT, ACCENT_DK, LINE = (
-    "#F6F3EE", "#FFFFFF", "#23211F", "#5C5852", "#2F6F62", "#24574D", "#E3DED6")
-GO, GO_DK, BUTTON_EDGE = "#1E7E34", "#17652A", "#B9AFA2"
 FONT = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
+# CleanView's new look (the owner, 2026-11-13: "change read aloud to the style of the new cleanview.
+# i know that tick boxes are diffent but bring the styling over"): the start page one step at a
+# time, rounded cards and buttons, and light or dark, as CleanListen and CleanRead. Every colour is
+# a name from cllook.py with a value for each look; `use_theme` sets them here (BG, CARD, INK, GO...),
+# so a page reads the look in use. Never write a colour into a page: name it in cllook.py.
+THEME = "light"
+
+
+def use_theme(name):
+    """Light or dark: sets every colour name in this module. Pages built after it are in that look."""
+    global THEME
+    THEME = CL.use_theme(name)
+    globals().update(CL.colours())
+
+
+use_theme("light")          # the saved choice is read when the window opens (App.__init__)
+HEAD = CL.HEAD
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt *.docx"), ("All files", "*.*")]
 VOICE_LABELS = [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.VOICES]
 GPU_LABELS = [gpu.GPU_VOICES[v][0].replace(" - ", "  ·  ") for v in gpu.NARRATORS]
@@ -117,7 +135,7 @@ def logo_png(px=128):
 def hours_text(h):
     m = int(round(h * 60))
     if m < 60:
-        return f"{max(1, m)} minutes"
+        return f"{max(1, m)} minute{'s' if m > 1 else ''}"
     hh, mm = divmod(m, 60)
     return f"{hh} hour{'s' if hh > 1 else ''}" + (f" {mm} minutes" if mm else "")
 
@@ -132,6 +150,10 @@ class App(tk.Tk):
         h = min(int(820 * scale), sh - 90)
         self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
         self.minsize(min(w, int(640 * scale)), min(h, int(480 * scale)))
+        try:                        # light or dark, before anything is drawn (shared with CleanListen)
+            use_theme(F.load().get("theme"))
+        except Exception:
+            use_theme("light")
         self.configure(bg=BG)
         try:
             self.iconbitmap(str(HERE / "readaloud.ico"))
@@ -160,6 +182,7 @@ class App(tk.Tk):
         self.page = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_setup()
+        self.after(50, lambda: CL.title_bar(self))
         self.watch = freezes.Watch(self, APP, APP_DATA, "readaloud_")
         self.watch.start()
         self.after(100, self._poll)
@@ -169,31 +192,28 @@ class App(tk.Tk):
         s = ttk.Style(self)
         s.theme_use("clam")
         s.configure(".", background=BG, foreground=INK, font=(FONT, 10))
-        s.configure("TCheckbutton", background=CARD, font=(FONT, 10))
-        s.configure("Card.TRadiobutton", background=CARD, font=(FONT, 10))
-        s.map("Card.TRadiobutton", background=[("active", CARD)])
+        s.configure("TCheckbutton", background=CARD, foreground=INK, font=(FONT, 10))
         s.map("TCheckbutton", background=[("active", CARD)])
         s.configure("Main.TButton", background=GO, foreground="white",
-                    font=(FONT, 15, "bold"), padding=(28, 7), borderwidth=0)
-        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", "#A8C9B0")])
+                    font=(HEAD, 13), padding=(26, 9), borderwidth=0)
+        s.map("Main.TButton", background=[("active", GO_DK), ("disabled", GO_OFF)])
         s.configure("Go.TButton", background=ACCENT, foreground="white",
-                    font=(FONT, 11, "bold"), padding=(14, 5), borderwidth=0)
-        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", "#A9C2BC")])
-        edge = {"bordercolor": BUTTON_EDGE, "lightcolor": "#ECE7E0", "darkcolor": "#ECE7E0"}
-        s.configure("Plain.TButton", background="#ECE7E0", foreground=INK, padding=(14, 6),
-                    borderwidth=1, font=(FONT, 10), **edge)
-        s.map("Plain.TButton", background=[("active", "#E0D9CF")])
-        s.configure("Small.TButton", background="#ECE7E0", foreground=INK, padding=(8, 1),
-                    borderwidth=1, font=(FONT, 9), **edge)
-        s.map("Small.TButton", background=[("active", "#E0D9CF")])
-        s.configure("Green.Horizontal.TProgressbar", troughcolor="#E6E1DA",
-                    background=ACCENT, bordercolor="#E6E1DA", lightcolor=ACCENT, darkcolor=ACCENT)
+                    font=(HEAD, 11), padding=(18, 7), borderwidth=0)
+        s.map("Go.TButton", background=[("active", ACCENT_DK), ("disabled", DISABLED)])
+        s.configure("Plain.TButton", padding=(18, 7), font=(FONT, 10))
+        s.configure("Small.TButton", padding=(10, 3), font=(FONT, 9))
         s.configure("TCombobox", padding=4)
+        # the drawn look: rounded buttons, thin scroll bars, a rounded progress bar, soft fields
+        # and smooth tick boxes with a real tick
+        CL.style(self, s)
 
     def destroy(self):
         if getattr(self, "watch", None):
             self.watch.stop()
         super().destroy()
+
+    def _px(self, n):
+        return look.px(self, n)
 
     def _new_page(self, title, subtitle="", name=""):
         if getattr(self, "watch", None):
@@ -202,34 +222,26 @@ class App(tk.Tk):
             self.unbind_all(seq)
         if self.page:
             self.page.destroy()
+        X = self._px
+        self.steps_page = None
         self.page = tk.Frame(self, bg=BG)
-        self.page.pack(fill="both", expand=True, padx=28, pady=(20, 16))
+        self.page.pack(fill="both", expand=True, padx=X(34), pady=(X(22), X(16)))
         self.footer = tk.Frame(self.page, bg=BG)
-        self.footer.pack(side="bottom", fill="x", pady=(12, 0))
+        self.footer.pack(side="bottom", fill="x", pady=(X(10), 0))
+        tk.Frame(self.footer, bg=LINE, height=1).pack(side="top", fill="x", pady=(0, X(12)))
         if name:
-            tk.Label(self.page, text=name, bg=BG, fg=ACCENT_DK, font=(FONT, 16, "bold"),
-                     wraplength=760, justify="left").pack(anchor="w", pady=(0, 2))
-        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(FONT, 20, "bold"),
-                 wraplength=760, justify="left").pack(anchor="w")
+            tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
+                     wraplength=X(760), justify="left").pack(anchor="w", pady=(0, X(2)))
+        tk.Label(self.page, text=title, bg=BG, fg=INK, font=(HEAD, 21),
+                 wraplength=X(760), justify="left").pack(anchor="w")
         if subtitle:
-            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 11),
-                     wraplength=740, justify="left").pack(anchor="w", pady=(2, 12))
+            tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
+                     wraplength=X(740), justify="left").pack(anchor="w", pady=(X(4), X(14)))
         return self.page
 
     def _logo(self, parent):
         """The logo in the middle of the empty space below (Jason: "a lot of dead space")."""
-        import base64
-        png = logo_png(128)
-        try:
-            img = tk.PhotoImage(data=base64.b64encode(png).decode()) if png else None
-        except tk.TclError:
-            img = None
-        if img is None:
-            return
-        self._logo_img = img
-        mid = tk.Frame(parent, bg=BG)
-        mid.pack(fill="both", expand=True)
-        tk.Label(mid, image=img, bg=BG).place(relx=0.5, rely=0.45, anchor="center")
+        LOGO.put_logo(parent, "readaloud.ico", BG)
 
     def _scroll_area(self, parent):
         wrap = tk.Frame(parent, bg=BG)
@@ -259,182 +271,271 @@ class App(tk.Tk):
         self.bind_all("<MouseWheel>", lambda e: wheel(int(-e.delta / 120)))
         self.bind_all("<Button-4>", lambda e: wheel(-2))
         self.bind_all("<Button-5>", lambda e: wheel(2))
+        inner._canvas = canvas
         return inner
 
-    def _card(self, parent, step, heading, note=""):
-        outer = tk.Frame(parent, bg=LINE)
-        outer.pack(fill="x", pady=6)
-        c = tk.Frame(outer, bg=CARD, padx=16, pady=12)
-        c.pack(fill="x", padx=1, pady=1)
-        top = tk.Frame(c, bg=CARD)
-        top.pack(fill="x")
-        if step:
-            tk.Label(top, text=step, bg=ACCENT, fg="white", font=(FONT, 10, "bold"),
-                     width=2).pack(side="left", padx=(0, 10))
-        tk.Label(top, text=heading, bg=CARD, fg=INK, font=(FONT, 12, "bold")).pack(side="left")
-        if note:
-            tk.Label(top, text=note, bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=8)
-        body = tk.Frame(c, bg=CARD)
-        body.pack(fill="x", pady=(8, 0), padx=(32 if step else 0, 0))
-        return body
-
-    def _note(self, parent, text, bg=CARD, pad=0):
-        tk.Label(parent, text=text, bg=bg, fg=MUTED, font=(FONT, 9), wraplength=640,
+    def _note(self, parent, text, bg=None, pad=0, fg=None):
+        tk.Label(parent, text=text, bg=bg or CARD, fg=fg or MUTED, font=(FONT, 9), wraplength=self._px(560),
                  justify="left").pack(anchor="w", padx=(pad, 0))
 
-    def _link(self, parent, text, cmd, bg=CARD):
-        lbl = tk.Label(parent, text=text, bg=bg, fg=ACCENT, font=(FONT, 9, "underline"), cursor="hand2")
-        lbl.bind("<Button-1>", lambda e: cmd())
+    def _link(self, parent, text, cmd, bg=None):
+        lbl = tk.Label(parent, text=text, bg=bg or CARD, fg=ACCENT, font=(HEAD, 9), cursor="hand2")
+        look.on_click(lbl, lambda e: cmd())
+        lbl.bind("<Enter>", lambda e: lbl.config(font=(HEAD, 9, "underline")))
+        lbl.bind("<Leave>", lambda e: lbl.config(font=(HEAD, 9)))
         return lbl
 
-    # ---------- page 1: the book, the voice, the chapters ----------
-    def show_setup(self):
-        p = self._new_page(APP, "Turns an ebook into an audiobook, read by a natural-sounding voice. "
-                                "Free, and it all happens on this computer.")
-        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
-        if upd:
-            tk.Label(p, text="✓ " + upd, bg="#E3EFEC", fg=ACCENT_DK, font=(FONT, 10),
-                     padx=10, pady=6, anchor="w").pack(fill="x", pady=(0, 8))
+    def _heading(self, parent, text, sub=""):
+        tk.Label(parent, text=text, bg=CARD, fg=INK, font=(HEAD, 11), anchor="w").pack(anchor="w")
+        if sub:
+            tk.Label(parent, text=sub, bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w", justify="left",
+                     wraplength=self._px(540)).pack(anchor="w", pady=(self._px(2), 0))
+
+    # ---------- page 1: the book, the voice, the director, the chapters, where it goes ----------
+    # One step at a time, as CleanView 1.18.77 ("B, step by step"): the steps down the left, each
+    # saying what's chosen; one step on the right; Back / Next; Make audiobook always there.
+    STEPS = [("Ebook", "Choose the book to read aloud. The original is never changed."),
+             ("Voice", "Who reads the book, and how fast."),
+             ("Reading director", "Claude, ChatGPT or Gemini goes through the book first and directs "
+                                  "the reading. Optional."),
+             ("What to read", "The parts nobody wants read aloud (contents, copyright pages) are "
+                              "already left out."),
+             ("Save to", "Where the audiobook goes.")]
+
+    def _step_summary(self, n):
+        """What's chosen in step n, in a few words, for the list on the left."""
+        if n == 1:
+            return self.book["title"] if self.book else "No book chosen yet"
+        if n == 2:
+            return gpu.READERS[self._reader()][0]
+        if n == 3:
+            return AI_NAMES[self._ai()] if self.director_var.get() else "Off"
+        if n == 4:
+            if not self.book:
+                return "Choose a book first"
+            k, total = len(self._chosen()), len(self.book["chapters"])
+            return f"All {total} parts" if k == total else f"{k} of {total} parts"
+        if self.folder:
+            return Path(self.folder).name or str(self.folder)
+        return "Next to the ebook"
+
+    def _refresh_steps(self):
+        sp = getattr(self, "steps_page", None)
+        if sp is not None:
+            sp.refresh()
+
+    def _theme_var(self):
+        self.theme_var = tk.StringVar(value=THEME)
+        return self.theme_var
+
+    def _set_theme(self, name=None):
+        """Light or dark, from the choice under the steps: the start page is built again in that
+        look, keeping what's chosen and the step. Kept for next time, with CleanListen's and
+        CleanRead's choice (filters.json)."""
+        name = "dark" if (name or self.theme_var.get()) == "dark" else "light"
+        if name == THEME:
+            return
+        self._remember()
+        try:
+            d = F.load()
+            d["theme"] = name
+            F.save(d)
+        except Exception:
+            pass
+        typed = (self.series_var.get(), self.number_var.get())
+        step = getattr(getattr(self, "steps_page", None), "now", 1)
+        use_theme(name)
+        self.configure(bg=BG)
+        self._style()                       # the ttk styles and tick boxes in that look
+        CL.title_bar(self)
+        self.show_setup(step=step)
+        if self.book:
+            self.series_var.set(typed[0])
+            self.number_var.set(typed[1])
+
+    def show_setup(self, step=1):
+        if getattr(self, "watch", None):
+            self.watch.doing["page"] = APP
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.unbind_all(seq)
+        if self.page:
+            self.page.destroy()
+        X = self._px
+        p = self.page = tk.Frame(self, bg=BG)
+        p.pack(fill="both", expand=True)
         try:
             ver = json.loads((HERE / "version.json").read_text())["version"]
             self.title(f"{APP} {ver}")
         except Exception:
             pass
-        self.start_btn = ttk.Button(self.footer, text="Make audiobook", style="Main.TButton",
-                                    command=self.start, state="disabled")
-        self.start_btn.pack(side="right")
-        body = self._scroll_area(p)
         st = self.settings
-
+        sp = self.steps_page = CL.StepPage(
+            self, p, APP, LOGO.logo_png("readaloud.ico", X(40))[0], self.STEPS, self._step_summary,
+            ("Make audiobook", self.start), done=lambda i: i == 1 and bool(self.book),
+            scroll_area=self._scroll_area, start=step, theme=(self._theme_var(), self._set_theme))
+        self.footer = sp.nav
+        self.start_btn = sp.main_btn
+        self.start_btn.config(state="disabled")
+        upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
+        if upd:
+            tk.Label(sp.top, text="✓ " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                     padx=X(12), pady=X(7), anchor="w").pack(fill="x", pady=(0, X(12)))
+        # a book that was stopped: above every step, as CleanView's "Pick up where I left off"
         for jobdir, job, got, n in engine.unfinished_jobs()[:2]:
-            c = self._card(body, "", f"Resume “{job.get('title', 'your book')}”?")
-            self._note(c, f"{got} of {n} chapters were read aloud before it stopped "
-                          f"({engine.voice_label(job)}).")
-            row = tk.Frame(c, bg=CARD)
-            row.pack(anchor="w", pady=(8, 0))
-            ttk.Button(row, text="Resume", style="Go.TButton",
-                       command=lambda d=jobdir, j=job: self.resume(d, j)).pack(side="left")
-            ttk.Button(row, text="Forget it", style="Plain.TButton",
-                       command=lambda d=jobdir: self.forget(d)).pack(side="left", padx=8)
+            c = look.Card(sp.top, fill=TINT, edge=TINT_EDGE, radius=14, pad=(18, 12))
+            c.pack(fill="x", pady=(0, X(12)))
+            words = tk.Frame(c.body, bg=TINT)
+            words.pack(side="left", fill="x", expand=True)
+            tk.Label(words, text=f"Resume “{job.get('title', 'your book')}”?", bg=TINT, fg=INK,
+                     font=(HEAD, 11), anchor="w", justify="left", wraplength=X(380)).pack(anchor="w")
+            tk.Label(words, text=f"{got} of {n} chapters were read aloud before it stopped "
+                                 f"({engine.voice_label(job)}).", bg=TINT, fg=MUTED, font=(FONT, 9),
+                     anchor="w", justify="left", wraplength=X(380)).pack(anchor="w", pady=(X(2), 0))
+            look.Pill(c.body, "Resume", lambda d=jobdir, j=job: self.resume(d, j), size=10,
+                      pad=(18, 8)).pack(side="right")
+            look.Pill(c.body, "Forget it", lambda d=jobdir: self.forget(d), kind="quiet", size=10,
+                      pad=(14, 8)).pack(side="right", padx=(0, X(6)))
 
-        # 1. the book
-        b1 = self._card(body, "1", "Ebook", "EPUB, PDF, Word or TXT — not copy-protected")
-        row = tk.Frame(b1, bg=CARD)
-        row.pack(fill="x")
-        self.cover_lbl = tk.Label(row, bg=CARD)
-        self.cover_lbl.pack(side="left", padx=(0, 12))
-        col = tk.Frame(row, bg=CARD)
-        col.pack(side="left", fill="x", expand=True)
-        ttk.Button(col, text="Choose ebook…", style="Go.TButton", command=self.pick_book).pack(anchor="w")
-        self.book_lbl = tk.Label(col, text="No book chosen yet", bg=CARD, fg=MUTED, font=(FONT, 10),
-                                 wraplength=520, justify="left")
-        self.book_lbl.pack(anchor="w", pady=(6, 0))
-        self._note(b1, "Want it clean? Make a clean copy in CleanRead first, then choose that copy here. "
-                       "Kindle books are copy-protected and can't be read.")
+        # ----- step 1: the book
+        drop = look.Card(sp.pane(1), fill=SOFT, edge=SOFT_EDGE, radius=16, pad=(20, 18))
+        drop.pack(fill="x", padx=(0, X(4)))
+        look.Badge(drop.body, "folder", size=54, icon_size=20).pack(side="left")
+        words = tk.Frame(drop.body, bg=SOFT)
+        words.pack(side="left", fill="x", expand=True, padx=(X(16), X(12)))
+        tk.Label(words, text="Choose an ebook", bg=SOFT, fg=INK, font=(HEAD, 13), anchor="w").pack(anchor="w")
+        tk.Label(words, text="EPUB, PDF, Word or TXT — not copy-protected.", bg=SOFT, fg=MUTED,
+                 font=(FONT, 9), anchor="w", wraplength=X(260), justify="left").pack(anchor="w", pady=(X(2), 0))
+        look.Pill(drop.body, "Choose ebook…", self.pick_book, size=12, pad=(22, 11)).pack(side="right")
+        row = tk.Frame(sp.pane(1), bg=BG)
+        row.pack(fill="x", pady=(X(14), 0))
+        self.cover_lbl = tk.Label(row, bg=BG)
+        self.cover_lbl.pack(side="left", padx=(0, X(14)))
+        self.book_lbl = tk.Label(row, text="No book chosen yet", bg=BG, fg=MUTED, font=(FONT, 10),
+                                 wraplength=X(460), justify="left", anchor="w")
+        self.book_lbl.pack(side="left", anchor="w")
+        tk.Label(sp.pane(1), text="Want it clean? Make a clean copy in CleanRead first, then choose that "
+                 "copy here. Kindle books are copy-protected and can't be read.", bg=BG, fg=FAINT,
+                 font=(FONT, 9), wraplength=X(560), justify="left").pack(anchor="w", pady=(X(14), 0))
 
-        # 2. the voice: which reader (Lauren chooses by book), then which voice
-        b2 = self._card(body, "2", "Voice")
+        # ----- step 2: the voice: which reader (Lauren chooses by book), then which voice
         self.reader_var = tk.StringVar(value=st.get("reader") if st.get("reader") in gpu.READERS else "acting")
-        for r in gpu.READER_ORDER:
+        self._shown_reader = None
+        choices = tk.Frame(sp.pane(2), bg=BG)
+        choices.pack(fill="x")
+        for c in range(2):
+            choices.columnconfigure(c, weight=1, uniform="reader")
+        for k, r in enumerate(gpu.READER_ORDER):
             name, desc = gpu.READERS[r][:2]
-            hint = "" if r == "kokoro" else "  (graphics card)"
-            ttk.Radiobutton(b2, text=f"{name}{'  (best)' if r == 'acting' else ''}  —  {desc}{hint}",
-                            value=r, variable=self.reader_var, command=self._reader_changed,
-                            style="Card.TRadiobutton").pack(anchor="w")
-        self.reader_row = tk.Frame(b2, bg=CARD)
-        self.reader_row.pack(fill="x", pady=(4, 6), padx=(22, 0))
+            card = look.OptionCard(choices, r, self.reader_var, name + ("  (best)" if r == "acting" else ""),
+                                   desc + ("" if r == "kokoro" else "  On the graphics card."),
+                                   icon="pc" if r == "kokoro" else "music")
+            card.sub.config(wraplength=X(200))
+            card.grid(row=k // 2, column=k % 2, sticky="nsew", padx=(0, X(10)), pady=(0, X(10)))
+        self.reader_var.trace_add("write", lambda *_: self.after_idle(self._reader_picked))
+        b = sp.card(2, top=2)
+        self.reader_row = tk.Frame(b, bg=CARD)
+        self.reader_row.pack(fill="x")
         self.reader_lbl = tk.Label(self.reader_row, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
-                                   wraplength=560, justify="left")
+                                   wraplength=X(540), justify="left")
         self.reader_lbl.pack(anchor="w")
-        self.setup_btn = ttk.Button(self.reader_row, text="Set up", style="Go.TButton", command=self.set_up_reader)
-        row = tk.Frame(b2, bg=CARD)
-        row.pack(fill="x")
-        self.voice_box = ttk.Combobox(row, state="readonly", width=46, values=VOICE_LABELS)
+        self.setup_btn = look.Pill(self.reader_row, "Set up", self.set_up_reader, size=10, pad=(18, 8))
+        b = sp.card(2, top=12)
+        self._heading(b, "Voice")
+        row = tk.Frame(b, bg=CARD)
+        row.pack(fill="x", pady=(X(8), 0))
+        self.voice_box = ttk.Combobox(row, state="readonly", width=42, values=VOICE_LABELS)
         self.voice_box.pack(side="left")
         self.voice_box.bind("<<ComboboxSelected>>", lambda e: self._remember())
-        self.hear_btn = ttk.Button(row, text="▶ Hear it", style="Go.TButton", command=self.hear)
-        self.hear_btn.pack(side="left", padx=(10, 0))
-        ttk.Button(row, text="■ Stop", style="Small.TButton", command=stop_playing).pack(side="left", padx=6)
-        row2 = tk.Frame(b2, bg=CARD)
-        row2.pack(fill="x", pady=(8, 0))
-        tk.Label(row2, text="Reading speed:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
+        self.hear_btn = look.Pill(row, "▶ Hear it", self.hear, size=10, pad=(16, 7))
+        self.hear_btn.pack(side="left", padx=(X(10), 0))
+        look.Pill(row, "■ Stop", stop_playing, kind="quiet", size=10, pad=(12, 7)).pack(side="left", padx=X(4))
+        row2 = tk.Frame(b, bg=CARD)
+        row2.pack(fill="x", pady=(X(10), 0))
+        tk.Label(row2, text="Reading speed", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
         self.speed_box = ttk.Combobox(row2, state="readonly", width=14, values=list(engine.SPEEDS))
         names = list(engine.SPEEDS)
         self.speed_box.current(names.index(st.get("speed")) if st.get("speed") in names else 1)
-        self.speed_box.pack(side="left", padx=8)
+        self.speed_box.pack(side="left", padx=X(10))
         self.speed_box.bind("<<ComboboxSelected>>", lambda e: (self._remember(), self._book_text()))
-        self.sample_lbl = tk.Label(b2, text="Press ▶ Hear it to listen to a few sentences of your book.",
-                                   bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=640, justify="left")
-        self.sample_lbl.pack(anchor="w", pady=(6, 0))
+        self.sample_lbl = tk.Label(b, text="Press ▶ Hear it to listen to a few sentences of your book.",
+                                   bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=X(540), justify="left")
+        self.sample_lbl.pack(anchor="w", pady=(X(8), 0))
         self._reader_changed(remember=False)
 
-        # 3. the reading director (readaloud_ai): Claude / ChatGPT / Gemini go through the book first
-        bd = self._card(body, "3", "Reading director", "optional, uses your own Claude or ChatGPT plan")
-        row = tk.Frame(bd, bg=CARD)
-        row.pack(anchor="w")
+        # ----- step 3: the reading director (readaloud_ai): Claude / ChatGPT / Gemini go through it first
         self.director_var = tk.BooleanVar(value=st.get("director", True))
-        ttk.Checkbutton(row, text="Have", variable=self.director_var,
-                        command=self._director_changed).pack(side="left")
-        self.ai_box = ttk.Combobox(row, state="readonly", width=9, values=list(AI_NAMES.values()))
+        b = sp.card(3)
+        CL.switch_row(b, self.director_var, "Have a reading director go through the book first",
+                      "It takes out what shouldn't be read aloud (page numbers, headings at the top of "
+                      "pages, jacket text, scanning mistakes), works out who is speaking and how each "
+                      "part should be read (the feeling of each line for the Qwen acting voice, slower, "
+                      "faster, pauses), and looks up how to say the names. It adds about 10 minutes "
+                      "before the reading starts, and you get a list of everything it changed. Uses "
+                      "your own Claude, ChatGPT or Gemini plan.",
+                      command=self._director_changed).pack(fill="x")
+        self.director_more = tk.Frame(sp.pane(3), bg=BG)
         saved = st.get("ai") if st.get("ai") in AI_NAMES else _saved_ai()
-        self.ai_box.current(list(AI_NAMES).index(saved))
-        self.ai_box.pack(side="left", padx=4)
-        self.ai_box.bind("<<ComboboxSelected>>", lambda e: self._director_changed())
-        tk.Label(row, text="go through the book first and direct the reading", bg=CARD, fg=INK,
-                 font=(FONT, 10)).pack(side="left")
-        self._note(bd, "It takes out what shouldn't be read aloud (page numbers, headings at the top of "
-                       "pages, jacket text, scanning mistakes), works out who is speaking and how each part "
-                       "should be read (the feeling of each line for the Qwen acting voice, slower, "
-                       "faster, pauses), and looks up how to say the names. It adds about 10 minutes "
-                       "before the reading starts, and you get a list of everything it changed.", pad=22)
-        self.cast_var = tk.BooleanVar(value=st.get("cast", False))
-        self.cast_check = ttk.Checkbutton(bd, text="Give the characters their own voices  (men and women "
-                                          "in the story; the narrator keeps the voice above)",
-                                          variable=self.cast_var, command=self._remember)
-        self.cast_check.pack(anchor="w", pady=(8, 0))
-        srow = tk.Frame(bd, bg=CARD)
-        srow.pack(anchor="w", pady=(6, 0))
-        self.ai_status = tk.Label(srow, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
+        self.ai_var = tk.StringVar(value=saved if saved in AI_NAMES else "claude")
+        b = look.Card(self.director_more, radius=14, pad=(18, 14))
+        b.pack(fill="x", padx=(0, X(4)), pady=(X(12), 0))
+        self._heading(b.body, "Who directs it")
+        look.Segmented(b.body, list(AI_NAMES.items()), self.ai_var, command=self._director_changed,
+                       bg=CARD, size=10).pack(anchor="w", pady=(X(8), 0))
+        srow = tk.Frame(b.body, bg=CARD)
+        srow.pack(anchor="w", fill="x", pady=(X(8), 0))
+        self.ai_status = tk.Label(srow, text="", bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=X(400),
+                                  justify="left")
         self.ai_status.pack(side="left")
-        self.ai_btn = ttk.Button(srow, text="Set up / sign in", style="Small.TButton", command=self._sign_in)
+        self.ai_btn = look.Pill(srow, "Set up / sign in", self._sign_in, kind="secondary", size=9,
+                                pad=(14, 6))
         self.ai_ok = None
+        self.cast_var = tk.BooleanVar(value=st.get("cast", False))
+        b = look.Card(self.director_more, radius=14, pad=(18, 14))
+        b.pack(fill="x", padx=(0, X(4)), pady=(X(12), 0))
+        CL.switch_row(b.body, self.cast_var, "Give the characters their own voices",
+                      "Men and women in the story each get a voice; the narrator keeps the voice you "
+                      "chose.", command=self._remember).pack(fill="x")
         self._director_changed(check=True)
 
-        # 4. the chapters
-        b3 = self._card(body, "4", "What to read")
-        self.ch_host = tk.Frame(b3, bg=CARD)
+        # ----- step 4: the chapters
+        b = sp.card(4)
+        self.ch_host = tk.Frame(b, bg=CARD)
         self.ch_host.pack(fill="x")
         tk.Label(self.ch_host, text="Choose a book first.", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(anchor="w")
 
-        # 4. where it goes
-        b4 = self._card(body, "5", "Save to")
-        row = tk.Frame(b4, bg=CARD)
+        # ----- step 5: where it goes
+        b = sp.card(5)
+        row = tk.Frame(b, bg=CARD)
         row.pack(fill="x")
-        ttk.Button(row, text="Change…", style="Plain.TButton", command=self.pick_folder).pack(side="right")
+        look.Pill(row, "Change…", self.pick_folder, kind="secondary", size=10, pad=(16, 8)).pack(side="right")
         self.out_lbl = tk.Label(row, text="Next to the ebook", bg=CARD, fg=MUTED, font=(FONT, 10),
-                                wraplength=520, justify="left")
+                                wraplength=X(400), justify="left")
         self.out_lbl.pack(side="left")
         places = load_json(SAVE_PLACES)
         self.folder = st.get("folder") or places.get("m4b_dir") or None
         self.abs_var = tk.BooleanVar(value=st.get("abs", bool(places.get("abs"))))
-        ttk.Checkbutton(b4, text="Put it in Audiobookshelf's folders  (Author \\ Series \\ Book 2 - Title)",
-                        variable=self.abs_var, command=self._abs_changed).pack(anchor="w", pady=(10, 0))
-        self.abs_row = tk.Frame(b4, bg=CARD)
-        tk.Label(self.abs_row, text="Series:", bg=CARD, font=(FONT, 10)).pack(side="left")
+        b = sp.card(5, top=12)
+        CL.switch_row(b, self.abs_var, "Put it in Audiobookshelf's folders",
+                      "Author \\ Series \\ Book 2 - Title", command=self._abs_changed).pack(fill="x")
+        self.abs_row = tk.Frame(b, bg=CARD)
+        tk.Label(self.abs_row, text="Series", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
         self.series_var = tk.StringVar()
-        ttk.Entry(self.abs_row, textvariable=self.series_var, width=28).pack(side="left", padx=(6, 14))
-        tk.Label(self.abs_row, text="Book number:", bg=CARD, font=(FONT, 10)).pack(side="left")
+        ttk.Entry(self.abs_row, textvariable=self.series_var, width=26).pack(side="left", padx=(X(8), X(16)))
+        tk.Label(self.abs_row, text="Book number", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
         self.number_var = tk.StringVar()
-        ttk.Entry(self.abs_row, textvariable=self.number_var, width=6).pack(side="left", padx=6)
+        ttk.Entry(self.abs_row, textvariable=self.number_var, width=6).pack(side="left", padx=X(8))
         self.mp3_var = tk.BooleanVar(value=st.get("mp3", False))
-        self.mp3_check = ttk.Checkbutton(b4, text="Also make MP3 chapter files  (for a Yoto or an older player)",
-                                         variable=self.mp3_var, command=self._remember)
-        self.mp3_check.pack(anchor="w", pady=(8, 0))
-        self._note(b4, "The audiobook is one M4B file with chapters and the book's cover. It plays in "
-                       "Audiobookshelf, Apple Books, BookPlayer, Smart AudioBook Player and VLC.")
+        b = sp.card(5, top=12)
+        self.mp3_check = CL.switch_row(b, self.mp3_var, "Also make MP3 chapter files",
+                                       "For a Yoto or an older player.", command=self._remember)
+        self.mp3_check.pack(fill="x")
+        tk.Label(sp.pane(5), text="The audiobook is one M4B file with chapters and the book's cover. It "
+                 "plays in Audiobookshelf, Apple Books, BookPlayer, Smart AudioBook Player and VLC.",
+                 bg=BG, fg=FAINT, font=(FONT, 9), wraplength=X(560), justify="left").pack(anchor="w", pady=(X(14), 0))
         self._abs_changed()
         if self.book:
             self._show_book()
+        sp.go(step)
 
     # ---------- which reader ----------
     def _reader(self):
@@ -447,8 +548,22 @@ class App(tk.Tk):
         i = max(0, self.voice_box.current())
         return gpu.NARRATORS[i] if gpu.is_gpu(self._reader()) else engine.VOICES[i][0]
 
+    def _reader_picked(self):
+        """A voice card was clicked (not the window choosing the Quick voice for a PC without a card)."""
+        if getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists() and \
+                self._reader() != self._shown_reader:
+            self._reader_changed()
+
+    def _ai(self):
+        try:
+            v = self.ai_var.get()
+        except (tk.TclError, AttributeError):
+            v = ""
+        return v if v in AI_NAMES else "claude"
+
     def _reader_changed(self, remember=True):
         r = self._reader()
+        self._shown_reader = r
         st = self.settings
         if gpu.is_gpu(r):
             self.voice_box.config(values=GPU_LABELS)
@@ -462,6 +577,7 @@ class App(tk.Tk):
             self._remember()
         self._show_reader()
         self._book_text()
+        self._refresh_steps()
 
     def _show_reader(self):
         if not (getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists()):
@@ -477,7 +593,7 @@ class App(tk.Tk):
         if self.gpu_ok is None:
             self.reader_lbl.config(text="Checking the graphics card…", fg=MUTED)
         elif not self.gpu_ok[0]:
-            self.reader_lbl.config(text=self.gpu_ok[1], fg="#9A2F1F")
+            self.reader_lbl.config(text=self.gpu_ok[1], fg=FAIL)
         elif gpu.ready(r):
             self.reader_lbl.config(text="✓ Ready.  " + speed, fg=ACCENT_DK)
         else:
@@ -508,14 +624,17 @@ class App(tk.Tk):
 
     def _director_changed(self, check=True):
         on = self.director_var.get()
-        self.cast_check.config(state="normal" if on else "disabled")
-        self.ai_box.config(state="readonly" if on else "disabled")
+        if on:
+            self.director_more.pack(fill="x")
+        else:
+            self.director_more.pack_forget()
         self._remember()
+        self._refresh_steps()
         self.ai_btn.pack_forget()
         if not on:
             self.ai_status.config(text="")
             return
-        ai = list(AI_NAMES)[self.ai_box.current()]
+        ai = self._ai()
         self.ai_status.config(text=f"Checking that {AI_NAMES[ai]} is set up…", fg=MUTED)
         self.ai_ok = None
 
@@ -530,7 +649,7 @@ class App(tk.Tk):
             threading.Thread(target=go, daemon=True).start()
 
     def _sign_in(self):
-        ai = list(AI_NAMES)[self.ai_box.current()]
+        ai = self._ai()
         self.ai_status.config(text=f"Setting up {AI_NAMES[ai]}… (a window or your browser may open)", fg=INK)
 
         def go():
@@ -545,7 +664,7 @@ class App(tk.Tk):
 
     def _abs_changed(self):
         if self.abs_var.get():
-            self.abs_row.pack(anchor="w", pady=(6, 0), before=self.mp3_check)
+            self.abs_row.pack(anchor="w", pady=(self._px(10), 0))
         else:
             self.abs_row.pack_forget()
         self._remember()
@@ -563,13 +682,14 @@ class App(tk.Tk):
             st["abs"] = self.abs_var.get()
             st["mp3"] = self.mp3_var.get()
             st["director"] = self.director_var.get()
-            st["ai"] = list(AI_NAMES)[self.ai_box.current()]
+            st["ai"] = self._ai()
             st["cast"] = self.cast_var.get()
         except (tk.TclError, AttributeError, IndexError):
             pass
         if self.folder:
             st["folder"] = self.folder
         save_settings(st)
+        self._refresh_steps()
 
     def _show_folder(self):
         if not getattr(self, "out_lbl", None) or not self.out_lbl.winfo_exists():
@@ -634,13 +754,17 @@ class App(tk.Tk):
         self.number_var.set(b.get("number", ""))
         for w in self.ch_host.winfo_children():
             w.destroy()
-        self.chapter_vars = [tk.BooleanVar(value=c["read"]) for c in b["chapters"]]
-        self.ch_summary = tk.Label(self.ch_host, bg=CARD, fg=INK, font=(FONT, 10), wraplength=640,
+        # the same book shown again (light / dark, or back from the voice step): its ticks are kept
+        keep = [v.get() for v in self.chapter_vars] if getattr(self, "_ticks_book", None) is b and \
+            len(self.chapter_vars) == len(b["chapters"]) else [c["read"] for c in b["chapters"]]
+        self._ticks_book = b
+        self.chapter_vars = [tk.BooleanVar(value=v) for v in keep]
+        self.ch_summary = tk.Label(self.ch_host, bg=CARD, fg=INK, font=(FONT, 10), wraplength=self._px(540),
                                    justify="left")
         self.ch_summary.pack(anchor="w")
         top = tk.Frame(self.ch_host, bg=CARD)
         top.pack(fill="x", pady=(4, 0))
-        self.ch_toggle = self._link(top, "Show the chapters ▾", self._toggle_chapters)
+        self.ch_toggle = self._link(top, "Show the chapters  ▾", self._toggle_chapters)
         self.ch_toggle.pack(side="left")
         self.ch_box = tk.Frame(self.ch_host, bg=CARD)
         self.ch_open = False
@@ -650,7 +774,7 @@ class App(tk.Tk):
     def _toggle_chapters(self):
         """The chapter list is folded away (a novel has 30+), so the page fits."""
         self.ch_open = not self.ch_open
-        self.ch_toggle.config(text="Hide the chapters ▴" if self.ch_open else "Show the chapters ▾")
+        self.ch_toggle.config(text="Hide the chapters  ▴" if self.ch_open else "Show the chapters  ▾")
         if not self.ch_open:
             self.ch_box.pack_forget()
             return
@@ -688,6 +812,7 @@ class App(tk.Tk):
                                   f"about {hours_text(make)} to make" if words else f"{b['title']}{by}\n\nNothing ticked to read.", fg=INK,
                              font=(FONT, 10))
         self.start_btn.config(state="normal" if words and not self.installing else "disabled")
+        self._refresh_steps()
         if getattr(self, "ch_summary", None) and self.ch_summary.winfo_exists():
             n, chosen = len(b["chapters"]), len(self._chosen())
             off = [c["title"] for c, v in zip(b["chapters"], self.chapter_vars) if not v.get()]
@@ -718,7 +843,7 @@ class App(tk.Tk):
                                             "this voice reads with the feeling of each line.", fg=MUTED)
                 play_wav(dst)
             except Exception as ex:
-                self.sample_lbl.config(text=f"Couldn't play the voice: {ex}", fg="#9A2F1F")
+                self.sample_lbl.config(text=f"Couldn't play the voice: {ex}", fg=FAIL)
             return
         text = engine.sample_text(self.book) if self.book else engine.sample_text({"chapters": []})
         self.busy_sample = True
@@ -762,19 +887,19 @@ class App(tk.Tk):
             chime()
             name = gpu.READERS[reader][0]
             if self.installing:
-                why = f"The {name} voice is still being set up. Wait for it to finish (it shows under 2. Voice)."
+                why = f"The {name} voice is still being set up. Wait for it to finish (it shows on the Voice step)."
             elif self.gpu_ok is None:
                 why = "ReadAloud is still checking the graphics card. Try again in a moment."
             elif not self.gpu_ok[0]:
                 why = f"The {name} voice can't be used yet:\n\n{self.gpu_ok[1]}"
             else:
                 why = (f"The {name} voice needs a one-time setup first: press the green Set up button "
-                       "under 2. Voice.")
+                       "on the Voice step.")
             messagebox.showinfo(APP, why + "\n\nOr choose the Quick voice, which works on any computer.")
             return
         extra = {"mp3": self.mp3_var.get(), "reader": reader}
         if self.director_var.get():
-            ai = list(AI_NAMES)[self.ai_box.current()]
+            ai = self._ai()
             if self.ai_ok is False:
                 chime()
                 if not messagebox.askyesno(APP, f"{AI_NAMES[ai]} isn't set up on this computer, so it can't go "
@@ -804,16 +929,18 @@ class App(tk.Tk):
         p = self._new_page("Narrating the book…",
                            "You can keep using your computer while it reads. If you need to stop, "
                            "it carries on from where it was next time you open ReadAloud.", name=title)
-        box = tk.Frame(p, bg=BG)
-        box.pack(fill="x", pady=30)
+        X = self._px
+        card = look.Card(p, radius=14, pad=(24, 22))
+        card.pack(fill="x", pady=(X(10), 0))
+        box = card.body
         self.pb = ttk.Progressbar(box, style="Green.Horizontal.TProgressbar", maximum=1000, length=640)
         self.pb.pack(fill="x")
-        self.status = tk.Label(box, text="Starting…", bg=BG, fg=INK, font=(FONT, 12), wraplength=740,
+        self.status = tk.Label(box, text="Starting…", bg=CARD, fg=INK, font=(FONT, 12), wraplength=X(700),
                                justify="left")
-        self.status.pack(anchor="w", pady=(12, 0))
-        self.left_lbl = tk.Label(box, text="Working out how long it will take…", bg=BG, fg=MUTED,
+        self.status.pack(anchor="w", pady=(X(14), 0))
+        self.left_lbl = tk.Label(box, text="Working out how long it will take…", bg=CARD, fg=MUTED,
                                  font=(FONT, 11))
-        self.left_lbl.pack(anchor="w", pady=(4, 0))
+        self.left_lbl.pack(anchor="w", pady=(X(4), 0))
         try:
             reader = json.loads((Path(jobdir) / "job.json").read_text(encoding="utf8")).get("reader", "kokoro")
         except Exception:
@@ -821,8 +948,8 @@ class App(tk.Tk):
         how = (f"Reading with the {gpu.READERS[reader][0]} voice on the graphics card. Each line is "
                "listened to and read again if a word came out wrong." if gpu.is_gpu(reader) else
                f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
-        tk.Label(box, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=740,     # Jason: "bigger"
-                 justify="left").pack(anchor="w", pady=(16, 0))
+        tk.Label(p, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=X(740),     # Jason: "bigger"
+                 justify="left").pack(anchor="w", pady=(X(16), 0))
         self._logo(p)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
@@ -915,20 +1042,29 @@ class App(tk.Tk):
         chime()
         p = self._new_page("Your audiobook is ready", name=self.job_title)
         f = Path(res["file"])
-        tk.Label(p, text=f"{f.name}\n{hours_text(res['hours'])} · {res['chapters']} chapters",
-                 bg=BG, fg=INK, font=(FONT, 12), justify="left").pack(anchor="w", pady=(12, 4))
-        tk.Label(p, text=os.path.normpath(str(f.parent)), bg=BG, fg=MUTED, font=(FONT, 10),
-                 wraplength=740, justify="left").pack(anchor="w")
-        if res.get("report"):
-            row0 = tk.Frame(p, bg=BG)
-            row0.pack(anchor="w", pady=(8, 0))
-            self._link(row0, "See what the reading director left out and changed",
-                       lambda: open_path(res["report"]), bg=BG).pack(side="left")
+        X = self._px
+        card = look.Card(p, radius=14, pad=(24, 20))
+        card.pack(fill="x", pady=(X(14), 0))
+        c = card.body
+        top = tk.Frame(c, bg=CARD)
+        top.pack(fill="x")
+        look.Badge(top, "check", size=40, fill=ACCENT, fg="white", circle=True).pack(side="left", anchor="n")
+        words = tk.Frame(top, bg=CARD)
+        words.pack(side="left", fill="x", expand=True, padx=(X(14), 0))
+        tk.Label(words, text=f.name, bg=CARD, fg=INK, font=(HEAD, 12), wraplength=X(600),
+                 justify="left", anchor="w").pack(anchor="w")
+        tk.Label(words, text=f"{hours_text(res['hours'])} · {res['chapters']} chapters", bg=CARD, fg=MUTED,
+                 font=(FONT, 10), anchor="w").pack(anchor="w", pady=(X(2), 0))
+        tk.Label(words, text=os.path.normpath(str(f.parent)), bg=CARD, fg=FAINT, font=(FONT, 9),
+                 wraplength=X(600), justify="left", anchor="w").pack(anchor="w", pady=(X(2), 0))
         if res.get("mp3_dir"):
-            tk.Label(p, text=f"MP3 chapter files: {os.path.normpath(res['mp3_dir'])}", bg=BG, fg=MUTED,
-                     font=(FONT, 10), wraplength=740, justify="left").pack(anchor="w", pady=(6, 0))
-        row = tk.Frame(p, bg=BG)
-        row.pack(anchor="w", pady=20)
+            tk.Label(words, text=f"MP3 chapter files: {os.path.normpath(res['mp3_dir'])}", bg=CARD,
+                     fg=FAINT, font=(FONT, 9), wraplength=X(600), justify="left").pack(anchor="w", pady=(X(2), 0))
+        if res.get("report"):
+            self._link(words, "See what the reading director left out and changed",
+                       lambda: open_path(res["report"])).pack(anchor="w", pady=(X(8), 0))
+        row = tk.Frame(c, bg=CARD)
+        row.pack(anchor="w", pady=(X(16), 0), padx=(X(54), 0))
         ttk.Button(row, text="▶ Play it", style="Go.TButton", command=lambda: open_path(f)).pack(side="left")
         ttk.Button(row, text="Show in folder", style="Plain.TButton",
                    command=lambda: show_in_folder(f)).pack(side="left", padx=10)
@@ -987,7 +1123,7 @@ class App(tk.Tk):
             if not (getattr(self, "ai_status", None) and self.ai_status.winfo_exists()):
                 return
             ai, st = msg[1], msg[2]
-            if ai != list(AI_NAMES)[self.ai_box.current()]:
+            if ai != self._ai():
                 return
             name = AI_NAMES[ai]
             self.ai_btn.pack_forget()
@@ -1001,13 +1137,13 @@ class App(tk.Tk):
                 self.after(20000, lambda: self._director_changed())
             elif st.startswith("error:"):
                 self.ai_ok = False
-                self.ai_status.config(text=f"Couldn't set up {name}: {st[6:]}", fg="#9A2F1F")
-                self.ai_btn.pack(side="left", padx=8)
+                self.ai_status.config(text=f"Couldn't set up {name}: {st[6:]}", fg=FAIL)
+                self.ai_btn.pack(side="left", padx=self._px(10))
             else:
                 self.ai_ok = False
                 self.ai_status.config(text=f"{name} isn't set up on this computer yet." if st == "missing"
-                                      else f"{name} isn't signed in.", fg="#9A2F1F")
-                self.ai_btn.pack(side="left", padx=8)
+                                      else f"{name} isn't signed in.", fg=FAIL)
+                self.ai_btn.pack(side="left", padx=self._px(10))
         elif kind == "gpu_check":
             self.gpu_ok = msg[1]
             # no graphics card for the new voices (Lauren's sister?): start on the Quick one, unless
@@ -1049,7 +1185,7 @@ class App(tk.Tk):
             self._poll_error(msg[2])
             if self.hear_btn.winfo_exists():
                 self.hear_btn.config(state="normal")
-                self.sample_lbl.config(text="Couldn't play the voice: " + msg[1], fg="#9A2F1F")
+                self.sample_lbl.config(text="Couldn't play the voice: " + msg[1], fg=FAIL)
         elif kind == "made":
             self.done_jobdir = self.maker.jobdir if self.maker else None
             self.show_done(msg[1])
