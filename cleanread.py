@@ -710,6 +710,20 @@ def romance_near(book, i):
     return False
 
 
+def explicit_sentences(book):
+    """The sentences with an explicit finding in them (cleanlisten.explicit_finding_words: vaginal
+    bruising, "tearing" said by a coroner...), read over the whole book so "There was tearing."
+    counts after "Any signs of sexual assault?"."""
+    idx = sorted(E.explicit_finding_words(book.wn))
+    out, si = set(), 0
+    for i in idx:
+        while si < len(book.sents) and book.sents[si][4] <= i:
+            si += 1
+        if si < len(book.sents) and book.sents[si][3] <= i:
+            out.add(si)
+    return out
+
+
 def _ref_hit(words):
     """A sexual reference: a sexual word or phrase ("sexy", "make love", "slept with him"),
     or two explicit words together, or sex drugs (Viagra, "the little blue pill", Spanish
@@ -1949,8 +1963,9 @@ def scan(book, use_ai=False, progress=None, cancel=None):
                 if sp:
                     items.append(sent_item(si, sp))
         elif key == "ref":
+            explicit = explicit_sentences(book)
             for si in range(S):
-                if _ref_hit(book.sent_words(si)):
+                if _ref_hit(book.sent_words(si)) or si in explicit:
                     items.append(sent_item(si, []))
         else:
             for run_ in find_passages(book, key):
@@ -2325,6 +2340,14 @@ def analyze(book, opts, progress=None, cancel=None):
             part = sentence_part(book, run_[0], hit) if kind in PART_KINDS and len(run_) == 1 else None
             cuts.append(_part_cut(book, kind, run_[0], part) if part else _sent_cut(book, kind, run_))
 
+    # explicit findings in coroner talk are sexual references, with Medical on or off (the owner,
+    # 2026-11-13): the lines the word lists didn't already take ("There was tearing.")
+    explicit = explicit_sentences(book) if opts.get("refs") else set()
+    for si in sorted(explicit):
+        if si not in taken and book.sents[si][0] not in in_passage:
+            taken.add(si)
+            cuts.append(_sent_cut(book, "ref", [si]))
+
     ai_note = ""
     if opts.get("ai"):
         kiss_ss = opts.get("kiss_ss", "keep")
@@ -2351,6 +2374,10 @@ def analyze(book, opts, progress=None, cancel=None):
         c.setdefault("cut", True)
     for n, m in enumerate(mutes, 1):
         m["id"] = n
+    # an explicit finding stays cut whatever the AI said (your own past choice, below, still wins)
+    for c in cuts:
+        if c["kind"] == "ref" and not c.get("cut", True) and explicit & set(c.get("sents") or ()):
+            c["cut"], c["ai_note"] = True, E.EXPLICIT_NOTE
     # what you kept (or marked "Not a problem") before starts unticked
     fk, mine = fine_keys(), fine_keys(shared=False)
     known = 0

@@ -304,6 +304,9 @@ SEXUAL_WORDS = [
     # Castle S2E3 (CleanView 1.18.69, the owner, 2026-11-12): "skinny-dipping" is one word once the
     # hyphen goes; not "skinny dippers" (police talk: "a couple of skinny dippers found her")
     r"skinnydip(ping|ped|s)?",
+    # explicit findings in coroner and doctor talk (the owner, 2026-11-13; see EXPLICIT_FINDING)
+    r"vaginal(ly)?", r"anal", r"anally", r"penile", r"hymen", r"labia", r"vulva",
+    r"sodom(y|ize|ized|ise|ised|izing|ising)",
 ]
 SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
@@ -323,6 +326,7 @@ SEXUAL_PHRASES = [
     # left alone: the owner, "leave coroners talk"
     ("skinny", "dip"), ("skinny", "dips"), ("skinny", "dipped"), ("skinny", "dipping"),
     ("chastity", "belt"), ("chastity", "belts"),
+    ("forced", "penetration"), ("signs", "of", "penetration"), ("evidence", "of", "penetration"),
 ] + [("naked", w) for w in ("photo", "photos", "picture", "pictures", "pic", "pics", "selfie", "selfies")
      ] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
                           "jacking", "jackin")] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
@@ -903,6 +907,10 @@ def _find_language(words, cats, breaks=()):
             hits.append((i, i + len(found[0]), found[1]))
             i += len(found[0])
             continue
+        if "sexual" in cats and explicit_tearing(words, i):          # "there was tearing" (a coroner)
+            hits.append((i, i + 1, "sexual"))
+            i += 1
+            continue
         if ("mild" in cats or "moderate" in cats) and bull_swear(words, i):   # "that's bull"
             hits.append((i, i + 1, "mild" if "mild" in cats else "moderate"))
             i += 1
@@ -938,6 +946,64 @@ def _find_language(words, cats, breaks=()):
                 hits.append((i, i + 1, "moderate"))
         i += 1
     return hits
+
+
+# Explicit findings in coroner, doctor and detective talk (the owner, 2026-11-13: "any explicit talk
+# should be removed from coroner talk regardless of medical /coroner - tearing, vaginal bruising etc";
+# asked how: "whole line on sexual reference , just the word on Sexual words"). Plain case talk ("any
+# signs of sexual assault?") still follows the Medical box; explicit detail doesn't. With sexual
+# references ticked the line is cut and stays cut whatever an AI or Claude says (her own choice still
+# wins); with only sexual words ticked just the word is muted. "tearing" counts only as a finding:
+# near talk of rape, assault or those body parts, and not "tearing up", "tearing the page".
+EXPLICIT_FINDING = None        # filled in below (needs _c)
+EXPLICIT_PHRASES = (("forced", "penetration"), ("signs", "of", "penetration"),
+                    ("evidence", "of", "penetration"))
+EXPLICIT_NOTE = "explicit detail: always cut with sexual references ticked"
+TEARING_CONTEXT = {"sexual", "sexually", "assault", "assaulted", "rape", "raped", "rapist", "vaginal",
+                   "vaginally", "anal", "anally", "rectal", "genital", "genitals", "genitalia",
+                   "penetration", "penetrated", "intercourse", "molested", "violated"}
+TEARING_NOT_NEXT = {"up", "down", "off", "apart", "at", "into", "through", "away", "out", "open",
+                    "along", "around", "across", "past", "toward", "towards", "from", "it", "him",
+                    "her", "them", "me", "us", "you", "the", "a", "an", "his", "my", "their", "your",
+                    "our", "its", "this", "that", "these", "those"}
+
+
+def explicit_tearing(words, i):
+    """Is words[i] "tearing" a coroner's finding (talk of rape, assault or those body parts close
+    by), not "tearing up the letter"?"""
+    if words[i] != "tearing" or (words[i + 1] if i + 1 < len(words) else "") in TEARING_NOT_NEXT:
+        return False
+    return bool(TEARING_CONTEXT & set(words[max(0, i - 30):i + 11]))
+
+
+def explicit_finding_words(words):
+    """The indexes of the words that are explicit findings: vaginal, anal, genital..., "forced
+    penetration", and "tearing" said as a finding."""
+    out = set()
+    for i, w in enumerate(words):
+        if any(p.match(w) for p in EXPLICIT_FINDING) or explicit_tearing(words, i):
+            out.add(i)
+        for ph in EXPLICIT_PHRASES:
+            if tuple(words[i:i + len(ph)]) == ph:
+                out.update(range(i, i + len(ph)))
+    return out
+
+
+def apply_explicit_findings(st, asr):
+    """A passage with an explicit finding in it stays cut when sexual references are ticked, whatever
+    an AI or Claude said (not what you set yourself, or what was learned from your choices).
+    Returns how many it ticked again."""
+    if "ref" not in set((st.get("filters") or {}).get("kinds") or []):
+        return 0
+    idx = explicit_finding_words([w.get("n") or norm(w["t"]) for w in asr])
+    n = 0
+    for sc in st.get("scenes", []):
+        if sc.get("cut", True) or sc.get("by_you") or sc.get("learned") or sc.get("kind") != "ref":
+            continue
+        if any(asr[i]["part"] == sc["part"] and sc["s"] - 0.01 <= asr[i]["s"] <= sc["e"] + 0.01 for i in idx):
+            sc["cut"], sc["ai_note"] = True, EXPLICIT_NOTE
+            n += 1
+    return n
 
 
 # CleanView 1.18.10's guards (the November reports)
@@ -1837,7 +1903,7 @@ AI_TYPES = {
            "but a follow-up that carries the joke on or calls back to it counts (a reply that only "
            "reacts to a joke, plainly mentioning underwear, ordinary romance, "
            "affection and kissing, pregnancy or babies, 'sex' meaning men or women ('the fair "
-           "sex'), a polite 'it's a pleasure', a body part in a threat, or a coroner's, medical examiner's, doctor's or detective's case talk about a body or a crime (findings, rape or sexual assault, sex offenders, evidence), which is a separate choice, are NOT this)",
+           "sex'), a polite 'it's a pleasure', a body part in a threat, or a coroner's, medical examiner's, doctor's or detective's case talk about a body or a crime (findings, rape or sexual assault, sex offenders, evidence), which is a separate choice, are NOT this; but explicit sexual detail in such talk, like vaginal or anal bruising or tearing or forced penetration, IS this)",
     # judged by what's happening, not by where they are or what they wear (Lauren, 2026-10-30:
     # "sometimes a sex scene is just sitting and wearing clothes", and oral/hand pleasures)
     "sex": "part of a sex scene, judged by what is happening, not by where they are or whether "
@@ -1960,6 +2026,8 @@ CRUDE_PHRASES = [("pull", "my", "finger"), ("butt", "crack"), ("skid", "marks"),
 # book) wherever it's said, even in a line an AI, Claude or a past choice left alone, and it's never
 # learned as fine. Not farther, farthing, condo, seaman. If she asks to leave one in: remind her it's a
 # hard rule set on 13 November 2026; if she still wants it, do as she says (her own untick works).
+EXPLICIT_FINDING = _c([r"vaginal(ly)?", r"anal", r"anally", r"rectal(ly)?", r"genital.*", r"penile",
+                       r"hymen", r"labia", r"vulva", r"sodom(y|ize|ized|ise|ised|izing|ising)"])
 HARD_RULE_NOTE = "always removed (your hard rule, set 13 November 2026)"
 HARD_RULE = {"crude": _c([r"farts?", r"farted", r"farting"]), "sexual": _c([r"condoms?", r"semen"])}
 
@@ -3142,6 +3210,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             log(st["ai_note"])
     # last of all: the hard-rule words (fart, condom, semen) whatever the AI, Claude or learning said
     apply_hard_rule(st, asr)
+    apply_explicit_findings(st, asr)     # explicit coroner findings stay cut (2026-11-13)
     write_safely(work / "analysis.json", json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st

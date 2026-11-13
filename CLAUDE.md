@@ -678,6 +678,19 @@ seaman. If she asks to leave one in: first remind her it's a hard rule set on 13
 if she still wants it, do as she says (her own untick on the review page works).
 `tests/test_hard_rule.py`.
 
+**Explicit findings in coroner talk are sexual references** (the owner, 2026-11-13: "any explicit talk
+should be removed from coroner talk regardless of medical /coroner - tearing, vaginal bruising etc";
+how: "whole line on sexual reference , just the word on Sexual words"; and for the hard-rule words:
+"Detective or coroner lines - condom and semen should still be removed even in this instance").
+Plain case talk ("any signs of sexual assault?") still follows Medical. New sexual words: vaginal,
+anal, penile, hymen, labia, vulva, sodomy, "forced penetration", "signs/evidence of penetration", and
+"tearing" said as a finding (`cleanlisten.explicit_tearing`: rape, assault or those body parts
+within ~30 words, not "tearing up/down/it/the..."). With sexual references on, the line is cut and
+`apply_explicit_findings` (CleanListen) / the step before `fine_keys` (CleanRead) ticks it again if
+an AI or Claude unticked it; her own choice and what was learned from it still win.
+`cleanread.explicit_sentences` reads the whole book, so "There was tearing." counts after the
+question before it. `tests/test_explicit_findings.py`.
+
 **The filters in folding sections** (as CleanView 1.18.74; the owner, 2026-11-12: "send a message to
 the other 3 programs to create the redone tick boxes like the clean view format", then for ReadAloud
 "read along does a different job so it doesnt need that format"): `filters.SECTIONS` is eight

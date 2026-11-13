@@ -98,7 +98,8 @@ KIND_RULES = {
            "and so are pregnancy or babies, 'sex' meaning men or women ('the fair sex'), a polite "
            "'it's a pleasure', and a body part in a threat. A coroner's, medical examiner's, doctor's "
            "or detective's case talk about a body or a crime (findings, rape or sexual assault, sex "
-           "offenders, evidence) is Medical, a separate choice, not this.",
+           "offenders, evidence) is Medical, a separate choice, not this. But explicit sexual detail in "
+           "such talk (vaginal or anal bruising or tearing, forced penetration) is always this: remove.",
     "gore": "Gore: cut descriptions that dwell on insides on the outside: organs, entrails, "
             "brains, mutilation or a body cut apart (several sentences of it). A single violent "
             "sentence - even a split skull - stays, as does saying someone was shot, stabbed, "
@@ -1006,6 +1007,7 @@ def review(st, asr, progress=None, cancel=None):
         note += (f" {len(unread)} of {len(secs)} sections couldn't be checked ({errors[0]}); "
                  "there the word lists and the AI on this PC decide.")
     E.apply_hard_rule(st, asr)          # fart, condom, semen stay muted whatever it said (2026-11-13)
+    E.apply_explicit_findings(st, asr)  # and explicit coroner findings stay cut
     st["claude_note"] = note
     st["claude_checked"] = True
     st["reviewer"] = N
