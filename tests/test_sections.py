@@ -3,7 +3,9 @@ also feels clunky and dated, can you make it feel classy (all of them)", "B, ste
 the sections were designed: "a main box for each category to tick all if wanted, but if only some of
 the subcategories are wanted just those can be ticked. vid angel had a system like that", Medical its
 own section). Each tile has a switch for the whole section (on, off, or pale for some), "3 of 5 on"
-or "Off", and "Choose ›", which opens its tick boxes under the tiles, one section at a time. Both
+or "Off", and "Choose ›", which opens its tick boxes right under its own row of tiles (CleanView
+1.18.79; the owner, 2026-11-13: "ask clean view about the new menu. update all to that"), one
+section at a time. Both
 CleanListen and CleanRead show them on the page, built by filters.build_boxes()."""
 import tkinter as tk
 
@@ -131,6 +133,53 @@ def test_one_section_open_at_a_time_and_remembered(root, saved):
     assert F.load()["open_sections"] == ["Medical"]
     p2 = panel(root)                                        # next time (and in the other app)
     assert link_text(p2, "Medical") == "Hide ‹" and link_text(p2, "Violence") == "Choose ›"
+
+
+def test_boxes_open_right_under_their_own_row_of_tiles(root, saved):
+    # (the owner in CleanView, 2026-11-13: they opened below all the tiles; "id like each one to
+    # open right below its chosen option")
+    p = panel(root)
+    root.deiconify()
+    tile = p.heads["Violence"][0].master.master.master
+    tiles = tile.master
+    detail = tiles.detail
+    assert detail.master is tiles and detail.grid_info() == {}          # closed to start with
+    for name in SECTIONS:
+        row = SECTIONS.index(name) // 3
+        tile = p.heads[name][0].master.master.master
+        assert int(tile.grid_info()["row"]) == 2 * row, name
+        p.heads[name][3](True)
+        root.update()
+        info = detail.grid_info()
+        assert int(info["row"]) == 2 * row + 1 and int(info["columnspan"]) == 3, name
+        assert detail.winfo_ismapped(), name
+        # under its own tile and above the next row of tiles
+        assert detail.winfo_rooty() >= tile.winfo_rooty() + tile.winfo_height(), name
+        nxt = [p.heads[n][0].master.master.master for n in SECTIONS
+               if SECTIONS.index(n) // 3 == row + 1]
+        assert all(t.winfo_rooty() >= detail.winfo_rooty() + detail.winfo_height() for t in nxt), name
+        assert detail.edge == F.look.C["accent"] and detail.edge_w == 2.0
+    p.heads[SECTIONS[-1]][3](False)
+    assert detail.grid_info() == {}
+
+
+def test_the_page_scrolls_to_the_tile_not_the_boxes(root, saved):
+    seen = []
+    f = tk.Frame(root, bg="#F6F3EE")
+    f.pack()
+    p = F.FilterPanel(f, scroll_to=seen.append)
+    root.deiconify()                    # a hidden window doesn't take clicks
+    root.update()
+    tile = p.heads["Attitude"][0].master.master.master
+    name = [w for w in tile.body.winfo_children() if isinstance(w, tk.Label)][0]
+    name.event_generate("<ButtonPress-1>", x=2, y=2)       # pressed and let go on the name
+    name.event_generate("<ButtonRelease-1>", x=2, y=2)
+    for _ in range(20):                 # the scroll is asked for a moment after the click
+        root.update()
+        if seen:
+            break
+        root.after(20)
+    assert seen == [tile]
 
 
 def test_both_apps_show_them_on_the_page():

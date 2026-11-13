@@ -690,7 +690,12 @@ steps down the left on a soft panel, each saying what's chosen; one step on the 
 the page), then for a clean copy What to take out, Options, Save to, or for a check AI helper.
 CleanListen's: Audiobook, What to remove, Extra checks, Save to. The filters are tiles on the page
 in both (`filters.build_boxes`: icon, name, a switch for the whole section, "3 of 5 on"/"Off",
-"Choose ›" opening one section's boxes under the tiles; ages as one segmented choice; kissing as a
+"Choose ›" opening one section's boxes right under that tile's own row (1.17.28, as CleanView
+1.18.79; the owner, 2026-11-13: "ask clean view about the new menu. update all to that"; in CleanView's
+session: "when you click more it opens a window below all of the menus. id like each one to open
+right below its chosen option"): the tiles are in rows 0, 2 and 4 of their grid, the card with the
+boxes (`tiles.detail` in `filters.build_boxes`, edged in green like the chosen tile) goes in the row
+between, and the page scrolls to the tile; ages as one segmented choice; kissing as a
 segmented choice); CleanListen no longer has the "Choose filters" window on its start page. The
 working page's progress sits on a rounded card. Same options, keys and saved choices. Gotchas (from
 CleanView): a look.Card is a canvas, so `_scroll_to` looks for the frame with `_canvas`; drawn

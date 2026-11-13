@@ -290,7 +290,10 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=0, wrap=560, opened=N
     """Every filter, in sections by topic as in CleanView 1.18.77, packed into `parent`: a grid of
     tiles, each with its icon, its name, a switch for the whole section (on, off, or pale for
     some), "3 of 5 on" or "Off", and "Choose ›". Choose opens that section's tick boxes in a card
-    under the tiles (one section at a time) and outlines its tile in green.
+    right under that tile's own row, edged in green like the tile (one section at a time), not
+    under all the tiles (CleanView 1.18.79; the owner, 2026-11-13: "id like each one to open right
+    below its chosen option"): the tiles are in rows 0, 2 and 4 of their grid and the card
+    (`tiles.detail`) goes in the row between.
     opened: the set of open section names (changed in place; on_fold() is called after).
     heads: a dict filled with name -> (switch, count label, tick_all, show) for tests.
     scroll_to(widget): asked to bring the opened section into view.
@@ -310,7 +313,8 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=0, wrap=560, opened=N
     tiles.pack(fill="x", padx=padx, pady=(X(6), 0))
     for c in range(3):
         tiles.columnconfigure(c, weight=1, uniform="tiles")
-    detail = look.Card(parent, radius=14, pad=(18, 14), bg=bg)
+    detail = tiles.detail = look.Card(tiles, radius=14, pad=(18, 14), bg=bg, edge=ACCENT,
+                                      edge_w=2.0)
     dhead = tk.Frame(detail.body, bg=CARD)
     dhead.pack(fill="x", pady=(0, X(8)))
     dname = tk.Label(dhead, text="", bg=CARD, fg=INK, font=(HEAD_FONT, 12), anchor="w")
@@ -324,7 +328,8 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=0, wrap=560, opened=N
         opened.add(keep)
     for n_sec, (heading, cols, items) in enumerate(SECTIONS):
         tile = look.Card(tiles, radius=14, pad=(13, 11))
-        tile.grid(row=n_sec // 3, column=n_sec % 3, sticky="nsew", padx=(0, X(10)), pady=(0, X(10)))
+        tile.grid(row=2 * (n_sec // 3), column=n_sec % 3, sticky="nsew", padx=(0, X(10)),
+                  pady=(0, X(10)))
         top = tk.Frame(tile.body, bg=CARD)
         top.pack(fill="x")
         badge = look.Badge(top, SECTION_ICONS.get(heading, "star"), size=30)
@@ -416,30 +421,32 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=0, wrap=560, opened=N
                     for p in parts.get(str(v), ()):
                         p.set(True)
 
-        def show(opening, heading=heading, body=body, tile=tile, ctl=ctl):
+        def show(opening, heading=heading, body=body, tile=tile, ctl=ctl,
+                 under=2 * (n_sec // 3) + 1):
             if opening:
                 for t, other in shows.items():
                     if t != heading:
                         other(False)
                 body.pack(fill="x")
                 dname.config(text=heading)
-                detail.pack(fill="x", padx=(padx, X(10)), pady=(X(2), X(6)))
+                detail.grid(row=under, column=0, columnspan=3, sticky="ew",
+                            padx=(0, X(10)), pady=(0, X(10)))       # under its own row
                 opened.clear()
                 opened.add(heading)
             else:
                 body.pack_forget()
                 if heading in opened:
                     opened.discard(heading)
-                    detail.pack_forget()
+                    detail.grid_forget()
             tile.recolour(edge=C["accent"] if opening else C["line"], edge_w=2.0 if opening else 1.0)
             ctl["more"].label.config(text="Hide \u2039" if opening else "Choose \u203a")
 
-        def flip(_=None, heading=heading, show=show):
+        def flip(_=None, heading=heading, show=show, tile=tile):
             opening = heading not in opened
             show(opening)
             on_fold()
-            if opening and scroll_to:
-                parent.after(50, lambda: scroll_to(dname))
+            if opening and scroll_to:           # its tile and the boxes under it in view
+                parent.after(50, lambda: scroll_to(tile))
         ctl["more"] = look.link(low, "Choose \u203a", flip, size=9)
         ctl["more"].pack(side="right")
         switch._command = tick_all
