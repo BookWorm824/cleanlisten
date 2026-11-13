@@ -44,6 +44,10 @@ use_theme("light")          # the saved choice is read when the window opens (Ap
 HEAD = CL.HEAD
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt *.docx"), ("All files", "*.*")]
 VOICE_LABELS = [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.VOICES]
+
+
+def voice_labels(lang):
+    return [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.voices_for(lang)]
 GPU_LABELS = [gpu.GPU_VOICES[v][0].replace(" - ", "  ·  ") for v in gpu.NARRATORS]
 AI_NAMES = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
 
@@ -307,8 +311,11 @@ class App(tk.Tk):
         if n == 1:
             return self.book["title"] if self.book else "No book chosen yet"
         if n == 2:
-            return gpu.READERS[self._reader()][0]
+            name = gpu.READERS[self._reader()][0]
+            return name if self._lang() == "en" else f"{name}, in {engine.LANGS[self._lang()]}"
         if n == 3:
+            if self._lang() != "en":
+                return "English books only"
             return AI_NAMES[self._ai()] if self.director_var.get() else "Off"
         if n == 4:
             if not self.book:
@@ -417,29 +424,48 @@ class App(tk.Tk):
                  "copy here. Kindle books are copy-protected and can't be read.", bg=BG, fg=FAINT,
                  font=(FONT, 9), wraplength=X(560), justify="left").pack(anchor="w", pady=(X(14), 0))
 
-        # ----- step 2: the voice: which reader (Lauren chooses by book), then which voice
+        # ----- step 2: the voice: the book's language, which reader (Lauren chooses by book), then
+        # which voice. The language is guessed from the book's own words (the owner, 2026-11-13,
+        # after CleanView's "Language spoken in the video").
+        lang = (self.book or {}).get("language") or st.get("language")
+        self.lang_var = tk.StringVar(value=lang if lang in engine.LANGS else "en")
+        spoken = look.Card(sp.pane(2), radius=14, pad=(18, 14))
+        spoken.pack(fill="x", padx=(0, X(4)), pady=(0, X(12)))
+        self._heading(spoken.body, "Language of the book")
+        self.lang_note = tk.Label(spoken.body, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
+                                  wraplength=X(500), justify="left", anchor="w")
+        self.lang_note.pack(anchor="w", pady=(X(2), 0))
+        look.Segmented(spoken.body, list(engine.LANGS.items()), self.lang_var, command=self._lang_changed,
+                       bg=CARD, size=10).pack(anchor="w", pady=(X(8), 0))
         self.reader_var = tk.StringVar(value=st.get("reader") if st.get("reader") in gpu.READERS else "acting")
+        if self.lang_var.get() != "en":
+            self.reader_var.set("kokoro")
         self._shown_reader = None
         choices = tk.Frame(sp.pane(2), bg=BG)
         choices.pack(fill="x")
         for c in range(2):
             choices.columnconfigure(c, weight=1, uniform="reader")
-        for k, r in enumerate(gpu.READER_ORDER):
+        self.reader_cards = {}
+        for r in gpu.READER_ORDER:
             name, desc = gpu.READERS[r][:2]
             card = look.OptionCard(choices, r, self.reader_var, name + ("  (best)" if r == "acting" else ""),
                                    desc + ("" if r == "kokoro" else "  On the graphics card."),
                                    icon="pc" if r == "kokoro" else "music")
             card.sub.config(wraplength=X(200))
-            card.grid(row=k // 2, column=k % 2, sticky="nsew", padx=(0, X(10)), pady=(0, X(10)))
+            self.reader_cards[r] = card
         self.reader_var.trace_add("write", lambda *_: self.after_idle(self._reader_picked))
-        b = sp.card(2, top=2)
+        # the chosen reader's voice choices open right under its own row, not under all four (as
+        # CleanView's filter tiles: the owner, 2026-11-13, "id like each one to open right below
+        # its chosen option"). The cards are in rows 0 and 2 and this goes in the row after.
+        self.reader_detail = look.Card(choices, radius=14, pad=(18, 14), edge=ACCENT, edge_w=2.0)
+        b = self.reader_detail.body
         self.reader_row = tk.Frame(b, bg=CARD)
         self.reader_row.pack(fill="x")
         self.reader_lbl = tk.Label(self.reader_row, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
                                    wraplength=X(540), justify="left")
         self.reader_lbl.pack(anchor="w")
         self.setup_btn = look.Pill(self.reader_row, "Set up", self.set_up_reader, size=10, pad=(18, 8))
-        b = sp.card(2, top=12)
+        tk.Frame(b, bg=LINE, height=1).pack(fill="x", pady=(X(12), X(12)))
         self._heading(b, "Voice")
         row = tk.Frame(b, bg=CARD)
         row.pack(fill="x", pady=(X(8), 0))
@@ -465,6 +491,7 @@ class App(tk.Tk):
         # ----- step 3: the reading director (readaloud_ai): Claude / ChatGPT / Gemini go through it first
         self.director_var = tk.BooleanVar(value=st.get("director", True))
         b = sp.card(3)
+        self.director_card = b.master
         CL.switch_row(b, self.director_var, "Have a reading director go through the book first",
                       "It takes out what shouldn't be read aloud (page numbers, headings at the top of "
                       "pages, jacket text, scanning mistakes), works out who is speaking and how each "
@@ -473,6 +500,8 @@ class App(tk.Tk):
                       "before the reading starts, and you get a list of everything it changed. Uses "
                       "your own Claude, ChatGPT or Gemini plan.",
                       command=self._director_changed).pack(fill="x")
+        self.director_lang = tk.Label(sp.pane(3), text="", bg=BG, fg=INK, font=(FONT, 10),
+                                      wraplength=X(560), justify="left", anchor="w")
         self.director_more = tk.Frame(sp.pane(3), bg=BG)
         saved = st.get("ai") if st.get("ai") in AI_NAMES else _saved_ai()
         self.ai_var = tk.StringVar(value=saved if saved in AI_NAMES else "claude")
@@ -544,9 +573,51 @@ class App(tk.Tk):
         except (tk.TclError, AttributeError):
             return "kokoro"
 
+    def _lang(self):
+        try:
+            v = self.lang_var.get()
+        except (tk.TclError, AttributeError):
+            return "en"
+        return v if v in engine.LANGS else "en"
+
     def _voice_id(self):
         i = max(0, self.voice_box.current())
-        return gpu.NARRATORS[i] if gpu.is_gpu(self._reader()) else engine.VOICES[i][0]
+        return gpu.NARRATORS[i] if gpu.is_gpu(self._reader()) else engine.voices_for(self._lang())[i][0]
+
+    def _lang_changed(self, *_):
+        """Another language: the Quick voice reads it, with that language's voices (the Qwen and
+        Chatterbox voices and the reading director are English only for now). Back to English:
+        the reader chosen for English books again."""
+        lang = self._lang()
+        if self.book:
+            self.book["language"] = lang        # kept when the page is drawn again (light / dark)
+        if lang != "en":
+            self.reader_var.set("kokoro")
+        elif self.settings.get("reader") in gpu.READERS:
+            self.reader_var.set(self.settings["reader"])
+        self._reader_changed()
+        self._director_changed(check=False)
+
+    def _place_readers(self):
+        """The reader cards two to a row, and the chosen one's voices right under its row."""
+        if not (getattr(self, "reader_detail", None) and self.reader_detail.winfo_exists()):
+            return
+        X = self._px
+        shown = gpu.READER_ORDER if self._lang() == "en" else ["kokoro"]
+        for card in self.reader_cards.values():
+            card.grid_remove()
+        for k, r in enumerate(shown):
+            self.reader_cards[r].grid(row=2 * (k // 2), column=k % 2, sticky="nsew", padx=(0, X(10)),
+                                      pady=(0, X(10)))
+        k = shown.index(self._reader()) if self._reader() in shown else 0
+        self.reader_detail.grid(row=2 * (k // 2) + 1, column=0, columnspan=2, sticky="ew",
+                                padx=(0, X(10)), pady=(0, X(10)))
+        name = engine.LANGS[self._lang()]
+        self.lang_note.config(
+            text="ReadAloud tells from the book's own words. Change it if it guessed wrong."
+            if self._lang() == "en" else
+            f"A {name} book is read by the Quick voice, with {name} voices. The Qwen and Chatterbox "
+            "voices and the reading director are for English books for now.")
 
     def _reader_picked(self):
         """A voice card was clicked (not the window choosing the Quick voice for a PC without a card)."""
@@ -570,11 +641,14 @@ class App(tk.Tk):
             v = st.get("gpu_voice")
             self.voice_box.current(gpu.NARRATORS.index(v) if v in gpu.NARRATORS else 0)
         else:
-            self.voice_box.config(values=VOICE_LABELS)
-            keys = [v[0] for v in engine.VOICES]
-            self.voice_box.current(keys.index(st.get("voice")) if st.get("voice") in keys else 0)
+            lang = self._lang()
+            self.voice_box.config(values=voice_labels(lang))
+            keys = [v[0] for v in engine.voices_for(lang)]
+            v = st.get("voice" if lang == "en" else "voice_" + lang)
+            self.voice_box.current(keys.index(v) if v in keys else 0)
         if remember:
             self._remember()
+        self._place_readers()
         self._show_reader()
         self._book_text()
         self._refresh_steps()
@@ -623,11 +697,19 @@ class App(tk.Tk):
         threading.Thread(target=go, daemon=True).start()
 
     def _director_changed(self, check=True):
-        on = self.director_var.get()
+        lang = self._lang()
+        on = self.director_var.get() and lang == "en"
+        # another language: no switch (it would look on but not be used), just why
+        for w in (self.director_card, self.director_lang, self.director_more):
+            w.pack_forget()
+        if lang == "en":
+            self.director_card.pack(fill="x", padx=(0, self._px(4)))
+        else:
+            self.director_lang.config(text=f"The reading director is for English books for now, so this "
+                                           f"{engine.LANGS[lang]} book is read without it.")
+            self.director_lang.pack(anchor="w")
         if on:
             self.director_more.pack(fill="x")
-        else:
-            self.director_more.pack_forget()
         self._remember()
         self._refresh_steps()
         self.ai_btn.pack_forget()
@@ -673,11 +755,14 @@ class App(tk.Tk):
     def _remember(self):
         st = self.settings
         try:
-            st["reader"] = self._reader()
-            if gpu.is_gpu(st["reader"]):
+            lang = self._lang()
+            st["language"] = lang
+            if lang == "en":
+                st["reader"] = self._reader()
+            if gpu.is_gpu(self._reader()):
                 st["gpu_voice"] = gpu.NARRATORS[self.voice_box.current()]
             else:
-                st["voice"] = engine.VOICES[self.voice_box.current()][0]
+                st["voice" if lang == "en" else "voice_" + lang] = self._voice_id()
             st["speed"] = self.speed_box.get()
             st["abs"] = self.abs_var.get()
             st["mp3"] = self.mp3_var.get()
@@ -898,7 +983,9 @@ class App(tk.Tk):
             messagebox.showinfo(APP, why + "\n\nOr choose the Quick voice, which works on any computer.")
             return
         extra = {"mp3": self.mp3_var.get(), "reader": reader}
-        if self.director_var.get():
+        if self._lang() != "en":
+            extra["language"] = self._lang()
+        elif self.director_var.get():
             ai = self._ai()
             if self.ai_ok is False:
                 chime()
@@ -1113,6 +1200,10 @@ class App(tk.Tk):
             self.book_path, self.book, self._cover = msg[1], msg[2], msg[3]
             if self.page and getattr(self, "book_lbl", None) and self.book_lbl.winfo_exists():
                 self._show_book()
+                lang = self.book.get("language")
+                if lang in engine.LANGS and lang != self._lang():
+                    self.lang_var.set(lang)
+                    self._lang_changed()
         elif kind == "book_error":
             self._poll_error(msg[2]) if msg[2] else None
             if getattr(self, "book_lbl", None) and self.book_lbl.winfo_exists():

@@ -63,8 +63,63 @@ VOICES = [
     ("bm_fable", 25, "Fable", "British man, storyteller", "gb"),
     ("bm_lewis", 27, "Lewis", "British man, deep", "gb"),
 ]
-VOICE = {v[0]: v for v in VOICES}
+# Books in other languages (the owner, 2026-11-13, after CleanView's "Language spoken in the
+# video"): Kokoro's own voices for each, read with that language's pronunciations (espeak-ng's
+# rules, no English word list). The last field is the espeak language, in place of the accent.
+LANGS = {"en": "English", "es": "Spanish", "fr": "French", "it": "Italian", "pt": "Portuguese"}
+OTHER_VOICES = [
+    ("ef_dora", 28, "Dora", "Spanish woman", "es"),
+    ("em_alex", 29, "Alex", "Spanish man", "es"),
+    ("ff_siwis", 30, "Siwis", "French woman", "fr"),
+    ("if_sara", 35, "Sara", "Italian woman", "it"),
+    ("im_nicola", 36, "Nicola", "Italian man", "it"),
+    ("pf_dora", 42, "Dora", "Brazilian Portuguese woman", "pt-br"),
+    ("pm_alex", 43, "Alex", "Brazilian Portuguese man", "pt-br"),
+]
+VOICE = {v[0]: v for v in VOICES + OTHER_VOICES}
 DEFAULT_VOICE = "af_heart"
+
+
+def voices_for(lang):
+    """The voices that read a book in this language (English: the American and British ones)."""
+    if lang not in LANGS or lang == "en":
+        return VOICES
+    return [v for v in OTHER_VOICES if v[4].split("-")[0] == lang]
+
+
+def voice_language(voice):
+    """The language a voice reads ("en", "es"...)."""
+    v = VOICE.get(voice)
+    return "en" if not v or v[4] in ("us", "gb") else v[4].split("-")[0]
+
+
+# Small words that tell the languages apart (a few hundred words of the book are enough)
+_LANG_WORDS = {
+    "en": "the and of to was he she it that you his her with for had but not they".split(),
+    "es": "el la los las que y de en un una es por con no se lo su para pero como".split(),
+    "fr": "le la les et des est une que qui dans pas pour il elle je vous avec sur au".split(),
+    "it": "il la che di e non un una per con mi gli le è si lo sono ma come".split(),
+    "pt": "o a os as que de não um uma com para se em do da no na mas ele ela".split(),
+}
+
+
+def guess_language(chapters):
+    """The language a book is written in, from its own words ("en" when it can't tell)."""
+    words = []
+    for ch in chapters:
+        for kind, text in ch["paras"]:
+            if kind == "p":
+                words += re.findall(r"[^\W\d_]+", text.lower())
+        if len(words) > 3000:
+            break
+    if len(words) < 30:
+        return "en"
+    counts = {}
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+    score = {lang: sum(counts.get(w, 0) for w in ws) / len(words) for lang, ws in _LANG_WORDS.items()}
+    best = max(score, key=score.get)
+    return best if score[best] > 0.08 else "en"
 SPEEDS = {"Slower": 0.9, "Normal": 1.0, "A bit faster": 1.1, "Faster": 1.2}
 
 # Pauses, in seconds
@@ -187,13 +242,19 @@ def voice_engine(accent="us", threads=4, names=""):
         if key not in _TTS:
             d = model_dir()
             # espeak-ng has no "en-gb" here (every British line came out silent); its "en" is British
-            lex, lang = (("lexicon-gb-en.txt", "en") if accent == "gb" else ("lexicon-us-en.txt", "en-us"))
+            if accent in ("us", "gb"):
+                lex, lang = (("lexicon-gb-en.txt", "en") if accent == "gb" else ("lexicon-us-en.txt", "en-us"))
+                lexicon = (names + "," if names else "") + str(d / lex)
+            else:
+                # another language: espeak-ng's own rules for it (the English list would say "la"
+                # and "me" the English way)
+                lexicon, lang = names, accent
             cfg = so.OfflineTtsConfig(
                 model=so.OfflineTtsModelConfig(
                     kokoro=so.OfflineTtsKokoroModelConfig(
                         model=str(d / "model.onnx"), voices=str(d / "voices.bin"),
                         tokens=str(d / "tokens.txt"), data_dir=str(d / "espeak-ng-data"),
-                        lexicon=(names + "," if names else "") + str(d / lex), lang=lang),
+                        lexicon=lexicon, lang=lang),
                     num_threads=threads, provider="cpu"),
                 max_num_sentences=1)
             _TTS[key] = so.OfflineTts(cfg)
@@ -225,6 +286,7 @@ def speakable(text):
     t = " ".join(str(text).split())
     if not t:
         return ""
+    t = re.sub(r"«\s*|\s*»", '"', t)        # French and Spanish quotes
     t = (t.replace("“", '"').replace("”", '"').replace("„", '"').replace("‘", "'").replace("’", "'")
          .replace("\u00ad", "").replace("\u200b", "").replace("…", "...").replace("\u00a0", " "))
     t = re.sub(r"\s*[—―]\s*|\s+–\s+|\s--\s|(?<=\w)--(?=\w)", ", ", t)   # dashes are a short pause
@@ -246,7 +308,7 @@ def speakable(text):
 KEEP_CAPS = {"NASA", "NATO", "UNICEF", "AIDS", "OPEC", "FIFA", "NASCAR", "SCUBA", "LASER", "RADAR",
              "USSR", "YMCA", "NAACP", "ASAP", "HTML", "FBI'S", "CIA'S"}
 
-SENT_END = re.compile(r"(?<=[.!?…])[\"')\]]*\s+(?=[\"'(\[]*[A-Z0-9])")
+SENT_END = re.compile(r"(?<=[.!?…])[\"')\]]*\s+(?=[\"'(\[¿¡]*[A-Z0-9À-ÖØ-Þ])")
 ABBR = re.compile(r"\b(Mr|Mrs|Ms|Dr|St|Jr|Sr|Prof|Capt|Col|Gen|Lt|Sgt|Rev|Fr|Mt|vs|etc|No|Messrs|Mme|"
                   r"Hon|Gov|Sen|Rep|Pres|Ave|Co|Inc|Ltd|[A-Z])\.$")
 MAX_CHUNK = 280
@@ -731,7 +793,8 @@ def load_book(path):
         raise BookError("No text was found in this book. (A scanned PDF has pictures of pages "
                         "rather than text, so it can't be read.)")
     return {"title": title, "author": author, "series": series, "number": number, "cover": cover,
-            "cover_ext": cover_ext, "path": str(path), "chapters": merged}
+            "cover_ext": cover_ext, "path": str(path), "chapters": merged,
+            "language": guess_language(merged)}
 
 
 def cover_online(book):
@@ -794,7 +857,7 @@ def say_text(tts, text, sid, speed, stop=None):
             raise Stopped()
         a = tts.generate(c, sid=sid, speed=speed)
         x = _trim(np.asarray(a.samples, dtype=np.float32))
-        if not len(x) and re.search(r"[A-Za-z]{2}", c):
+        if not len(x) and re.search(r"[^\W\d_]{2}", c):
             # never a silent gap where there were words: try once more, then say so
             x = _trim(np.asarray(tts.generate(c.strip(" .,;:") + ".", sid=sid, speed=speed).samples,
                                  dtype=np.float32))
