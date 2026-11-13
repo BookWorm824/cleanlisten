@@ -136,3 +136,13 @@ def test_a_spanish_book_uses_the_quick_voice_and_no_director(window, tmp_path):
     app.steps_page.go(3)
     _pump(app)
     assert app.director_card.winfo_ismapped() and not app.director_lang.winfo_ismapped()
+
+
+def test_the_language_is_a_rounded_drop_down(window):
+    win, app = window
+    assert app.lang_box.cget("style") == "Round.TCombobox"
+    assert list(app.lang_box.cget("values")) == ["English", "Spanish", "French", "Italian", "Portuguese"]
+    app.lang_box.set("French")
+    app.lang_box.event_generate("<<ComboboxSelected>>")
+    _pump(app)
+    assert app._lang() == "fr" and app._voice_id() == "ff_siwis"

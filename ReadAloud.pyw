@@ -385,8 +385,10 @@ class App(tk.Tk):
         self.start_btn.config(state="disabled")
         upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
         if upd:
-            tk.Label(sp.top, text="✓ " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
-                     padx=X(12), pady=X(7), anchor="w").pack(fill="x", pady=(0, X(12)))
+            # gone after 3 seconds, as CleanView (the owner, 2026-11-13: "when it updates clean view
+            # it leaves a long bar on the top it should go away after 3 seconds"; "both" for ReadAloud)
+            CL.said_briefly(tk.Label(sp.top, text="✓ " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                                     padx=X(12), pady=X(7), anchor="w")).pack(fill="x", pady=(0, X(12)))
         # a book that was stopped: above every step, as CleanView's "Pick up where I left off"
         for jobdir, job, got, n in engine.unfinished_jobs()[:2]:
             c = look.Card(sp.top, fill=TINT, edge=TINT_EDGE, radius=14, pad=(18, 12))
@@ -435,8 +437,11 @@ class App(tk.Tk):
         self.lang_note = tk.Label(spoken.body, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
                                   wraplength=X(500), justify="left", anchor="w")
         self.lang_note.pack(anchor="w", pady=(X(2), 0))
-        look.Segmented(spoken.body, list(engine.LANGS.items()), self.lang_var, command=self._lang_changed,
-                       bg=CARD, size=10).pack(anchor="w", pady=(X(8), 0))
+        # a rounded drop-down list, as CleanView's language (the owner: "as we get more languages,
+        # instead of labelling them all on the front page, should we have a a drop down")
+        self.lang_box = CL.dropdown(spoken.body, self.lang_var, engine.LANGS, command=self._lang_changed,
+                                    width=14)
+        self.lang_box.pack(anchor="w", pady=(X(8), 0))
         self.reader_var = tk.StringVar(value=st.get("reader") if st.get("reader") in gpu.READERS else "acting")
         if self.lang_var.get() != "en":
             self.reader_var.set("kokoro")
@@ -469,7 +474,11 @@ class App(tk.Tk):
         self._heading(b, "Voice")
         row = tk.Frame(b, bg=CARD)
         row.pack(fill="x", pady=(X(8), 0))
-        self.voice_box = ttk.Combobox(row, state="readonly", width=42, values=VOICE_LABELS)
+        # rounded drop-down lists, as CleanView 1.18.85 (the owner, 2026-11-13: "yes round them";
+        # "both" for ReadAloud); scrolling the page past one doesn't change it
+        self.voice_box = ttk.Combobox(row, state="readonly", width=44, values=VOICE_LABELS,
+                                      font=(FONT, 10), style="Round.TCombobox")
+        self.voice_box.bind("<MouseWheel>", lambda e: "break")
         self.voice_box.pack(side="left")
         self.voice_box.bind("<<ComboboxSelected>>", lambda e: self._remember())
         self.hear_btn = look.Pill(row, "▶ Hear it", self.hear, size=10, pad=(16, 7))
@@ -478,7 +487,9 @@ class App(tk.Tk):
         row2 = tk.Frame(b, bg=CARD)
         row2.pack(fill="x", pady=(X(10), 0))
         tk.Label(row2, text="Reading speed", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
-        self.speed_box = ttk.Combobox(row2, state="readonly", width=14, values=list(engine.SPEEDS))
+        self.speed_box = ttk.Combobox(row2, state="readonly", width=14, values=list(engine.SPEEDS),
+                                      font=(FONT, 10), style="Round.TCombobox")
+        self.speed_box.bind("<MouseWheel>", lambda e: "break")
         names = list(engine.SPEEDS)
         self.speed_box.current(names.index(st.get("speed")) if st.get("speed") in names else 1)
         self.speed_box.pack(side="left", padx=X(10))

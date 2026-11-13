@@ -98,3 +98,17 @@ def test_the_next_window_opens_in_the_look_chosen(tmp_path, monkeypatch):
     finally:
         app.destroy()
         win.use_theme("light")
+
+
+def test_the_updated_line_goes_and_the_lists_are_round(window, monkeypatch):
+    # as CleanView 1.18.84-1.18.85 (the owner, 2026-11-13, asked about bringing them to ReadAloud: "both")
+    win, app = window
+    monkeypatch.setattr(win.CL, "UPDATED_SHOWN_SECS", 0.3)
+    monkeypatch.setenv("CLEANLISTEN_UPDATED", "ReadAloud was updated to version 9.9.9")
+    app.show_setup()
+    said = [w for w in app.steps_page.top.winfo_children() if isinstance(w, win.tk.Label)
+            and "updated" in str(w.cget("text"))]
+    assert said
+    _pump(app, 0.6)
+    assert not said[0].winfo_exists()
+    assert app.voice_box.cget("style") == app.speed_box.cget("style") == "Round.TCombobox"
