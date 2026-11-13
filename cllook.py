@@ -124,6 +124,7 @@ def style(root, s, greens=("Accent.TButton", "Main.TButton", "Go.TButton"),
     look.style_scrollbars(root, s)
     look.style_progress(root, s, progress, bg=C["card"])
     look.style_fields(s)
+    look.style_dropdown(root, s)        # "Round.TCombobox": a rounded drop-down (dropdown() below)
     s.map("TCombobox", foreground=[("readonly", C["ink"])], selectforeground=[("readonly", C["ink"])],
           selectbackground=[("readonly", C["card"])])
     first = not hasattr(root, "_look_ticks")
@@ -141,6 +142,66 @@ def style(root, s, greens=("Accent.TButton", "Main.TButton", "Go.TButton"),
                 ("Look.indicator", {"side": "left", "sticky": ""}),
                 ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
                     ("Checkbutton.label", {"sticky": "nswe"})]})]})])
+
+
+def dropdown(parent, variable, options, command=None, width=12):
+    """A rounded drop-down list of named choices (as CleanView 1.18.85's language list; the owner,
+    2026-11-13: "as we get more languages, instead of labelling them all on the front page, should
+    we have a a drop down", "yes round them"). options: {value: the name shown}; `variable` holds
+    the value and is followed both ways; command() is called after a choice is picked. Scrolling
+    the page past it doesn't change the choice."""
+    names = dict(options)
+    values = {name: value for value, name in names.items()}
+    first = next(iter(names))
+    shown = tk.StringVar(value=names.get(variable.get(), names[first]))
+    box = ttk.Combobox(parent, textvariable=shown, values=list(names.values()), state="readonly",
+                       width=width, font=(FONT, 10), style="Round.TCombobox")
+    box.shown = shown           # kept with the box (a variable nobody holds is forgotten)
+
+    def picked(_e=None):
+        variable.set(values.get(shown.get(), first))
+        box.selection_clear()
+        if command:
+            command()
+
+    def follow(*_):
+        if box.winfo_exists():
+            shown.set(names.get(variable.get(), names[first]))
+    box.bind("<<ComboboxSelected>>", picked)
+    box.bind("<MouseWheel>", lambda e: "break")
+    variable.trace_add("write", follow)
+    return box
+
+
+UPDATED_SHOWN_SECS = 3      # how long "CleanListen was updated to version ..." stays up
+
+
+def said_briefly(label, secs=None):
+    """A note that's said for a few seconds, then gone (the owner, 2026-11-13, of CleanView: "when
+    it updates clean view it leaves a long bar on the top it should go away after 3 seconds").
+    Returns the label."""
+    secs = UPDATED_SHOWN_SECS if secs is None else secs
+    label.after(int(secs * 1000), lambda: label.winfo_exists() and label.destroy())
+    return label
+
+
+def fit_text(label, box, margin=0):
+    """Wrap a label's words to the room its box really has, and again whenever that changes (as
+    CleanView 1.18.85; the owner, 2026-11-13: "the box that opens on the response is clipping off on
+    both left and right. i cant see the full response"). A set wrap width runs off both sides
+    where the box is narrower than that."""
+    def fit(_e=None):
+        try:
+            if not (label.winfo_exists() and box.winfo_exists()):
+                return
+            room = box.winfo_width() - margin
+            if room > 60 and abs(int(str(label.cget("wraplength"))) - room) > 2:
+                label.config(wraplength=room)
+        except (tk.TclError, ValueError):
+            pass
+    box.bind("<Configure>", fit, add="+")
+    label.after_idle(fit)
+    return label
 
 
 def card(parent, fill=None, edge=None, radius=12, pad=(14, 10), edge_w=1.0, width=None):

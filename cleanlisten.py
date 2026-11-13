@@ -333,6 +333,15 @@ MODERATE = [
     r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed|os?)?", r"retart(s|ed)?", r"(lib)?tards?",
     r"skeez(e|y|ier)", r"skeevy", r"arsed", r"arses",
     r"merde", r"scheisse", r"mierda",        # French, German and Spanish for "shit"
+    # Spanish swearing in a mostly English book (CleanView 1.18.86; the owner, 2026-11-13: "would
+    # loading spanish known swear words into the english filter help without using a separate
+    # filter?", "add the short list and we will look at the other option later"). The o? forms:
+    # CleanListen's norm() drops an accented letter ("cabrón" is "cabrn"); CleanRead's keeps the
+    # plain one. Left off on purpose: con, concha, polla (everyday words and names), culo, verga
+    # and coño ("coo" here, a real word).
+    r"put[ao]s?", r"hijueputas?", r"pendej[ao]s?", r"cabro?n(a|es|as)?", r"joder", r"jodid[ao]s?",
+    r"jo?dete", r"carajo", r"gilipollas",
+    r"ching(a|as|ar|ada|adas|ado|ados|o?n|ona|ones|adera|aderas)",
 ]
 # swearing said as letters or two words ("S.O.B.", "D-bag" heard as "d bag", "eff you")
 MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag"),
@@ -1004,6 +1013,7 @@ ORIENTATION_WORDS = [
     r"gays?", r"lesbians?", r"homosexual(s|ity)?", r"bisexual(s|ity)?", r"queers?",
     r"homos?", r"pansexual(s)?", r"lgbt", r"lgbtq", r"lgbtqia", r"lgbtq\+?", r"throuples?",
     r"polyamor.*", r"dykes?", r"fags?", r"faggots?", r"lesbos?", r"lez(z?ie|z?ies|bos?)",
+    r"marico?n(es)?",       # the Spanish slur, as "faggot" is here (CleanView 1.18.86)
 ]
 EXTRA_CATS = {"orientation": _c(ORIENTATION_WORDS)}
 GROUPS["orientation"] = ["orientation"]

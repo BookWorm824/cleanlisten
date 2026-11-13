@@ -409,9 +409,11 @@ class App(tk.Tk):
         self.start_btn.config(state="disabled")
         self._upd_lbl = next(iter(sp.links.values())).label
         upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
-        if upd:
-            tk.Label(sp.top, text="\u2713 " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
-                     padx=X(12), pady=X(7), anchor="w").pack(fill="x", pady=(0, X(12)))
+        if upd:         # said for a few seconds, then gone (as CleanView 1.18.84)
+            self.updated_note = CL.said_briefly(tk.Label(
+                sp.top, text="\u2713 " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                padx=X(12), pady=X(7), anchor="w"))
+            self.updated_note.pack(fill="x", pady=(0, X(12)))
 
         # ----- step 1: the book
         drop = look.Card(sp.pane(1), fill=SOFT, edge=SOFT_EDGE, radius=16, pad=(20, 18))
@@ -444,8 +446,10 @@ class App(tk.Tk):
                  "the AI helper.", bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=X(300),
                  justify="left", anchor="w").pack(anchor="w", pady=(X(2), 0))
         self.lang_var = tk.StringVar(value=engine.E.cvlang.known(self.language))
-        look.Segmented(b, list(engine.E.cvlang.LANGS.items()), self.lang_var,
-                       command=self._language_chosen, bg=CARD).pack(side="right")
+        # a drop-down list, so more languages don't crowd the page (as CleanView 1.18.85)
+        self.language_box = CL.dropdown(b, self.lang_var, engine.E.cvlang.LANGS,
+                                        command=self._language_chosen)
+        self.language_box.pack(side="right")
 
         # ----- step 2: check it, or make a clean copy
         mv = tk.StringVar(value=self.mode.get())

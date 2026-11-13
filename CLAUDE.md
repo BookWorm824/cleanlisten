@@ -718,12 +718,43 @@ furniture, scraper, brush...), and knows "stripper clip" and "asset stripper". C
 immodest-clothing list (`IMMODEST`, now a function over `_IMMODEST`) leaves the tool alone the same
 way. `tests/test_stripper.py`.
 
+**A language drop-down, a brief update line, answers that fit** (1.17.32, as CleanView 1.18.84 and
+1.18.85; the owner, 2026-11-13, asked whether to bring them to the book apps: "all"). In `cllook.py`:
+- `dropdown(parent, variable, options, command)`: a rounded drop-down list (`ttk.Combobox`,
+  style "Round.TCombobox" from `look.style_dropdown`, set up in `style()`). It shows the names and
+  the variable keeps the value (the language's code); it follows the variable both ways, and the
+  mouse wheel over it is swallowed so scrolling the page past it doesn't change the choice. The
+  language choice on step 1 of CleanListen and CleanRead uses it (`self.language_box`), so more
+  languages don't crowd the page (in CleanView's session: "as we get more languages, instead of
+  labelling them all on the front page, should we have a a drop down", "yes round them").
+- `said_briefly(label, secs=UPDATED_SHOWN_SECS)`: the "... was updated to version ..." line is said
+  for 3 seconds, then gone ("it leaves a long bar on the top it should go away after 3 seconds"):
+  on both start pages and on CleanListen's review page after an update (`self.updated_note`).
+- `fit_text(label, box, margin)`: a label's words wrap to the room its box really has, again
+  whenever that changes ("the box that opens on the response is clipping off on both left and
+  right. i cant see the full response"). CleanListen's answer under a passage, the tip in the
+  "Ask about this" box and its status line use it; a set wrap width ran off both sides in a
+  narrow box.
+`cvlook.py` is CleanView's 1.18.85 copy (commit bee6ccc: `style_dropdown` added, nothing else
+changed). `tests/test_dropdown_and_notes.py`.
+
+**Spanish swearing in an English book** (1.17.32, as CleanView 1.18.86; the owner in CleanView's
+session, 2026-11-13, after asking what happens to Spanish in a mostly English movie: "would loading
+spanish known swear words into the english filter help without using a separate filter?", "add the
+short list and we will look at the other option later"). On the English lists, `MODERATE`: puta/puto,
+hijueputa, pendejo/a, cabrón (and -a, -es, -as), joder, jodido/a, jódete, carajo, gilipollas, chinga-
+(chingar, chingada, chingón...); `ORIENTATION_WORDS`: maricón(es). The `o?` forms are because
+CleanListen's `norm()` drops an accented letter ("cabrón" is "cabrn"). Left off on purpose: con,
+concha, polla, culo, verga, coño. Everyday look-alikes stay ("a soft coo", "chili con carne", "Mrs.
+Concha Ortiz", "Mr. Ching", "put away", "carbon fiber", "Jody", "Puerto Rican").
+`tests/test_spanish_in_english.py`. (A whole book in Spanish is the language choice, below.)
+
 **Books in other languages, Spanish and French first** (1.17.30, as CleanView 1.18.80 and
 1.18.81; the owner, 2026-11-13: "ask clean view about the language", "update"; in CleanView's
 session: "like if i wanted to scan a movie in spanish", "i would do the easier group of languages":
 Spanish, French, then Portuguese and Russian). Step 1 of CleanListen has "Language the book is read
-in" and step 1 of CleanRead "Language the book is written in" (English / Spanish / French, a
-`look.Segmented` over `cvlang.LANGS`). English is untouched: its own listening model and word
+in" and step 1 of CleanRead "Language the book is written in" (English / Spanish / French: a
+rounded drop-down list over `cvlang.LANGS` since 1.17.32, `CL.dropdown`). English is untouched: its own listening model and word
 lists. Another language:
 - `cvlang.py` is CleanView's file, copied unchanged (commit 98035bb; on `version.json`'s list). It
   must not import the engine. `cleanlisten.use_language(code)` sets `cvlang.LANG`, and `norm()`,

@@ -375,4 +375,5 @@ def test_cleanlisten_keeps_the_language_with_the_book_and_starts_new_books_in_en
     ("CleanRead.pyw", "Language the book is written in")])
 def test_both_start_pages_have_the_choice(app, words_):
     src = (REPO / app).read_text(encoding="utf8")
-    assert words_ in src and "cvlang.LANGS.items()" in src and "look.Segmented(b, list(" in src
+    # a drop-down list, so more languages don't crowd the page (as CleanView 1.18.85)
+    assert words_ in src and "cvlang.LANGS," in src and "CL.dropdown(b, self.lang_var," in src

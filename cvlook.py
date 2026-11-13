@@ -706,6 +706,35 @@ def style_progress(root, s, name, bg=None):
     s.configure(name, thickness=n)
 
 
+def style_dropdown(root, s, name="Round.TCombobox", bg=None):
+    """A drop-down list's box with rounded corners, for a ttk.Combobox given style=name: the
+    card colour with a soft edge (green while it's the one being used), a quiet arrow. bg:
+    the colour it sits on (the card colour unless told)."""
+    r = (getattr(root, "_round_drop", None) or (None, max(4, px(root, 9))))[1]
+    on = bg or C["card"]
+    imgs, r, first = _same_images(root, "_round_drop", [
+        _corner_img(r, C["card"], on, edge) for edge in (C["line"], C["accent"])], r)
+    if first:
+        # the arrow and the words sit inside the edge (the arrow's own box would paint over it)
+        s.element_create("Round.dropfield", "image", imgs[0], ("focus", imgs[1]),
+                         border=r + 1, padding=(px(root, 6), 2, px(root, 4), 2), sticky="nsew",
+                         **_slim(r))
+        s.layout(name, [("Round.dropfield", {"sticky": "nswe", "children": [
+            ("Combobox.downarrow", {"side": "right", "sticky": "ns"}),
+            ("Combobox.padding", {"sticky": "nswe", "children": [
+                ("Combobox.textarea", {"sticky": "nswe"})]})]})])
+    s.configure(name, padding=(px(root, 6), px(root, 5)), arrowsize=px(root, 12),
+                arrowcolor=C["muted"], foreground=C["ink"], background=C["card"],
+                fieldbackground=C["card"], bordercolor=C["card"], lightcolor=C["card"],
+                darkcolor=C["card"], selectbackground=C["card"], selectforeground=C["ink"],
+                insertcolor=C["ink"])
+    s.map(name, background=[("readonly", C["card"]), ("active", C["card"])],
+          fieldbackground=[("readonly", C["card"])], foreground=[("readonly", C["ink"])],
+          arrowcolor=[("active", C["ink"])], bordercolor=[("focus", C["card"])],
+          lightcolor=[("focus", C["card"])], darkcolor=[("focus", C["card"])],
+          selectbackground=[("readonly", C["card"])], selectforeground=[("readonly", C["ink"])])
+
+
 def style_fields(s):
     """Text boxes and drop-down lists: white, a soft edge, green when typing in them."""
     for st in ("TEntry", "TCombobox"):

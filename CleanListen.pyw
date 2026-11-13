@@ -631,9 +631,11 @@ class App(tk.Tk):
         self.start_btn.config(state="disabled")
         self._upd_lbl = sp.links[links[0][0]].label
         upd = os.environ.pop("CLEANLISTEN_UPDATED", None)
-        if upd:
-            tk.Label(sp.top, text="\u2713 " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
-                     padx=X(12), pady=X(7), anchor="w").pack(fill="x", pady=(0, X(10)))
+        if upd:         # said for a few seconds, then gone (as CleanView 1.18.84)
+            self.updated_note = CL.said_briefly(tk.Label(
+                sp.top, text="\u2713 " + upd, bg=TINT, fg=ACCENT_DK, font=(FONT, 10),
+                padx=X(12), pady=X(7), anchor="w"))
+            self.updated_note.pack(fill="x", pady=(0, X(10)))
 
         def bar(text, button, command, bold=False):
             box = look.Card(sp.top, fill=TINT, edge=TINT_EDGE, radius=12, pad=(16, 9))
@@ -709,8 +711,10 @@ class App(tk.Tk):
                  bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=X(300), justify="left",
                  anchor="w").pack(anchor="w", pady=(X(2), 0))
         self.lang_var = tk.StringVar(value=engine.cvlang.known(self.saved_opts.get("language")))
-        look.Segmented(b, list(engine.cvlang.LANGS.items()), self.lang_var,
-                       command=self._language_chosen, bg=CARD).pack(side="right")
+        # a drop-down list, so more languages don't crowd the page (as CleanView 1.18.85)
+        self.language_box = CL.dropdown(b, self.lang_var, engine.cvlang.LANGS,
+                                        command=self._language_chosen)
+        self.language_box.pack(side="right")
 
         # ----- step 2: what to remove (the same filters as CleanRead and CleanView)
         self.filter_card = F.FilterPanel(sp.pane(2), on_change=sp.refresh, wrap=560,
@@ -1565,14 +1569,18 @@ class App(tk.Tk):
         box = tk.Frame(holder, bg=TINT, padx=8, pady=6)
         box.pack(fill="x", pady=(4, 0), side="bottom" if kind == "W" else None)
         hint = ("Tip: highlight part of the text above first to point at it. " if txt is not None else "")
-        tk.Label(box, text=hint + "e.g. \u201cjust cut the bed line\u201d, \u201ckeep this\u201d, "
-                 "\u201cmute only that word\u201d", bg=TINT, fg=MUTED, font=(FONT, 8),
-                 wraplength=640, justify="left").pack(anchor="w")
+        tip = tk.Label(box, text=hint + "e.g. \u201cjust cut the bed line\u201d, \u201ckeep "
+                       "this\u201d, \u201cmute only that word\u201d", bg=TINT, fg=MUTED,
+                       font=(FONT, 8), wraplength=640, justify="left", anchor="w")
+        tip.pack(anchor="w")
+        CL.fit_text(tip, box, margin=20)                    # the box's width, less its padding
         row = tk.Frame(box, bg=TINT)
         row.pack(fill="x", pady=(2, 0))
         entry = ttk.Entry(row)
         entry.pack(side="left", fill="x", expand=True)
-        status = tk.Label(box, text="", bg=TINT, fg=ACCENT_DK, font=(FONT, 9))
+        status = tk.Label(box, text="", bg=TINT, fg=ACCENT_DK, font=(FONT, 9), wraplength=640,
+                          justify="left", anchor="w")
+        CL.fit_text(status, box, margin=20)
 
         def send(_e=None):
             q = entry.get().strip()
@@ -2483,8 +2491,10 @@ class App(tk.Tk):
         note = getattr(self, "resume_note", None)
         if note:
             self.resume_note = None
-            tk.Label(p, text="✓ " + note, bg=TINT, fg=ACCENT_DK, font=(FONT, 10), padx=10,
-                     pady=6, anchor="w").pack(fill="x", pady=(0, 8))
+            self.updated_note = CL.said_briefly(tk.Label(
+                p, text="✓ " + note, bg=TINT, fg=ACCENT_DK, font=(FONT, 10), padx=10, pady=6,
+                anchor="w"))
+            self.updated_note.pack(fill="x", pady=(0, 8))
         # what the checks said, folded to one line ("More" shows all of it)
         notes = [n for n in (a.get("claude_note"), a.get("learn_note"), a.get("ai_note"),
                              a.get("ebook_note")) if n]
@@ -2681,9 +2691,11 @@ class App(tk.Tk):
                 txt.pack(fill="x", pady=(6, 0))
                 txt.bind("<Configure>", lambda e, t=txt: fit(t))
                 if sc.get("chat_answer"):
-                    tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg=TINT, fg=ACCENT_DK,
-                             font=(FONT, 9), wraplength=680, justify="left", padx=8, pady=4,
-                             anchor="w").pack(fill="x", pady=(6, 0))
+                    said = tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg=TINT,
+                                    fg=ACCENT_DK, font=(FONT, 9), wraplength=680, justify="left",
+                                    padx=8, pady=4, anchor="w")
+                    said.pack(fill="x", pady=(6, 0))
+                    CL.fit_text(said, said, margin=20)      # its own width, less its padding
                 if a.get("sentences"):
                     link(card, f"Ask {N} about this…", CARD,
                          lambda l, c=card, it=sc, t=txt: self._ask_inline(c, it, t, l, "P")
