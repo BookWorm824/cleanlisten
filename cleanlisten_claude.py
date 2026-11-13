@@ -424,6 +424,7 @@ def run(prompt, system, schema=None, resume=None, persist=False, tools="", cwd=N
     """One request. Claude: a `claude -p` call; ChatGPT: a `codex exec` call; Gemini: an
     `agy -p` call. Returns a dict with "data" (the structured answer when a schema is given)
     and "session_id"."""
+    system += E.cvlang.reader_note(E.cvlang.LANG)     # a book in another language: told so
     if PROVIDER in HELPERS:
         h, err = _helper(PROVIDER)
         try:

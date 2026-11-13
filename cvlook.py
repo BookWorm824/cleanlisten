@@ -554,12 +554,26 @@ def chip(parent, text, colour, size=8, bg=None):
 
 
 # ---------- the apps' ttk widgets in the same look ----------
+# Tk stretches a ttk picture by repeating its middle, one copy at a time. With a middle one
+# pixel wide a 150-pixel button took 150 copies for each of its rows, and the review page's 18
+# buttons took 2.5 seconds to draw (the owner, 2026-11-13: asking Claude a question froze the
+# window, "not responding", while the page was drawn again). The pictures are this much wider
+# now, so the middle is repeated a few times; `_slim` keeps the piece's smallest size as it was.
+STRETCH = 64
+
+
 def _corner_img(r, fill, bg, edge=None, edge_w=1.0, w=None, h=None):
-    """A rounded rectangle 2r+3 square (or w x h), solid, for a ttk image element whose
-    border is r+1 (the middle stretches, the corners stay round)."""
-    w = w or 2 * r + 3
+    """A rounded rectangle, solid, for a ttk image element whose border is r+1 (the middle
+    stretches, the corners stay round): 2r+3 high and STRETCH wider than that (or w x h)."""
+    w = w or 2 * r + 3 + STRETCH
     h = h or 2 * r + 3
     return shape(w, h, r, fill, bg, edge, edge_w)
+
+
+def _slim(r):
+    """The smallest size of a piece drawn with _corner_img(r, ...): as small as its corners
+    allow, not the picture's own width."""
+    return {"width": 2 * r + 3, "height": 2 * r + 3}
 
 
 BUTTON_LOOKS = {}      # ttk button style -> (fill, hover, disabled fill, edge, disabled text)
@@ -616,7 +630,8 @@ def _round_one(root, w):
                 for c in (fill, hover, dim)]
         el = name.replace(".", "_") + "_bg"
         s.element_create(el, "image", imgs[0], ("disabled", imgs[2]), ("pressed", imgs[1]),
-                         ("active", imgs[1]), border=r + 1, padding=0, sticky="nsew")
+                         ("active", imgs[1]), border=r + 1, padding=0, sticky="nsew",
+                         **_slim(r))
         s.layout(name, [(el, {"sticky": "nswe", "children": [
             ("Button.padding", {"sticky": "nswe", "children": [
                 ("Button.label", {"sticky": "nswe"})]})]})])
@@ -662,7 +677,8 @@ def style_tabs(root, s):
         (C["bg"], C["bg"]), (C["card"], C["bg"], C["line"]), (C["side"], C["bg"]))], r)
     if first:
         s.element_create("Round.tab", "image", imgs[0], ("selected", imgs[1]),
-                         ("active", imgs[2]), border=r + 1, padding=0, sticky="nsew")
+                         ("active", imgs[2]), border=r + 1, padding=0, sticky="nsew",
+                         **_slim(r))
         s.layout("TNotebook.Tab", [("Round.tab", {"sticky": "nswe", "children": [
             ("Notebook.padding", {"side": "top", "sticky": "nswe", "children": [
                 ("Notebook.label", {"side": "top", "sticky": ""})]})]})])

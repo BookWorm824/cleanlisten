@@ -28,6 +28,8 @@ from pathlib import Path
 
 import numpy as np
 
+import cvlang    # other languages: the AI is told what language it is reading
+
 HERE = Path(__file__).resolve().parent
 CLIP_DIR = HERE / "models" / "clip-vit-base-patch32"
 CLIP_BASE = "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main/"
@@ -385,6 +387,8 @@ def ensure_ai(progress=None):
 
 
 def chat(prompt, images=None, schema=None, timeout=300):
+    if not images:      # a book in another language: told so, and to quote it as written
+        prompt += cvlang.reader_note(cvlang.LANG)
     msg = {"role": "user", "content": prompt}
     if images:
         msg["images"] = images

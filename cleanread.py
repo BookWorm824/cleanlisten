@@ -68,6 +68,8 @@ def mask_words(s):
 
 
 def nrm(tok):
+    if E.cvlang.LANG != "en":       # another language's lists take the accents off themselves
+        return E.norm(tok)          # (and keep ñ: "año" is a year)
     return E.norm(_deaccent(tok))
 
 
@@ -234,7 +236,9 @@ def _toc_entries(z, opf_dir, manifest_items, opf):
 class Book:
     """A parsed book. paras hold the text; words and sentences index into them."""
 
-    def __init__(self, path):
+    def __init__(self, path, language="en"):
+        # the language it's written in (1.17.30): its words are read with that language's lists
+        self.language = E.use_language(language)
         self.path = Path(path)
         self.fmt = self.path.suffix.lower().lstrip(".")
         self.title, self.author = self.path.stem, ""
@@ -1923,6 +1927,7 @@ def reading_level(book):
 
 def scan(book, use_ai=False, progress=None, cancel=None):
     say = progress or (lambda f, m: None)
+    E.use_language(getattr(book, "language", "en"))     # as the book was read
     say(0.02, "Reading the book…")
     res = {"title": book.title, "author": book.author, "file": str(book.path),
            "words": len(book.words), "chapters": len(set(p.chapter for p in book.paras)),
@@ -2267,6 +2272,7 @@ def religion_parts(opts):
 def analyze(book, opts, progress=None, cancel=None):
     """opts: dict of the filter ticks. Returns {"cuts": [...], "mutes": [...]}."""
     say = progress or (lambda f, m: None)
+    E.use_language(getattr(book, "language", "en"))     # as the book was read
     opts = _upgrade(opts)
     cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude") if opts.get(g)
             for c in E.GROUPS[g]]
@@ -2983,6 +2989,7 @@ def _raw_edits(para, x, y, repl):
 
 def write_clean(book, cuts, mutes, out_path, style="dash", marker=True, progress=None):
     say = progress or (lambda f, m: None)
+    E.use_language(getattr(book, "language", "en"))     # as the book was read
     say(0.1, "Writing the clean copy…")
     word_repl = STYLES.get(style, STYLES["dash"])
     cut_paras = set()

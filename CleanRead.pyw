@@ -129,6 +129,7 @@ class App(tk.Tk):
         use_theme(F.load().get("theme"))      # light or dark, before anything is drawn
         self.configure(bg=BG)
         self.book_path = None
+        self.language = "en"      # the language the book is written in (set from the book)
         self.book = None          # parsed book, kept while the same file is loaded
         self.mode = tk.StringVar(value=self.settings.get("mode", "check"))
         self.outdir = None
@@ -359,7 +360,8 @@ class App(tk.Tk):
         """What's chosen in step n, in a few words, for the list on the left."""
         check = self.mode.get() == "check"
         if n == 1:
-            return Path(self.book_path).name if self.book_path else "No book chosen yet"
+            lang = "" if self.language == "en" else " \u00b7 " + engine.E.cvlang.name(self.language)
+            return Path(self.book_path).name + lang if self.book_path else "No book chosen yet"
         if n == 2:
             return "Check the content" if check else "Make a clean copy"
         ai = getattr(self, "ai_var", None)
@@ -428,6 +430,22 @@ class App(tk.Tk):
         self.book_lbl = tk.Label(sp.pane(1), text="No book chosen yet", bg=BG, fg=MUTED,
                                  font=(FONT, 10), wraplength=X(560), justify="left", anchor="w")
         self.book_lbl.pack(anchor="w", pady=(X(12), 0))
+        # the language the book is written in (1.17.30, as CleanView's "Language spoken in the
+        # video"; the owner, 2026-11-13: "ask clean view about the language", "update"):
+        # English as always, or another one, with its own word lists
+        b = sp.card(1, top=14)
+        look.Badge(b, "chat", size=30).pack(side="left", anchor="n")
+        words = tk.Frame(b, bg=CARD)
+        words.pack(side="left", fill="x", expand=True, padx=(X(14), X(12)))
+        tk.Label(words, text="Language the book is written in", bg=CARD, fg=INK,
+                 font=(HEAD, 10), anchor="w").pack(anchor="w")
+        tk.Label(words, text="Set from the book when you choose it. For another language "
+                 "CleanRead uses that language's own word lists, and the other filters lean on "
+                 "the AI helper.", bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=X(300),
+                 justify="left", anchor="w").pack(anchor="w", pady=(X(2), 0))
+        self.lang_var = tk.StringVar(value=engine.E.cvlang.known(self.language))
+        look.Segmented(b, list(engine.E.cvlang.LANGS.items()), self.lang_var,
+                       command=self._language_chosen, bg=CARD).pack(side="right")
 
         # ----- step 2: check it, or make a clean copy
         mv = tk.StringVar(value=self.mode.get())
@@ -545,6 +563,21 @@ class App(tk.Tk):
         if sp is not None:
             sp.refresh()
 
+    def _language_chosen(self, *_):
+        self.language = engine.E.cvlang.known(self.lang_var.get())
+        sp = getattr(self, "steps_page", None)
+        if sp is not None:
+            sp.refresh()
+
+    def _set_language(self, code):
+        self.language = engine.E.cvlang.known(code)
+        var = getattr(self, "lang_var", None)
+        if var is not None and var.get() != self.language:
+            try:
+                var.set(self.language)
+            except tk.TclError:
+                pass
+
     def pick_book(self):
         f = filedialog.askopenfilename(title="Choose the ebook", filetypes=BOOK_TYPES)
         if f:
@@ -552,6 +585,9 @@ class App(tk.Tk):
                 self.book = None
             self.book_path = f
             self.outdir = None
+            # a newly chosen book is English, or the language its own words show, so Spanish
+            # left from the last book is never used on an English one by accident
+            self._set_language(engine.E.guess_language(f) or "en")
             self._refresh()
 
     def pick_out(self):
@@ -668,9 +704,12 @@ class App(tk.Tk):
 
     def _load_book(self, job, path):
         book = self.book
-        if book is None or str(book.path) != str(Path(path)):
+        lang = getattr(self, "language", "en")
+        if (book is None or str(book.path) != str(Path(path))
+                or getattr(book, "language", "en") != lang):     # read with that language's lists
             self._send(job, ("progress", 0.01, "Opening the book…"))
-            book = engine.Book(path)
+            # (an English book is opened exactly as it always was)
+            book = engine.Book(path) if lang == "en" else engine.Book(path, lang)
             self._send(job, ("loaded", book))     # kept as self.book only if not cancelled
         return book
 
@@ -1274,7 +1313,8 @@ class App(tk.Tk):
         if getattr(self, "chat", None) is None or self.chat.an is not data:
             try:
                 if self.book is None:
-                    self.book = engine.Book(self.book_path)
+                    self.book = (engine.Book(self.book_path) if self.language == "en" else
+                                 engine.Book(self.book_path, self.language))
                 self.chat = (engine.CheckChat if mode == "check" else engine.Chat)(
                     self.book, data, APP_DATA / "cleanread_chat")
             except Exception as ex:

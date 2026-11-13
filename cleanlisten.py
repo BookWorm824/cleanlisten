@@ -23,8 +23,180 @@ from urllib.parse import unquote
 
 import numpy as np
 
+import cvlang    # other languages: their word lists and listening model (CleanView's file)
+
 HERE = Path(__file__).resolve().parent
 DEFAULT_MODEL = HERE / "models" / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
+
+
+# ---------------------------------------------------------------------------
+# Other languages (1.17.30, as CleanView 1.18.80 and 1.18.81; the owner, 2026-11-13: "ask clean
+# view about the language", "update"). English is untouched: its own listening model and the
+# word lists below. For another language norm(), find_language(), listed_word() and mask() hand
+# over to cvlang.py (CleanView's file, kept the same as theirs), and the book is listened to
+# with the model that hears other languages, got once.
+# ---------------------------------------------------------------------------
+# our names for the word groups that cvlang.py calls something else
+LANG_CATS = {"orientation": "samesex"}
+# where CleanView keeps the listening model for other languages, if it's on this PC and has it
+CLEANVIEW_MODELS = (Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
+                    / "CleanView" / "app" / "models")
+
+
+def use_language(code):
+    """The language being cleaned ("en", "es", "fr"; anything else counts as English). One
+    worker cleans one book, and the window sets it for the review it has open."""
+    return cvlang.use(code)
+
+
+def lang_file(name):
+    """A saved file's name for the language being cleaned: as it always was for English, with
+    the language in it otherwise ("transcript_es.json"), so a book checked again in another
+    language never uses the other one's words."""
+    if cvlang.LANG == "en":
+        return name
+    stem, _, ext = name.rpartition(".")
+    return f"{stem}_{cvlang.LANG}.{ext}"
+
+
+def _other_language(words, cats):
+    """_find_language() for a language other than English: that language's lists, in our
+    groups' names. Its sex words ("sexo", "pene") are our "sexual" group."""
+    lang = cvlang.LANG
+    back = {theirs: ours for ours, theirs in LANG_CATS.items()}
+    hits = [(i, j, back.get(c, c)) for i, j, c in
+            cvlang.find_language(words, [LANG_CATS.get(c, c) for c in cats], (), lang)]
+    if "sexual" in cats:
+        taken = {k for i, j, _ in hits for k in range(i, j)}
+        sex = cvlang.WORDS[lang].get("sex", ())
+        hits += [(i, i + 1, "sexual") for i, w in enumerate(words)
+                 if i not in taken and any(p.match(w) for p in sex)]
+        hits.sort()
+    return hits
+
+
+def _lock_file(fh, cancel=None, waiting=None):
+    """Wait for our turn with a file (Windows; elsewhere nothing to wait for)."""
+    if os.name != "nt":
+        return
+    import msvcrt
+    told = False
+    while True:
+        try:
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        except OSError:
+            if cancel and cancel():
+                raise KeyboardInterrupt
+            if waiting and not told:
+                waiting()
+                told = True
+            time.sleep(0.5)
+
+
+def get_language_model(progress=None, cancel=None, log=print):
+    """The listening model for other languages, got once (about 490 MB), the first time a book
+    in another language is checked: copied from CleanView if it has it on this PC, downloaded
+    otherwise. Two books started together wait for the one download."""
+    if cvlang.model_ready():
+        return
+    say = progress or (lambda f, m: None)
+    d = cvlang.model_dir()
+    d.parent.mkdir(parents=True, exist_ok=True)
+    with open(d.parent / "language_model.lock", "a+b") as lock:
+        _lock_file(lock, cancel, lambda: say(0.0, f"Waiting for {cvlang.MODEL_WHAT}…"))
+        if cvlang.model_ready():            # another book got it while this one waited
+            return
+        theirs = CLEANVIEW_MODELS / cvlang.MODEL_NAME
+        try:
+            have = all((theirs / f).is_file() and (theirs / f).stat().st_size
+                       for f in cvlang.MODEL_FILES)
+        except OSError:
+            have = False
+        if have and theirs.resolve() != d.resolve():
+            say(0.0, f"Copying {cvlang.MODEL_WHAT} from CleanView…")
+            part = d.with_name(d.name + ".copy")
+            try:
+                shutil.rmtree(part, ignore_errors=True)
+                part.mkdir(parents=True)
+                for f in cvlang.MODEL_FILES:
+                    if cancel and cancel():
+                        raise KeyboardInterrupt
+                    shutil.copyfile(theirs / f, part / f)
+                d.mkdir(parents=True, exist_ok=True)
+                for f in cvlang.MODEL_FILES:
+                    os.replace(part / f, d / f)
+                log(f"Copied {cvlang.MODEL_WHAT} from CleanView")
+            except OSError as ex:
+                log(f"Couldn't copy {cvlang.MODEL_WHAT} from CleanView ({ex}); downloading it")
+            finally:
+                shutil.rmtree(part, ignore_errors=True)
+            if cvlang.model_ready():
+                return
+
+        def told(f, m):
+            if cancel and cancel():
+                raise KeyboardInterrupt
+            say(0.0, m)
+        cvlang.install_model(told)
+
+
+# small words that tell the languages apart (as ReadAloud's guess; a few thousand words do)
+_GUESS_WORDS = {
+    "en": "the and of to was he she it that you his her with for had but not they".split(),
+    "es": "el la los las que y de en un una es por con no se lo su para pero como".split(),
+    "fr": "le la les et des est une que qui dans pas pour il elle je vous avec sur au".split(),
+}
+
+
+def guess_language(path, enough=4000):
+    """The language an ebook looks to be written in, from its first few thousand words: one of
+    cvlang.LANGS, or None when it can't tell (a PDF, a very short or unreadable book, or a
+    language there are no word lists for)."""
+    p = Path(path)
+    words = []
+    try:
+        if p.suffix.lower() == ".epub":
+            with zipfile.ZipFile(p) as z:
+                names = z.namelist()
+                container = z.read("META-INF/container.xml").decode("utf8", "ignore")
+                opf_path = re.search(r'full-path="([^"]+)"', container).group(1)
+                opf = z.read(opf_path).decode("utf8", "ignore")
+                base = opf_path.rsplit("/", 1)[0] + "/" if "/" in opf_path else ""
+                manifest = {}
+                for item in re.findall(r"<item\b[^>]*>", opf):
+                    i = re.search(r'\bid="([^"]+)"', item)
+                    h = re.search(r'\bhref="([^"]+)"', item)
+                    if i and h:
+                        manifest[i.group(1)] = h.group(1)
+                for idref in re.findall(r'<itemref\b[^>]*?idref="([^"]+)"', opf):
+                    href = manifest.get(idref)
+                    if href and (base + unquote(href)) in names:
+                        for para in _html_paragraphs(
+                                z.read(base + unquote(href)).decode("utf8", "ignore")):
+                            words += re.findall(r"[^\W\d_]+", para.lower())
+                    if len(words) >= enough:
+                        break
+        elif p.suffix.lower() in (".txt", ".text", ".md"):
+            with open(p, encoding="utf8", errors="ignore") as f:
+                words = re.findall(r"[^\W\d_]+", f.read(120000).lower())
+        else:
+            return None
+    except Exception:
+        return None
+    words = words[:enough]
+    if len(words) < 200:
+        return None
+    counts = {}
+    for w in words:
+        counts[w] = counts.get(w, 0) + 1
+    score = {lang: sum(counts.get(w, 0) for w in ws) / len(words)
+             for lang, ws in _GUESS_WORDS.items() if lang in cvlang.LANGS}
+    best, second = sorted(score, key=score.get, reverse=True)[:2]
+    if score[best] < 0.08 or score[best] < 1.5 * score[second]:
+        return None
+    return best
 SR = 16000
 AUDIO_EXTS = (".mp3", ".m4b", ".m4a", ".aac", ".mp4", ".ogg", ".opus", ".flac", ".wav", ".wma")
 
@@ -326,6 +498,11 @@ SEXUAL_PHRASES = [
     # left alone: the owner, "leave coroners talk"
     ("skinny", "dip"), ("skinny", "dips"), ("skinny", "dipped"), ("skinny", "dipping"),
     ("chastity", "belt"), ("chastity", "belts"),
+    # Castle S2E1 (CleanView 1.18.84; the owner, 2026-11-13: "if pole ever comes after stripper it
+    # should be muted, keep pole other instances"): the two words together, as CleanView mutes
+    # them. Not the North Pole, a fishing pole, the flag pole, pole vault or tent poles.
+    ("stripper", "pole"), ("stripper", "poles"), ("strippers", "pole"), ("strippers", "poles"),
+    ("stripper's", "pole"), ("stripper's", "poles"),
     ("forced", "penetration"), ("signs", "of", "penetration"), ("evidence", "of", "penetration"),
 ] + [("naked", w) for w in ("photo", "photos", "picture", "pictures", "pic", "pics", "selfie", "selfies")
      ] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
@@ -777,6 +954,8 @@ def unabbreviate(w):
 
 
 def norm(w):
+    if cvlang.LANG != "en":
+        return cvlang.norm(w, cvlang.LANG)
     w = unbleep(unabbreviate(w)).lower().replace("’", "'").replace("‘", "'")
     w = re.sub(r"[^a-z0-9']", "", w)
     return w.strip("'")
@@ -863,6 +1042,8 @@ def own_phrases(lines):
 
 
 def _find_language(words, cats, breaks=()):
+    if cvlang.LANG != "en":
+        return _other_language(words, cats)
     hits, n, i = [], len(words), 0
     breaks = breaks if isinstance(breaks, (set, frozenset)) else set(breaks)
     fruit = fruit_slang(words) if "moderate" in cats else set()
@@ -1602,6 +1783,8 @@ def strict_religion_hit(words):
 
 
 def mask(word):
+    if cvlang.LANG != "en":
+        return cvlang.mask(word)
     core = re.sub(r"[^A-Za-z]", "", word)
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
 
@@ -2760,22 +2943,26 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             find_disrespect=False,
             strict_religion=False, find_topics=(), title="", find_sleeping=False,
             find_substances=False, kiss="keep", religion_parts=None, more=(), kiss_ss="keep",
-            find_graphic=None, mine=()):
+            find_graphic=None, mine=(), language="en"):
     """progress(fraction 0..1, message). Returns the analysis dict (also saved
     to workdir/analysis.json). find_topics: any of TOPICS (holidays, birthday candles, magic,
-    dark magic) to cut."""
+    dark magic) to cut. language: the language the book is read in (cvlang.LANGS)."""
     work = Path(workdir)
     work.mkdir(parents=True, exist_ok=True)
+    lang = use_language(language)       # English, or another one's word lists and listening
     parts = [str(Path(p).resolve()) for p in parts]
     cats = [c for g in groups for c in GROUPS[g]]
     say = progress or (lambda f, m: None)
 
-    tfile = work / "transcript.json"
+    tfile = work / lang_file("transcript.json")
     done = json.loads(tfile.read_text()) if tfile.exists() else {}
     durs = {p: probe_duration(p) for p in parts}
     total = sum(durs.values()) or 1.0
     todo = [p for p in parts if p not in done]
     if todo:
+        if lang != "en":            # the model that hears other languages (English keeps its own)
+            get_language_model(say, cancel, log)
+            model_dir = cvlang.model_dir()
         say(0.0, "Loading the listening model…")
         rec = load_recognizer(model_dir, threads)
         t0 = time.time()
@@ -3170,7 +3357,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
 
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
-          "ai_note": ai_note, "sentences": sents, "title": title,
+          "ai_note": ai_note, "sentences": sents, "title": title, "language": lang,
           "filters": {"cats": cats, "kinds": kinds,
                       "strict_religion": bool(find_religion and "prayers" in rparts),
                       "religion_parts": sorted(rparts) if find_religion else [], "kiss": kiss,
@@ -3984,6 +4171,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     cover_online: no cover chosen and none in the book or its folder -> look one up online."""
     work = Path(workdir)
     st = json.loads((work / "analysis.json").read_text())
+    lang = use_language(st.get("language"))
     if cuts is None:
         cuts = [c for c in st["scenes"] if c.get("cut")]
     if mutes is not None:
@@ -4184,6 +4372,9 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
             f"({total_cut_sec / 60:.1f} minutes removed)."]
     if st.get("ebook_note"):
         head.append(st["ebook_note"])
+    if lang != "en":
+        head.append(f"Cleaned as a {cvlang.name(lang)} audiobook, with the {cvlang.name(lang)} "
+                    "word lists.")
     (out / "CleanListen report.txt").write_text("\n".join(head + report) + "\n", encoding="utf8")
     say(1.0, "Saved.")
     log(f"Saved to {out}")

@@ -529,6 +529,29 @@ class App(tk.Tk):
         self.theme_var = tk.StringVar(value=THEME)
         return self.theme_var
 
+    # ---------- the language the book is read in ----------
+
+    def _language_chosen(self, *_):
+        """Kept with the book's other choices (saved_opts), so checking it again keeps it."""
+        self.saved_opts["language"] = engine.cvlang.known(self.lang_var.get())
+        sp = getattr(self, "steps_page", None)
+        if sp is not None:
+            sp.refresh()
+
+    def _set_language(self, code):
+        self.saved_opts["language"] = engine.cvlang.known(code)
+        var = getattr(self, "lang_var", None)
+        if var is not None and var.get() != self.saved_opts["language"]:
+            try:
+                var.set(self.saved_opts["language"])
+            except tk.TclError:
+                pass
+
+    def _language_of_new_book(self):
+        """A newly chosen book starts as English, or as its ebook's language when that's plain,
+        so Spanish left from the last book is never used on an English one by accident."""
+        self._set_language((engine.guess_language(self.ebook) if self.ebook else None) or "en")
+
     def _keep_for_rebuild(self):
         """The start page's choices that are only read when Start is pressed, kept while the page
         is built again (a new look)."""
@@ -561,8 +584,10 @@ class App(tk.Tk):
         """What's chosen in step n, in a few words, for the list on the left."""
         if n == 1:
             k = len(self.audio or ())
+            lang = engine.cvlang.known(self.saved_opts.get("language"))
             return ("No audiobook chosen yet" if not k else "1 file chosen" if k == 1 else
-                    f"{k} files chosen")
+                    f"{k} files chosen") + (
+                        "" if lang == "en" else " \u00b7 " + engine.cvlang.name(lang))
         if n == 2:
             card = getattr(self, "filter_card", None)
             return dict(F.PROFILES).get(card.profile.get(), "") if card else ""
@@ -669,6 +694,23 @@ class App(tk.Tk):
         self.ebook_lbl.pack(anchor="w", pady=(X(2), 0))
         look.Pill(b, "Choose ebook\u2026", self.pick_ebook, kind="secondary", size=10,
                   pad=(16, 8)).pack(side="right")
+        # the language the book is read in (1.17.30, as CleanView's "Language spoken in the
+        # video"; the owner, 2026-11-13: "ask clean view about the language", "update"):
+        # English as always, or another one, with its own word lists
+        b = sp.card(1, top=10)
+        look.Badge(b, "chat", size=30).pack(side="left", anchor="n")
+        words = tk.Frame(b, bg=CARD)
+        words.pack(side="left", fill="x", expand=True, padx=(X(14), X(12)))
+        tk.Label(words, text="Language the book is read in", bg=CARD, fg=INK, font=(HEAD, 10),
+                 anchor="w").pack(anchor="w")
+        tk.Label(words, text="For another language CleanListen uses that language's own word "
+                 "lists, and the other filters lean on the AI helper. The first time, it gets a "
+                 f"listening model for it (one time, about {engine.cvlang.MODEL_MB} MB).",
+                 bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=X(300), justify="left",
+                 anchor="w").pack(anchor="w", pady=(X(2), 0))
+        self.lang_var = tk.StringVar(value=engine.cvlang.known(self.saved_opts.get("language")))
+        look.Segmented(b, list(engine.cvlang.LANGS.items()), self.lang_var,
+                       command=self._language_chosen, bg=CARD).pack(side="right")
 
         # ----- step 2: what to remove (the same filters as CleanRead and CleanView)
         self.filter_card = F.FilterPanel(sp.pane(2), on_change=sp.refresh, wrap=560,
@@ -1802,6 +1844,7 @@ class App(tk.Tk):
         if books and not self.ebook:
             self.ebook = str(books[0])
         self.outdir = str(folder / "Clean")  # next to all the discs, not inside Disc 1
+        self._language_of_new_book()
         self._refresh_labels()
 
     def pick_audio(self):
@@ -1811,6 +1854,7 @@ class App(tk.Tk):
         if files:
             self.audio = sorted(files, key=natural_key)
             self.outdir = None
+            self._language_of_new_book()
             self._refresh_labels()
 
     def pick_ebook(self):
@@ -1818,6 +1862,9 @@ class App(tk.Tk):
                                        filetypes=[("Ebooks", "*.epub *.pdf *.txt"), ("All files", "*.*")])
         if f:
             self.ebook = f
+            lang = engine.guess_language(f)     # the ebook says what language the book is in
+            if lang:
+                self._set_language(lang)
             self._refresh_labels()
 
     def pick_out(self):
@@ -1830,7 +1877,10 @@ class App(tk.Tk):
     def start(self):
         ticks, mywords = self.filter_card.ticks(), self.filter_card.mywords()
         groups = F.groups(ticks)
+        lang = engine.use_language(self.lang_var.get())    # her own words are read in it too
         self.filter_args = F.listen_kwargs(ticks, mywords)
+        if lang != "en":                # English is checked exactly as it always was
+            self.filter_args["language"] = lang
         self.use_ai = self.ai_var.get()
         self.use_claude = self.claude_var.get()
         self.split_chapters = self.split_var.get()
@@ -1849,7 +1899,7 @@ class App(tk.Tk):
             return
         self.saved_opts = dict(ticks, profile=self.filter_card.profile.get())
         self.saved_opts.update(ai=self.use_ai, split=self.split_chapters, claude=self.use_claude,
-                               m4b=self.make_m4b)
+                               m4b=self.make_m4b, language=lang)
         if self.use_claude:
             cc = self._cc()
             state = getattr(self, "claude_state", None) or (cc.status() if cc else "broken")
@@ -2381,6 +2431,7 @@ class App(tk.Tk):
     def show_review(self, keep_scroll=False, focus=None):
         """The review list. keep_scroll: redraw without moving - the list stays on the same
         passage you were looking at (focus: the passage/word you just asked about)."""
+        engine.use_language((self.analysis or {}).get("language"))   # this book's word lists
         anchor = None
         if keep_scroll and self.page_name == "review" and getattr(self, "_canvas", None):
             try:

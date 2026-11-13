@@ -1,5 +1,5 @@
 {
- "version": "1.17.29",
+ "version": "1.17.30",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -15,6 +15,7 @@
   "filters.py",
   "cllook.py",
   "cvlook.py",
+  "cvlang.py",
   "logo.py",
   "freezes.py",
   "bookrunner.py",

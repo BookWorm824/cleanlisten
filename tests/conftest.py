@@ -32,6 +32,15 @@ def _own_ai_answers(tmp_path, monkeypatch):
     monkeypatch.setattr(cleanread, "ANSWERS_DIR", tmp_path / "cleanread_ai_answers")
 
 
+@pytest.fixture(autouse=True)
+def _english_unless_the_test_says(monkeypatch):
+    """The language being cleaned is one setting for the whole program (cvlang.LANG): each test
+    starts and ends in English."""
+    E.use_language("en")
+    yield
+    E.use_language("en")
+
+
 def words(text):
     """Text -> the normalised word list the detectors work on."""
     return [w for w in (E.norm(t) for t in text.split()) if w]

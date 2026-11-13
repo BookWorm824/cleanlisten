@@ -702,6 +702,56 @@ CleanView): a look.Card is a canvas, so `_scroll_to` looks for the frame with `_
 controls need hex colours (`filters._hex`); sizes go through `look.px`. ReadAloud is not done: ask
 the owner first (she said it "does a different job" about the sections).
 
+**"Stripper pole"** (1.17.30; the owner in CleanView's chat on Castle S2E1, 2026-11-13: "if pole ever
+comes after stripper it should be muted, keep pole other instances"): the two words together are a
+sexual phrase (`SEXUAL_PHRASES`: stripper/strippers/stripper's + pole/poles), muted with sexual words
+ticked in CleanListen and marked out in CleanRead. "Pole" anywhere else is left alone. "Stripper" on
+its own is not on CleanListen's word lists (CleanRead's immodest-clothing filter lists it); the owner
+hasn't asked for that. `tests/test_castle_sexref_words.py`.
+
+**Books in other languages, Spanish and French first** (1.17.30, as CleanView 1.18.80 and
+1.18.81; the owner, 2026-11-13: "ask clean view about the language", "update"; in CleanView's
+session: "like if i wanted to scan a movie in spanish", "i would do the easier group of languages":
+Spanish, French, then Portuguese and Russian). Step 1 of CleanListen has "Language the book is read
+in" and step 1 of CleanRead "Language the book is written in" (English / Spanish / French, a
+`look.Segmented` over `cvlang.LANGS`). English is untouched: its own listening model and word
+lists. Another language:
+- `cvlang.py` is CleanView's file, copied unchanged (commit 98035bb; on `version.json`'s list). It
+  must not import the engine. `cleanlisten.use_language(code)` sets `cvlang.LANG`, and `norm()`,
+  `_find_language()` (so `find_language()` and `listed_word()`) and `mask()` hand over to it when it
+  isn't "en" (`_other_language`): that language's lists in our groups' names (`LANG_CATS`:
+  our "orientation" is their "samesex"; their "sex" list is our "sexual" group). Accents come off
+  before matching, ñ stays, so CleanRead's `nrm()` doesn't take accents off first then. English
+  lists aren't run on another language's book.
+- CleanListen listens with NeMo Parakeet TDT 0.6B v3 (about 25 European languages; loads with
+  `load_recognizer` unchanged), got once by `get_language_model` in the book's worker the first time
+  a book in another language is checked: copied from CleanView if it has it on this PC
+  (`CLEANVIEW_MODELS`), downloaded otherwise (`cvlang.install_model`, about 490 MB, into
+  `models/<MODEL_NAME>`); a lock file makes two books started together wait for the one download.
+  English never needs it. What was heard is kept apart (`lang_file`: "transcript_es.json").
+  `analyze(language=...)` (in `filter_args` only when it isn't English, so English calls are as they
+  were); the analysis keeps `"language"`, and `render` and the review page (`show_review`) set it
+  from there. The report says "Cleaned as a Spanish audiobook, with the Spanish word lists."
+- CleanRead: `Book(path, language)` (its words are read with that language's lists; `book.language`);
+  `analyze`, `scan` and `write_clean` set the language from the book; `_load_book` reads the book
+  again if the language changed.
+- The AI helpers are told what they're reading (`cvlang.reader_note`): added in `cleanview_ai.chat`
+  (questions without pictures) and to the system prompt in `cleanlisten_claude.run` (Claude, ChatGPT
+  and Gemini).
+- A newly chosen book is English, or the language its own words show (`cleanlisten.guess_language`
+  on the ebook: EPUB and TXT, the small words that tell languages apart, None when it can't tell),
+  so Spanish left from the last book is never used on an English one by accident. CleanListen keeps
+  the choice with the book (`saved_opts["language"]`, so checking it again keeps it); neither app
+  remembers it for the next time it's opened.
+Not done for other languages (as in CleanView): every sentence filter's own word and phrase lists
+(sexual references, violence, medical, religion, relationships...), the hard rule's words (only
+"semen" is the same word), explicit findings and the innocent-use guards are English only, so in
+another language those filters lean on the AI helper, which reads the whole book. A word joined
+with a hyphen is one word ("ferme-la"). The lists were written by CleanView's session without a
+native speaker's check and the owner hasn't seen them; listening and mute timing in Spanish and
+French haven't been measured on a real book. `tests/test_languages.py`. Adding a language: copy
+CleanView's cvlang.py again, and add its small words to `_GUESS_WORDS`.
+
 **Light and dark** (as CleanView 1.18.78; the owner, 2026-11-13: "ask cleann view aabout dark mode
 built. lets move that here also"; in CleanView's session: "yes it should be optional", "just light
 dark button option. no windows choice"). A Light / Dark choice under the steps on each start page
@@ -712,7 +762,8 @@ colour is a name in `cllook.py` with a value for each look (`LIGHT`, `DARK`, Cle
 ours: `YELLOW`, `AMBER`, `FAIL`, `READY_GREEN`, `QUOTE`, `FINE_*`, `CHIP_*`); `CL.use_theme` sets the
 drawn pieces' colours and each app's `use_theme` takes the names into its own module (BG, CARD,
 GO...). Never write a colour into a page or use one as a default argument: name it in cllook.py
-(`tests/test_theme.py` checks). `cvlook.py` is CleanView's 1.18.78 copy (ttk pictures redrawn in
+(`tests/test_theme.py` checks). `cvlook.py` is CleanView's copy, now 1.18.82's (commit 0450a3a: the rounded buttons' and tabs'
+middle is 64 pixels wide, not 1, so a page with many buttons draws much faster; ttk pictures redrawn in
 place for a new look). The title bar goes dark where Windows can (`CL.title_bar`). The file chooser
 and question boxes are Windows' own. filters.py's old "Choose filters" window (unused by the apps
 now) is still light only.
