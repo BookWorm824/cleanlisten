@@ -32,6 +32,9 @@ FAILED = "failed"              # ran into a problem
 STOPPED = "stopped"            # you pressed Cancel
 
 RUNNING = (PREPARING, SAVING)
+# "Check with Claude" on a ready book: it waits and runs as a book being prepared does, with
+# job["check_only"] set, and comes back ready to review (stopped or not, the review is kept)
+CHECK_WAITING = "Waiting its turn to be checked"
 FINISHED = (DONE, FAILED, STOPPED)
 AT_ONCE_CHOICES = (1, 2, 3, 4)
 DEFAULT_AT_ONCE = 2
@@ -224,10 +227,21 @@ class BookQueue:
     def started(self, key):
         job = self.find(key)
         step = SAVING if job["step"] == SAVE_WAITING else PREPARING
-        job["task"] = "save" if step == SAVING else "prepare"
-        self._set(job, step, STATUS[step])
+        job["task"] = "save" if step == SAVING else ("check" if job.get("check_only") else "prepare")
+        self._set(job, step, "Starting the check…" if job["task"] == "check" else STATUS[step])
         job["frac"] = 0.0
         job.pop("error", None)
+        self.save()
+        return job
+
+    def check(self, key):
+        """A book ready to review goes in line to be checked by Claude (or ChatGPT, Gemini)."""
+        job = self.find(key)
+        if not job or job["step"] != READY:
+            return None
+        job["check_only"] = True
+        self._set(job, WAITING, CHECK_WAITING)
+        job["frac"] = 0.0
         self.save()
         return job
 
@@ -246,7 +260,10 @@ class BookQueue:
         job = self.find(key)
         if not job:
             return None
-        if job["step"] in (SAVING, SAVE_WAITING):
+        if job.pop("check_only", None) and job["step"] in (WAITING, PREPARING):
+            self._set(job, READY, STATUS[READY])     # its review is as it was
+            job["frac"] = 1.0
+        elif job["step"] in (SAVING, SAVE_WAITING):
             self._set(job, READY, "Saving was stopped. Press Save again on its review.")
         elif job["step"] in (WAITING, PREPARING):
             self._set(job, STOPPED, STATUS[STOPPED])
@@ -281,6 +298,7 @@ class BookQueue:
             del log[:-6]
             return None
         if msg.get("done") == "ready" and job["step"] == PREPARING:
+            job.pop("check_only", None)
             self._set(job, READY, STATUS[READY])
             job["frac"] = 1.0
             job["found"] = msg.get("found") or {}
@@ -306,6 +324,16 @@ class BookQueue:
         return None
 
     def _fail(self, job, error):
+        if job.pop("check_only", None):
+            # only the check didn't happen: the book is still ready to review, and More says why
+            found = job.setdefault("found", {})
+            found["claude_note"] = f"The AI couldn't check this book ({str(error)[:300]})."
+            found["claude_wanted"] = True
+            found["check_failed"] = True
+            self._set(job, READY, STATUS[READY])
+            job["frac"] = 1.0
+            self.save()
+            return
         job["error"] = str(error)[:500]
         self._set(job, FAILED, STATUS[FAILED])
         self.save()

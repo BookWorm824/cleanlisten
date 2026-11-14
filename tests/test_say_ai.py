@@ -76,7 +76,7 @@ def test_cleanlistens_window_says_ai_and_names_it_only_for_setting_up():
     me = types.SimpleNamespace(_cc=lambda: types.SimpleNamespace(name=lambda: "ChatGPT"))
     assert m.App._ai_name(me) == "AI" and m.App._provider(me) == "ChatGPT"
     src = (REPO / "CleanListen.pyw").read_text(encoding="utf8")
-    for said in ('"The AI is checking the book\\u2026"', 'text=f"Ask {N}…"', 'f"Check again with {N}"',
+    for said in ('"The AI is checking the book\\u2026"', 'text=f"Ask {N}…"',
                  '"Undo the AI\'s last change"', '"Open the AI\'s findings for this book (spreadsheet)"',
                  'f"Ask {N} about this…"', '"The AI is reading the book\\u2026"',
                  '"The AI can read the whole book', '"Tip: the AI looks over the whole book',
@@ -89,7 +89,10 @@ def test_cleanlistens_window_says_ai_and_names_it_only_for_setting_up():
                  '[("claude", "Claude"), ("chatgpt", "ChatGPT"), ("gemini", "Gemini")]',
                  'f"{self._provider()} isn\'t set up or signed "', 'f"\\u2713 {N} is ready"',
                  '"Save a list of everything for Claude…"',          # her chat with us
-                 '"Claude model:"'):
+                 '"Claude model:"',
+                 # the check button names it again (the owner, 2026-11-14: "check with ai sounds
+                 # like what we already did"; tests/test_check_with_ai.py)
+                 'f"Check again with {self._provider()}"', 'else f"Check with {self._provider()}"'):
         assert kept in src, kept
     # nothing shown names one any more outside those
     assert 'a.get("reviewer", "Claude") + ": "' not in src

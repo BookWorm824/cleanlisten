@@ -247,7 +247,8 @@ def test_a_worker_prepares_then_saves_a_book(tmp_path, workers):
         q.handle(job["key"], m)
     assert [m["p"] for m in seen if "p" in m] == [0.0, 0.5, 1.0]
     assert {"done": "ready", "found": {"words": 2, "passages": 1, "unticked": 1,
-                                       "claude_note": ""}} in seen
+                                       "claude_note": "", "claude_checked": False,
+                                       "claude_wanted": False}} in seen
     assert seen[-1] == {"exit": 0} and job["step"] == BQ.READY
     # the engine got the book's details and its share of the PC
     called = json.loads((Path(job["workdir"]) / "stub_called.json").read_text())

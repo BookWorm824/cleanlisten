@@ -2081,7 +2081,8 @@ class App(tk.Tk):
         """Start the next books, up to "Books at once" (saving first, then preparing)."""
         changed = False
         for job in self.books.to_start():
-            task = "save" if job["step"] == BQ.SAVE_WAITING else "prepare"
+            task = ("save" if job["step"] == BQ.SAVE_WAITING else
+                    "check" if job.get("check_only") else "prepare")
             try:
                 self.workers.start(job, task, BQ.threads_each(self.books.at_once))
                 self.books.started(job["key"])
@@ -2118,8 +2119,13 @@ class App(tk.Tk):
         if step == BQ.READY and job.get("found"):
             f = job["found"]
             w, n = f.get("words", 0), f.get("passages", 0)
-            return (f"Ready to review · {w} word{'s' if w != 1 else ''} to mute, "
+            said = (f"Ready to review · {w} word{'s' if w != 1 else ''} to mute, "
                     f"{n} passage{'s' if n != 1 else ''} to cut")
+            if f.get("check_failed"):
+                said += f"\n{self._provider()} couldn't check it. Press More to see why."
+            elif self._not_checked(job):
+                said += f"\nNot checked by {self._provider()} yet."
+            return said
         if step == BQ.DONE and job.get("result"):
             r = job["result"]
             cm = r.get("cut_minutes", 0)
@@ -2131,6 +2137,45 @@ class App(tk.Tk):
         if step in BQ.RUNNING and getattr(self, "workers", None) and self.workers.paused(job["key"]):
             return "Paused \u2014 press Resume to carry on."
         return job.get("status") or BQ.STATUS.get(step, "")
+
+    def _ai_checked(self, job):
+        """Has Claude (or ChatGPT, Gemini) checked this ready book? Read once from its review for
+        a book prepared before CleanListen kept this on the list."""
+        f = job.setdefault("found", {})
+        if "claude_checked" not in f:
+            try:
+                a = json.loads((Path(job["workdir"]) / "analysis.json").read_text())
+            except Exception:
+                return False
+            f["claude_checked"] = bool(a.get("claude_checked"))
+            f["claude_wanted"] = bool(a.get("claude_wanted") or a.get("claude_note"))
+            if a.get("claude_note"):
+                f["claude_note"] = a["claude_note"]
+            self.books.save()
+        return f["claude_checked"]
+
+    def _not_checked(self, job):
+        """A ready book the final check was wanted for that it didn't do."""
+        if not self._cc() or self._ai_checked(job):
+            return False
+        f = job.get("found") or {}
+        # (or it is signed in now: a book may have been started without it)
+        return bool(f.get("claude_wanted") or job.get("use_claude")
+                    or getattr(self, "claude_state", None) == "ok")
+
+    def _check_books(self, keys):
+        """"Check with Claude" on "Your books": each goes in line and is checked in the
+        background, a few at a time (Books at once), then is ready to review again."""
+        cc = self._cc()
+        state = getattr(self, "claude_state", None) or (cc.status() if cc else "broken")
+        if state != "ok":
+            messagebox.showinfo("CleanListen", f"{self._provider()} isn't set up or signed in "
+                                "yet. Set it up on the first step (Add a book), then try again.")
+            return
+        for key in keys:
+            self.books.check(key)
+        self._run_queue()
+        self.show_queue()
 
     def _pause_book(self, key):
         """Pause or carry on with one book (its worker and what it started are frozen)."""
@@ -2173,6 +2218,11 @@ class App(tk.Tk):
         if self.books.count(BQ.DONE):
             ttk.Button(self.footer, text="Clear saved books", style="Plain.TButton",
                        command=self._clear_done).pack(side="left")
+        todo = [j["key"] for j in self.books.jobs if j["step"] == BQ.READY and self._not_checked(j)]
+        if len(todo) > 1 and self._cc():
+            ttk.Button(self.footer, text=f"Check all {len(todo)} with {self._provider()}",
+                       style="Plain.TButton", command=lambda: self._check_books(todo)
+                       ).pack(side="left", padx=(8, 0))
         body = self._scroll_area(p)
         if not self.books.jobs:
             tk.Label(body, text="No books yet. Press “Add a book” to choose one.", bg=BG,
@@ -2196,6 +2246,11 @@ class App(tk.Tk):
         if ready:
             ttk.Button(btns, text="Review", style="Go.TButton",
                        command=lambda: self.review_job(key)).pack(side="left")
+            if self._cc():
+                checked = self._ai_checked(job)
+                ttk.Button(btns, text=("Check again with " if checked else "Check with ")
+                           + self._provider(), style="Plain.TButton",
+                           command=lambda: self._check_books([key])).pack(side="left", padx=(8, 0))
         elif step == BQ.DONE and (job.get("result") or {}).get("out"):
             ttk.Button(btns, text="Open folder", style="Go.TButton",
                        command=lambda: open_path(job["result"]["out"])).pack(side="left")
@@ -2385,6 +2440,8 @@ class App(tk.Tk):
                                  "Press Remove, then add the book again.")
             return
         a["title"] = job.get("title") or a.get("title", "")
+        if job.get("use_claude"):
+            a.setdefault("claude_wanted", True)     # (prepared before the review kept this)
         self.analysis = a
         self.audio, self.ebook, self.outdir = list(job["audio"]), job.get("ebook"), job["outdir"]
         self.workdir = Path(job["workdir"])
@@ -2417,6 +2474,14 @@ class App(tk.Tk):
                     "length": a.get("duration", 0), "task": "save"}
             job = self.books.add_ready(spec)
             self.review_key = job["key"]
+        a = self.analysis or {}
+        f = job.setdefault("found", {})
+        f.update(claude_checked=bool(a.get("claude_checked")),
+                 claude_wanted=bool(f.get("claude_wanted") or a.get("claude_wanted")
+                                    or a.get("claude_note")),
+                 claude_note=a.get("claude_note", ""))
+        f.pop("check_failed", None)
+        self.books.save()
         return job
 
     def _leave_review(self):
@@ -2504,8 +2569,25 @@ class App(tk.Tk):
                 anchor="w"))
             self.updated_note.pack(fill="x", pady=(0, 8))
         # what the checks said, folded to one line ("More" shows all of it)
-        notes = [n for n in (engine.plain_ai(a.get("claude_note")), a.get("learn_note"),
-                             a.get("ai_note"), a.get("ebook_note")) if n]
+        unchecked = (not a.get("claude_checked") and self._cc() is not None
+                     and bool(a.get("claude_wanted") or a.get("claude_note")
+                              or getattr(self, "claude_state", None) == "ok"))
+        if unchecked and a.get("sentences"):
+            # (the owner, 2026-11-14: overnight books came back unchecked with no word why)
+            P = self._provider()
+            warn = tk.Frame(p, bg=YELLOW)
+            warn.pack(fill="x", pady=(0, 8))
+            why = engine.plain_ai(a.get("claude_note")) if a.get("claude_note") else ""
+            said = tk.Label(warn, text=f"{P} didn't check this book, so this list is only from the "
+                            "word lists and the helper on this PC, which flags many things that "
+                            "are fine." + (f"\n{why}" if why else ""), bg=YELLOW, fg=YELLOW_INK,
+                            font=(FONT, 10), justify="left", anchor="w", padx=10, pady=6)
+            said.pack(side="left", fill="x", expand=True)
+            CL.fit_text(said, warn, margin=200)
+            ttk.Button(warn, text=f"Check with {P}", style="Go.TButton",
+                       command=self.claude_check).pack(side="right", padx=8, pady=6)
+        notes = [n for n in (None if unchecked else engine.plain_ai(a.get("claude_note")),
+                             a.get("learn_note"), a.get("ai_note"), a.get("ebook_note")) if n]
         if notes:
             nrow = tk.Frame(p, bg=BG)
             nrow.pack(fill="x", pady=(0, 4))
@@ -2530,8 +2612,10 @@ class App(tk.Tk):
         if a.get("sentences"):
             ttk.Button(bar, text=f"Ask {N}…", style="Plain.TButton",
                        command=self.open_chat).pack(side="left")
-            ttk.Button(bar, text=(f"Check again with {N}" if a.get("claude_checked")
-                                  else f"Check everything with {N}"), style="Plain.TButton",
+            # its own name here (the owner, 2026-11-14: "check with ai sounds like what we
+            # already did")
+            ttk.Button(bar, text=(f"Check again with {self._provider()}" if a.get("claude_checked")
+                                  else f"Check with {self._provider()}"), style="Plain.TButton",
                        command=self.claude_check).pack(side="left", padx=(8, 0))
         if getattr(self, "_undo", None):
             ttk.Button(bar, text="Undo the AI's last change", style="Plain.TButton",

@@ -15,6 +15,8 @@ from unittest import mock
 
 import pytest
 
+from conftest import HIDE
+
 ROOT = Path(__file__).resolve().parent.parent
 WINDOWS = os.name == "nt"
 
@@ -185,7 +187,9 @@ def test_view_still_hands_over_without_a_lock(lm):
 def _box(arg, child_code):
     """How long the "Opening ..." box stays up for a program running child_code. In its own
     process, as in real use (one Tk after another in one process sometimes fails to start)."""
-    code = textwrap.dedent(f"""
+    # (both windows see-through, so nothing pops up while the tests run: conftest.HIDE)
+    child_code = HIDE + "\n" + child_code
+    code = HIDE + textwrap.dedent(f"""
         import importlib.machinery, importlib.util, subprocess, sys, time
         loader = importlib.machinery.SourceFileLoader("lm_box", {str(ROOT / "launcher.pyw")!r})
         lm = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))

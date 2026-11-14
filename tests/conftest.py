@@ -21,6 +21,83 @@ os.environ["CLEANLISTEN_INBOX"] = "http://127.0.0.1:9/exec"
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+# ---------------------------------------------------------------------------------------------
+# Nothing pops up while the tests run (the owner, 2026-11-13, to every chat working on her PC:
+# "can you keep everything from keep popping up while you are making changes? only fully pop when
+# absolutely necessary"; as CleanView's tests/support.py):
+# - every Tk window is drawn see-through (sizes are still measured, clicks sent by a test still
+#   arrive, Windows still counts it as open);
+# - message boxes answer quietly (OK, or "No" to a question) instead of waiting on the screen;
+# - opening a file or folder (os.startfile, Explorer, Notepad) is noted, not done;
+# - no sounds.
+# A test that wants to see one of these sets its own stand-in, which wins. Code a test runs in
+# another Python starts with HIDE so its windows are see-through too.
+# ---------------------------------------------------------------------------------------------
+HIDE = """
+import tkinter as _tk_hide
+def _see_through(cls):
+    made = cls.__init__
+    def init(self, *a, **k):
+        made(self, *a, **k)
+        try:
+            self.attributes("-alpha", 0.0)
+        except Exception:
+            pass
+    cls.__init__ = init
+_see_through(_tk_hide.Tk)
+_see_through(_tk_hide.Toplevel)
+"""
+exec(HIDE)
+
+import subprocess  # noqa: E402
+import tkinter.messagebox as _boxes  # noqa: E402
+
+BOXES = []          # (kind, title, message) of every box a test would have shown
+OPENED = []         # files and folders a test would have opened
+
+
+def _quiet_box(kind, answer):
+    def box(title=None, message=None, **kw):
+        BOXES.append((kind, title, message))
+        return answer
+    return box
+
+
+for _kind, _answer in (("showinfo", "ok"), ("showwarning", "ok"), ("showerror", "ok"),
+                       ("askyesno", False), ("askokcancel", False), ("askretrycancel", False),
+                       ("askyesnocancel", None), ("askquestion", "no")):
+    setattr(_boxes, _kind, _quiet_box(_kind, _answer))
+
+if hasattr(os, "startfile"):
+    os.startfile = lambda path, *a, **k: OPENED.append(str(path))
+
+_POPUPS = ("explorer", "explorer.exe", "notepad", "notepad.exe")
+
+
+def _pops_up(args):
+    first = (args.strip().split() or [""])[0] if isinstance(args, str) else (
+        str(args[0]) if args else "")
+    return os.path.basename(first.strip('"')).lower() in _POPUPS
+
+
+class _QuietPopen(subprocess.Popen):
+    """A real Popen, except that Explorer and Notepad are noted and a do-nothing Python runs."""
+
+    def __init__(self, args, *a, **k):
+        if _pops_up(args):
+            OPENED.append(args if isinstance(args, str) else " ".join(map(str, args)))
+            args, k = [sys.executable, "-c", "pass"], {x: v for x, v in k.items() if x != "shell"}
+        super().__init__(args, *a, **k)
+
+
+subprocess.Popen = _QuietPopen
+try:
+    import winsound  # noqa: E402
+    winsound.MessageBeep = lambda *a, **k: None
+    winsound.PlaySound = lambda *a, **k: None
+except ImportError:
+    pass
+
 import cleanlisten as E  # noqa: E402
 import pytest  # noqa: E402
 

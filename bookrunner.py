@@ -101,7 +101,9 @@ def found_counts(st):
             "passages": sum(1 for s in scenes if s.get("cut", True)),
             "unticked": (sum(1 for m in mutes if not m.get("on", True)) +
                          sum(1 for s in scenes if not s.get("cut", True))),
-            "claude_note": st.get("claude_note", "")}
+            "claude_note": st.get("claude_note", ""),
+            "claude_checked": bool(st.get("claude_checked")),
+            "claude_wanted": bool(st.get("claude_wanted") or st.get("claude_note"))}
 
 
 def prepare(engine, spec, stop, say, log):
@@ -112,6 +114,22 @@ def prepare(engine, spec, stop, say, log):
         threads=spec.get("threads"), progress=say, log=log, cancel=stop.is_set)
     st["title"] = spec.get("title") or st.get("title", "")
     (Path(spec["workdir"]) / "analysis.json").write_text(json.dumps(st, indent=1))
+    send(done="ready", found=found_counts(st))
+
+
+def check(engine, spec, stop, say, log):
+    """"Check with Claude" (or ChatGPT, Gemini) on "Your books" (the owner, 2026-11-14: "you need
+    a button that I can hit to just check the book again"): it reads a book that is ready to
+    review, with everything found and your ticks, as the review page's button does. Nothing is
+    listened to again; your own ticks are never undone."""
+    import cleanlisten_claude as cc
+    path = Path(spec["workdir"]) / "analysis.json"
+    st = json.loads(path.read_text())
+    asr = engine.load_asr(spec["workdir"], st["parts"])
+    cc.review(st, asr, progress=say, cancel=stop.is_set)
+    st["claude_wanted"] = True
+    engine.write_safely(path, json.dumps(st, indent=1))
+    log(st.get("claude_note", ""))
     send(done="ready", found=found_counts(st))
 
 
@@ -147,7 +165,7 @@ def main(spec_path):
         lock = lock_book(workdir, stop, say)
         # (CLEANLISTEN_ENGINE: the tests use a stand-in engine)
         engine = importlib.import_module(os.environ.get("CLEANLISTEN_ENGINE") or "cleanlisten")
-        (prepare if spec["task"] == "prepare" else save)(engine, spec, stop, say, log)
+        {"prepare": prepare, "check": check, "save": save}[spec["task"]](engine, spec, stop, say, log)
         lock.close()
     except KeyboardInterrupt:
         send(stopped=True)

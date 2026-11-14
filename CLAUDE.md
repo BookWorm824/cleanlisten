@@ -718,6 +718,55 @@ furniture, scraper, brush...), and knows "stripper clip" and "asset stripper". C
 immodest-clothing list (`IMMODEST`, now a function over `_IMMODEST`) leaves the tool alone the same
 way. `tests/test_stripper.py`.
 
+**"Gay" meaning happy, more words** (1.17.37, as CleanView 1.18.94; the owner, 2026-11-14, of I Love
+Lucy's "one gay round of nightclubs": "this is an old show so gay means happy"). `GAY_HAPPY_NEXT` also
+leaves "gay" alone before round(s), old, whirl, spirits, mood(s), tune(s), song(s), melody, music,
+colo(u)rs, chatter, holiday(s), evening(s), festivities, revelry, banter. "A gay couple", "a gay bar",
+"he is gay" still count. `tests/test_gay_happy.py`.
+
+**"Blasted" and "blast it" are mild oaths** (1.17.37, as CleanView 1.18.93; the owner, 2026-11-14,
+of Poldark S1E1's "lather and blasted brat" in CleanView, for all three apps: "Yes, add it"). In the
+soft-swears group (`MINCED`): "blasted", left alone after was/got/he/the guns... and before
+off/through/the/a/heath... (`INNOCENT_PREV` / `INNOCENT_NEXT["blasted"]`; "you blasted fool" counts).
+Phrases (`MINCED_PHRASES`): "blast it / you / ye / him / her / them / your eyes / your hide / and
+damnation / and botheration", with or without "oh / ah / aw" first, but not before open/down/out/
+to... (`BLAST_NOT_NEXT`: "blast it open", "blast them out of the water"); "oh / ah / aw blast" but
+not before of/from/it... (`OH_BLAST_NOT_NEXT`). "A blast", "full blast", "the blast" stay.
+`tests/test_blasted.py`.
+
+**Sleeping with someone, "my lover"** (1.17.37, as CleanView 1.18.95 for Castle S2E6; the owner,
+2026-11-14: "1 and 2", words go to every app). Sexual words (`SEXUAL_PHRASES`, just the words muted):
+sleep/sleeps/slept/sleeping with his/her/my/your/their + boss, husband, wife, ex, sister, brother,
+(best) friend, partner, secretary, assistant, neighbo(u)r, coworker, student, teacher, therapist,
+patient, intern (`SLEEP_PARTNERS`, plurals in `SLEEP_PARTNERS_MANY`), and "with a married man/woman".
+"...with her" now counts only at a sentence end or before a small, time or place word
+(`SLEEP_HER_NEXT`: "slept with her last year", "with her now"), so "she slept with her teddy bear" is
+left (it was muted before). "Lover(s)" after my/his/her/your/their/our/secret, not before "of"
+(`lover_ref`). "Sexy/sexier/sexiest" were already here. Not taken: CleanView's "sleeping with"
+before a capitalised name (find_language only sees lowercased words). CleanView's cross-check
+accepts these (its LINE_WORDS has them). `tests/test_castle_s2e6.py`.
+
+**"Check with Claude" on "Your books"** (1.17.37; the owner, 2026-11-14: books run overnight with
+Claude on came back never checked by it, 203 "explicit" false alarms from the AI on this PC, and "you
+need a button that I can hit to just check the book again with claude/chat/Gemini"; "have it say
+claude if thats whats used, chat if thats whats used"; "check with ai sounds like what we already
+did"). Every ready book has "Check with <name>" ("Check again with <name>" once checked), and
+"Check all N with <name>" sits in the footer when two or more weren't checked. `BookQueue.check(key)`
+puts a READY book back in line (WAITING, `job["check_only"]`); `started()` gives it task "check",
+and bookrunner's `check()` runs `cleanlisten_claude.review` on its `analysis.json` (nothing is heard
+again; her own ticks are never undone) and answers `done: ready` as a prepared book does. A check
+that is stopped, fails or crashes leaves the book READY with its review as it was
+(`found["check_failed"]`, and the reason in `found["claude_note"]`, shown under More). Rows say
+"Not checked by <name> yet." when the final check was wanted (`analysis["claude_wanted"]`, new; or
+the job's `use_claude` for books prepared before) and `claude_checked` isn't set; for older lists
+`_ai_checked` reads it from the book's analysis once. The review page shows a yellow line when it
+didn't check ("<name> didn't check this book, so this list is only from the word lists and the
+helper on this PC…", plus the reason) with the same button, and the bar's button now says
+"Check with <name>" instead of "Check everything with AI". These name the one in use
+(`_provider()`), unlike the rest of the window's "AI" (1.17.34). Why her overnight books weren't
+checked is still unknown (no `claude_note`, so the check never ran or its note was lost): the
+yellow line now shows any reason. `tests/test_check_with_ai.py`.
+
 **Portuguese and Russian** (1.17.36, as CleanView 1.18.88; the owner, 2026-11-13, in CleanView's
 session: "can do both portuguise and russian now"; asked about the book apps: "both"). They come with
 `cvlang.py`, now CleanView's e01caed copy byte for byte (it also has CleanView's Auto choice, `AUTO`,

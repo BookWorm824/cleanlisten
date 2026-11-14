@@ -398,6 +398,13 @@ MINCED_PHRASES += [("son", "of", "a", w) for w in ("gun", "biscuit", "b")]
 MINCED_PHRASES += [("good", w) for w in ("grief", "golly", "gravy", "heaven", "heavens", "gracious")]
 MINCED_PHRASES += [("thank", w) for w in ("goodness", "heaven", "heavens")]
 MINCED_PHRASES += [(*o, "heavens", "to", w) for o in ((), ("oh",)) for w in ("betsy", "murgatroyd")]
+# "Blast it, the horse has thrown a shoe", "Blast you, Judd", "Blast and damnation", "Oh blast, I
+# forgot the key" (CleanView 1.18.93), never "blast it open", "blast them out of the water", "a
+# blast from the past", "we had a blast" (BLAST_NOT_NEXT, OH_BLAST_NOT_NEXT)
+BLAST_AT = (("it",), ("you",), ("ye",), ("him",), ("her",), ("them",), ("your", "eyes"),
+            ("your", "hide"), ("and", "damnation"), ("and", "botheration"))
+MINCED_PHRASES += [(*o, "blast", *at) for o in ((), ("oh",), ("ah",), ("aw",)) for at in BLAST_AT]
+MINCED_PHRASES += [(o, "blast") for o in ("oh", "ah", "aw")]
 MINCED_PHRASES += [("in", w, "name") for w in ("heaven's", "heavens")]   # "what in heaven's name"
 MINCED_PHRASES += [("for", w, s_) for w in ("goodness", "goodness's", "heaven's", "heavens", "pete's",
                                             "petes", "pete", "cripes", "mercy's", "land's", "lands")
@@ -420,7 +427,10 @@ MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r
           r"crim[ie]ny", r"egads?", r"gadzooks", r"zounds", r"lawdy", r"lawd", r"doggone(d|it)?",
           r"dadgum(med|mit|it)?", r"dadburn(ed|it)?", r"consarn(ed|it)?", r"tarnation",
           r"d[eu]rn(ed|it)?", r"crud", r"cruddy", r"shiz", r"shiznit", r"gee",
-          r"diddl[ey]+squat", r"jacksquat"]
+          r"diddl[ey]+squat", r"jacksquat",
+          # "lather and blasted brat" (Poldark; the owner, 2026-11-14, for all three apps: "Yes,
+          # add it"; CleanView 1.18.93). Not "blasted off", "got blasted": INNOCENT_NEXT/PREV
+          r"blasted"]
 DEITY_PHRASES = [
     ("oh", "my", "god"), ("my", "god"), ("oh", "god"), ("good", "god"),
     ("dear", "god"), ("god", "almighty"), ("for", "god's", "sake"),
@@ -538,6 +548,43 @@ SEXUAL_PHRASES = [
                           "jacking", "jackin")] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
      for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
                "anybody", "each", "everyone", "everybody")]
+# Castle S2E6 (CleanView 1.18.95; the owner, 2026-11-14: "1 and 2", words go to every app): "I'm not
+# sleeping with her", "sleeping with his boss", "sleeping with a married man". "Slept with her" alone
+# counts only at the end or before a small word ("...with her now", "...with her, and"): "she slept
+# with her teddy bear" is a little girl at bedtime (SLEEP_HER_NEXT, in _find_language). As in
+# CleanView, a sister or brother here counts too.
+SLEEP_FORMS = ("sleep", "sleeps", "slept", "sleeping")
+SLEEP_PARTNERS = ("boss", "husband", "wife", "ex", "sister", "brother", "friend", "partner",
+                  "secretary", "assistant", "neighbor", "neighbour", "coworker", "student",
+                  "teacher", "therapist", "patient", "intern")
+SLEEP_PARTNERS_MANY = ("bosses", "husbands", "wives", "exes", "sisters", "brothers", "friends",
+                       "partners", "secretaries", "assistants", "neighbors", "neighbours",
+                       "coworkers", "students", "teachers", "therapists", "patients", "interns")
+SEXUAL_PHRASES += [(v, "with", p, *x.split()) for v in SLEEP_FORMS
+                   for p in ("his", "her", "my", "your", "their")
+                   for x in SLEEP_PARTNERS + SLEEP_PARTNERS_MANY + ("best friend", "best friends")]
+SEXUAL_PHRASES += [(v, "with", "a", "married", w) for v in SLEEP_FORMS for w in ("man", "woman")]
+SLEEP_HER_NEXT = {"", "now", "again", "anymore", "too", "then", "and", "or", "but", "because",
+                  "since", "when", "while", "tonight", "yet", "either",
+                  # a new sentence (no punctuation in what was heard): "her" can't own these
+                  "he", "she", "i", "we", "they", "it", "you", "the", "a", "an", "this", "that",
+                  "these", "those",
+                  # time and place words: "her" is the person ("slept with her last year", "...with
+                  # her in Paris", "...with her for months"), not her teddy bear
+                  "last", "yesterday", "once", "twice", "before", "after", "for", "at", "in", "on",
+                  "during", "behind", "every", "all", "already", "ever", "first", "more", "instead",
+                  "though", "there", "here", "so", "just", "if", "until", "till", "to", "anyway"}
+# "my lover", "her secret lovers": just "lover(s)" is muted. Not "a lover of books", "animal
+# lovers" or "Hey, lover" (lover_ref, in _find_language)
+LOVER_BEFORE = {"my", "his", "her", "your", "their", "our", "secret"}
+
+
+def lover_ref(words, i):
+    """Is words[i] "lover(s)" after my/his/her/your/their/our/secret, and not "lover of"?"""
+    return (words[i] in ("lover", "lovers") and i > 0 and words[i - 1] in LOVER_BEFORE and
+            (words[i + 1] if i + 1 < len(words) else "") != "of")
+
+
 # "screw you" / "screw it" as an insult (muted with the mild words). "Screw" on its
 # own is left alone, and so is "screw it in / on / tight..." (hardware).
 SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this", "that", "off",
@@ -568,6 +615,11 @@ BONDAGE_SLAVERY_PREV2 = {("house", "of"), ("out", "of"), ("sold", "into"), ("tak
                          ("led", "into")}
 # "Is there a safe word to use?", "That's a safe word for kids to say"
 SAFE_WORD_NOT_NEXT = {"to", "for"}
+# "blast it open", "blast them out of the water", "blast it to pieces": the explosion, not an oath
+BLAST_NOT_NEXT = {"open", "down", "apart", "away", "off", "out", "loose", "free", "clear", "into",
+                  "through", "with", "to", "from", "up", "back", "across", "over", "again"}
+# "oh, blast of wind", "ah, blast from the past": not "oh blast"
+OH_BLAST_NOT_NEXT = {"of", "from", "off", "it", "you", "ye", "him", "her", "them", "your", "and"}
 
 
 def bondage_slavery(words, i):
@@ -765,7 +817,12 @@ PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # de
            "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
 # Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
 # "General Hooker", "door knockers". (The word after, or before.)
-GAY_HAPPY_NEXT = {"refrain", "apparel", "abandon", "laughter", "nineties", "paree"}
+GAY_HAPPY_NEXT = {"refrain", "apparel", "abandon", "laughter", "nineties", "paree",
+                  # "one gay round of nightclubs" (I Love Lucy; the owner, 2026-11-14: "this is an old
+                  # show so gay means happy"; CleanView 1.18.94). "A gay couple", "a gay bar" count.
+                  "round", "rounds", "old", "whirl", "spirits", "mood", "moods", "tune", "tunes",
+                  "song", "songs", "melody", "music", "colors", "colours", "chatter", "holiday",
+                  "holidays", "evening", "evenings", "festivities", "revelry", "banter"}
 # "gay" beside another happy word: "I feel pretty and witty and gay", "merry and gay", "gay and
 # carefree" (West Side Story, CleanView 1.18.30). "Tall and gay", "gay and proud" still count.
 GAY_HAPPY_WORDS = {"witty", "pretty", "merry", "bright", "happy", "light", "lighthearted",
@@ -839,8 +896,25 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                  "gay": GAY_HAPPY_NEXT,
                  "bullshit": {"degree", "degrees"},                 # "a BS degree"
                  # "keep it spic and span", "Spic 'n' Span"; "a wop bop a loo bop"
-                 "spic": {"and", "n"}, "spick": {"and", "n"}, "wop": {"bop", "bam", "doo"}}
+                 "spic": {"and", "n"}, "spick": {"and", "n"}, "wop": {"bop", "bam", "doo"},
+                 # "blasted off", "blasted through the rock", "blasted the door open", "a blasted
+                 # heath" (CleanView 1.18.93)
+                 "blasted": {"off", "through", "away", "out", "open", "apart", "into", "the", "a",
+                             "an", "him", "her", "them", "it", "us", "me", "you", "his", "their",
+                             "our", "my", "your", "its", "at", "from", "to", "with", "down", "up",
+                             "back", "across", "past", "on", "in", "by", "for", "over", "heath",
+                             "landscape", "ruins", "crater", "craters", "rock", "rocks", "oak",
+                             "holes", "hole"}}
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WWI army camp
+                 # "the rocket was blasted", "he got blasted", "the guns blasted" (CleanView
+                 # 1.18.93); "you blasted fool" still counts, so not "you"
+                 "blasted": {"was", "wasn't", "were", "weren't", "been", "being", "be", "got", "get",
+                             "gets", "getting", "is", "isn't", "are", "aren't", "am", "he", "she",
+                             "they", "we", "i", "it", "who", "which", "had", "has", "have", "just",
+                             "then", "completely", "totally", "absolutely", "utterly", "he's",
+                             "she's", "they're", "i'm", "you're", "we're", "it's", "guns", "gun",
+                             "cannon", "cannons", "wind", "winds", "lightning", "bombs", "shells",
+                             "music", "speakers", "radio", "horn", "horns", "trumpets", "trumpet"},
                  "cum": {"summa", "magna"},
                  # a small sting: "a tiny prick of black", "a jealous prick at my heart",
                  # "you can prick them" (never "you little prick", "that prick")
@@ -1119,6 +1193,13 @@ def _find_language(words, cats, breaks=()):
                         continue  # "shut it down", "shut up in the attic", "it sucks the juice out"
                     if ph[0] == "safe" and nxt in SAFE_WORD_NOT_NEXT:
                         continue  # "Is there a safe word to use?"
+                    if "blast" in ph and (ph[-1] == "blast" and nxt in OH_BLAST_NOT_NEXT or
+                                          ph[-1] != "blast" and nxt in BLAST_NOT_NEXT):
+                        continue  # "blast it open", "oh, blast from the past"
+                    if (cat == "sexual" and len(ph) == 3 and ph[0] in SLEEP_FORMS and
+                            ph[1:] == ("with", "her") and nxt not in SLEEP_HER_NEXT and
+                            (i + 3) not in breaks):
+                        continue  # "she slept with her teddy bear"
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
                     if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
@@ -1145,6 +1226,10 @@ def _find_language(words, cats, breaks=()):
             i += len(found[0])
             continue
         if "sexual" in cats and explicit_tearing(words, i):          # "there was tearing" (a coroner)
+            hits.append((i, i + 1, "sexual"))
+            i += 1
+            continue
+        if "sexual" in cats and lover_ref(words, i):                   # "my lover", "her lovers"
             hits.append((i, i + 1, "sexual"))
             i += 1
             continue
@@ -3415,6 +3500,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     st = {"parts": parts, "groups": list(groups), "mutes": mutes, "scenes": scenes,
           "ebook": ebook, "ebook_note": ebook_note, "duration": total, "words": len(asr),
           "ai_note": ai_note, "sentences": sents, "title": title, "language": lang,
+          "claude_wanted": bool(use_claude),   # so the review can say when it didn't check
           "filters": {"cats": cats, "kinds": kinds,
                       "strict_religion": bool(find_religion and "prayers" in rparts),
                       "religion_parts": sorted(rparts) if find_religion else [], "kiss": kiss,
