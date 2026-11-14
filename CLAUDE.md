@@ -718,6 +718,26 @@ furniture, scraper, brush...), and knows "stripper clip" and "asset stripper". C
 immodest-clothing list (`IMMODEST`, now a function over `_IMMODEST`) leaves the tool alone the same
 way. `tests/test_stripper.py`.
 
+**Portuguese and Russian** (1.17.36, as CleanView 1.18.88; the owner, 2026-11-13, in CleanView's
+session: "can do both portuguise and russian now"; asked about the book apps: "both"). They come with
+`cvlang.py`, now CleanView's e01caed copy byte for byte (it also has CleanView's Auto choice, `AUTO`,
+`CHOICES`, `which_language`: the book apps don't offer Auto; the drop-down is still `cvlang.LANGS`).
+Portuguese is Brazil and Portugal, a hyphen joins ("foda-se" is "fodase"). Russian is the first
+language in another alphabet, so the places that only knew English letters were fixed:
+- CleanRead's `WORD_RE` takes Cyrillic letters (before, a Russian book had no words at all).
+- `cleanread.item_key` and `cleanlisten_learn.norm`, the keys a remembered line is kept by, keep any
+  alphabet's letters when the language isn't English (with only a-z, every Russian line was the same
+  empty line). English keys are exactly as before.
+- Russian ё is read as е (`cvlang.SAME_LETTER`), and Russian isn't in `NO_ACCENTS` (й would become и).
+The AI quote checks already go through `norm()`, so they hand over to cvlang. `guess_language` now uses
+CleanView's `cvlang.which_language` on the book's words: Cyrillic is Russian (Ukrainian is left for her
+to choose), and Spanish and Portuguese are told apart by the words only one of them has.
+Heard here (Kokoro's Brazilian voice, through CleanListen end to end): all seven listed Portuguese words
+in a test recording were found and muted and none were heard in the clean copy. Russian listening is
+not tested: there's no Russian voice here (one made with espeak's Russian rules was heard as a
+Latin-letter language, so it proved nothing). Neither list has had a native speaker's check.
+`tests/test_portuguese_russian.py`.
+
 **"AI", not "Claude"** (1.17.34, as CleanView 1.18.86; the owner, 2026-11-13, there: "Not in the
 Claud, chat, gemini section, but everywhere else in clean view, instead of saying "claude" say "Ai"";
 asked whether the book apps should say the same: "yes").

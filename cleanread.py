@@ -55,7 +55,9 @@ SKIP = {"head", "script", "style", "title", "svg", "math"}
 HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 # A word, kept whole when it's bleeped ("f***ing", "s**t", "f--k") so the swear is still found,
 # or a grawlix ("#@$%"). A "***" scene break isn't a word.
-WORD_RE = re.compile(r"[0-9A-Za-zÀ-ɏ]+(?:['’‘\-][0-9A-Za-zÀ-ɏ]+|[*#]+[0-9A-Za-zÀ-ɏ]*|-{2,}[0-9A-Za-zÀ-ɏ]+)*"
+# (Cyrillic since 1.17.36, for Russian: before that a Russian book had no words at all)
+WORD_RE = re.compile(r"[0-9A-Za-zÀ-ɏЀ-ӿ]+(?:['’‘\-][0-9A-Za-zÀ-ɏЀ-ӿ]+|[*#]+[0-9A-Za-zÀ-ɏЀ-ӿ]*"
+                     r"|-{2,}[0-9A-Za-zÀ-ɏЀ-ӿ]+)*"
                      r"|(?<![^\s\"'(])(?=[*#@$%&!]*#)(?=[*#@$%&!]*@)[*#@$%&!]{3,}")
 
 
@@ -1772,7 +1774,12 @@ def ai_run_note(info):
 
 
 def item_key(text):
-    return " ".join(re.sub(r"[^a-z0-9' ]+", " ", str(text).lower().replace("’", "'")).split())[:300]
+    """A passage as CleanRead remembers it. In another language its own letters are kept (a
+    Russian line was nothing but spaces with only a-z kept, so every one looked the same)."""
+    text = str(text).lower().replace("’", "'")
+    if E.cvlang.LANG != "en":
+        return " ".join(re.sub(r"[^\w' ]+|_", " ", text.replace("ё", "е")).split())[:300]
+    return " ".join(re.sub(r"[^a-z0-9' ]+", " ", text).split())[:300]
 
 
 def word_key(before, word, after):

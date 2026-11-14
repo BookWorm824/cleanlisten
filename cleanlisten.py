@@ -31,7 +31,8 @@ DEFAULT_MODEL = HERE / "models" / "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8"
 
 # ---------------------------------------------------------------------------
 # Other languages (1.17.30, as CleanView 1.18.80 and 1.18.81; the owner, 2026-11-13: "ask clean
-# view about the language", "update"). English is untouched: its own listening model and the
+# view about the language", "update"; Portuguese and Russian 1.17.36, as CleanView 1.18.88: "both").
+# English is untouched: its own listening model and the
 # word lists below. For another language norm(), find_language(), listed_word() and mask() hand
 # over to cvlang.py (CleanView's file, kept the same as theirs), and the book is listened to
 # with the model that hears other languages, got once.
@@ -171,18 +172,12 @@ def plain_ai(text):
     return _AI_QUOTED.sub("“AI unsure”", text)
 
 
-# small words that tell the languages apart (as ReadAloud's guess; a few thousand words do)
-_GUESS_WORDS = {
-    "en": "the and of to was he she it that you his her with for had but not they".split(),
-    "es": "el la los las que y de en un una es por con no se lo su para pero como".split(),
-    "fr": "le la les et des est une que qui dans pas pour il elle je vous avec sur au".split(),
-}
-
-
 def guess_language(path, enough=4000):
     """The language an ebook looks to be written in, from its first few thousand words: one of
     cvlang.LANGS, or None when it can't tell (a PDF, a very short or unreadable book, or a
-    language there are no word lists for)."""
+    language there are no word lists for). The words are read by CleanView's
+    `cvlang.which_language` (1.17.36): Cyrillic is Russian, and Spanish and Portuguese, which
+    share many small words, are told apart by the words only one of them has."""
     p = Path(path)
     words = []
     try:
@@ -217,15 +212,8 @@ def guess_language(path, enough=4000):
     words = words[:enough]
     if len(words) < 200:
         return None
-    counts = {}
-    for w in words:
-        counts[w] = counts.get(w, 0) + 1
-    score = {lang: sum(counts.get(w, 0) for w in ws) / len(words)
-             for lang, ws in _GUESS_WORDS.items() if lang in cvlang.LANGS}
-    best, second = sorted(score, key=score.get, reverse=True)[:2]
-    if score[best] < 0.08 or score[best] < 1.5 * score[second]:
-        return None
-    return best
+    code, _other = cvlang.which_language(words)
+    return code if code in cvlang.LANGS else None       # ("other", "German"): no lists for it
 SR = 16000
 AUDIO_EXTS = (".mp3", ".m4b", ".m4a", ".aac", ".mp4", ".ogg", ".opus", ".flac", ".wav", ".wma")
 

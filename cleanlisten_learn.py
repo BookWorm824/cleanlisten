@@ -69,7 +69,17 @@ _shared = None
 
 
 def norm(text):
-    return " ".join(re.sub(r"[^a-z0-9' ]+", " ", str(text).lower().replace("’", "'")).split())
+    """A line as CleanListen remembers it. In another language its own letters are kept (with only
+    a-z kept, every Russian line was learned as an empty line; CleanView 1.18.88 found the same)."""
+    text = str(text).lower().replace("’", "'")
+    try:
+        import cvlang
+        other = cvlang.LANG != "en"
+    except Exception:
+        other = False
+    if other:
+        return " ".join(re.sub(r"[^\w' ]+|_", " ", text.replace("ё", "е")).split())
+    return " ".join(re.sub(r"[^a-z0-9' ]+", " ", text).split())
 
 
 def shared():
