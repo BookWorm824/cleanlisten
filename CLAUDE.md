@@ -802,6 +802,22 @@ helper on this PC…", plus the reason) with the same button, and the bar's butt
 checked is still unknown (no `claude_note`, so the check never ran or its note was lost): the
 yellow line now shows any reason. `tests/test_check_with_ai.py`.
 
+**One explicit word isn't a sexual reference; "in the raw twilight" isn't nudity** (1.17.43; the
+owner's first-chapters report, Jane Eyre and Hugo, 2026-11-15: "Yes, both"). CleanListen's sexual
+references counted a sentence with any one `SEX_TERMS[3]` word ("the naked, melancholy isles", "my
+terror had passed its climax"); now it needs two different ones in the sentence (`two_explicit`), as
+CleanRead's `_ref_hit` always has. Words on the sexual list (`find_language`, "sexual") and sex drugs
+still count on their own. Nudity (cleanread.py `NUDITY`, used by both apps): "in the raw" counts
+except before weather, time and "raw material" words ("in the raw twilight / cold / wind / data").
+`tests/test_first_chapters.py`.
+
+**Someone's "conquests"** (1.17.43, as CleanView 1.18.105 for Person of Interest S1E4; the owner said
+"yes 1 and 2" there, words go to every app). Sexual words, just the word: "conquest(s)" after
+his/her/my/your/their or a name's ("Benton's conquests?", "another one of your conquests";
+`conquest_ref`, with `someones()` shared with `other_woman_ref`). Not "the Norman Conquest", "the
+conquest of Mexico", "Conquest is a game". Left alone by her choice: a victim's own account of being
+drugged ("woke up in his bed, facedown, naked"). `tests/test_poi_s1e4.py`.
+
 **Text size, and the kissing buttons say "Cut"** (1.17.41; the owner, 2026-11-14: "clean listen needs a
 text size adjuster like clean view", and "the kisses menu fixed to say cut", as CleanView 1.18.103).
 "Text size: Normal / Larger / Largest" (1.0 / 1.15 / 1.3) is a link under the steps on the start page

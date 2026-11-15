@@ -985,7 +985,13 @@ class NudityMatcher(Matcher):
 
 NUDITY = NudityMatcher(
     words=[r"naked", r"nude", r"nudity", r"nudist", r"topless", r"bottomless"],
-    phrases=["in the buff|raw", "stark naked", "bare breasts|breast|bottom|buttocks",
+    # "in the raw" is naked, but not "in the raw twilight", "in the raw cold" (Jane Eyre; the
+    # owner, 2026-11-15: "Yes, both")
+    phrases=["in the buff", "in the raw !twilight|air|cold|wind|winds|weather|morning|mornings|"
+             "evening|evenings|night|dawn|dusk|light|fog|mist|rain|sleet|snow|chill|damp|frost|"
+             "winter|autumn|spring|state|form|material|materials|data|footage|truth|edge|nerves|"
+             "end|deal|meat|wool|silk|earth|ore|sewage|fish|egg|eggs",
+             "stark naked", "bare breasts|breast|bottom|buttocks",
              "took|takes|taking off all her|his|their|my clothes"])
 IMPLIED = Matcher(
     words=[r"undress(ed|es|ing)?", r"skinnydipping"],

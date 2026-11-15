@@ -613,12 +613,24 @@ NOT_OWNER_S = {"who's", "what's", "where's", "when's", "why's", "how's", "that's
                "here's", "he's", "she's", "let's", "one's"}
 
 
+def someones(w):
+    """his / her / my / your / their, or a name's ("Joey's"), not who's / that's / it's..."""
+    return w in OTHER_WOMAN_OWNER or (w.endswith("'s") and len(w) > 3 and w not in NOT_OWNER_S)
+
+
+# Someone's "conquests" (Person of Interest S1E4, CleanView 1.18.105; the owner approved it there,
+# words go to every app): "Benton's conquests?", "another one of your conquests". Just the word.
+# Not "the Norman Conquest", "the conquest of Mexico", "Conquest is a game" (conquest_ref).
+def conquest_ref(words, i):
+    return words[i] in ("conquest", "conquests") and i > 0 and someones(words[i - 1])
+
+
 def other_woman_ref(words, i):
     """Is words[i:i+2] someone's "other woman" (his / Joey's / who's the other woman)?"""
     if not i or words[i] != "other" or i + 1 >= len(words) or words[i + 1] not in OTHER_WOMAN:
         return False
     prev = words[i - 1]
-    if prev in OTHER_WOMAN_OWNER or (prev.endswith("'s") and len(prev) > 3 and prev not in NOT_OWNER_S):
+    if someones(prev):
         return True
     return prev == "the" and (i >= 2 and words[i - 2] in ("who's", "whos") or
                               i >= 3 and words[i - 3] == "who" and words[i - 2] in ("is", "was"))
@@ -1314,6 +1326,10 @@ def _find_language(words, cats, breaks=()):
             hits.append((i, i + 1, "sexual"))
             i += 1
             continue
+        if "sexual" in cats and conquest_ref(words, i):                # "Benton's conquests"
+            hits.append((i, i + 1, "sexual"))
+            i += 1
+            continue
         if "sexual" in cats and other_woman_ref(words, i):             # "Joey's other woman"
             hits.append((i, i + 2, "sexual"))
             i += 2
@@ -1498,6 +1514,13 @@ def sex_drug_spans(words):
 
 def is_explicit(words):
     return any(p.match(w) for w in words for p in SEX_C[3])
+
+
+def two_explicit(words):
+    """Two different explicit words in one sentence, as CleanRead's sexual references: one
+    "naked", "climax", "pleasure" or "breast" on its own isn't one ("the naked, melancholy isles",
+    "my terror had passed its climax", Jane Eyre / Hugo; the owner, 2026-11-15: "Yes, both")."""
+    return len({w for w in words if any(p.match(w) for p in SEX_C[3])}) >= 2
 
 
 # Graphic violence. A body being found, a stabbing or "blood" alone is normal
@@ -3430,8 +3453,14 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         # any sentence that talks about sex, even in passing
         say(0.99, "Looking for sexual references\u2026")
         refs = []
+
+        def sentence_of(x):
+            a_, b_ = to_sentences(x, x)
+            return asr_n[a_:b_ + 1]
+        # an explicit word counts when its sentence has another one too (two_explicit)
         for i, j, _ in sorted(find_language(asr_n, ["sexual"]) + [
-                (x, x + 1, "") for x in range(len(asr)) if is_explicit([asr_n[x]])] + [
+                (x, x + 1, "") for x in range(len(asr))
+                if is_explicit([asr_n[x]]) and two_explicit(sentence_of(x))] + [
                 (a, b, "") for a, b in sex_drug_spans(asr_n)]):
             a_, b_ = to_sentences(i, j - 1)
             if refs and refs[-1][0] == asr[a_]["part"] and a_ <= refs[-1][2] + 1:
