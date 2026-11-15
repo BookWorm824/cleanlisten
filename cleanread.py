@@ -886,34 +886,65 @@ SUBSTANCES = Matcher(
            r"booze", r"boozing", r"liquor", r"alcohol(ic|ics|ism)?", r"hangover", r"hungover",
            r"cigarettes?", r"cigars?", r"tobacco", r"vap(e|es|ing|ed)", r"marijuana", r"cocaine",
            r"heroin", r"meth", r"opioids?", r"drugs?", r"overdos(e|ed|es|ing)", r"bong",
-           r"champagne", r"cocktails?", r"brandy", r"bourbon", r"gin", r"tipsy", r"smoked",
-           r"smoking", r"stoned"],
-    phrases=["got|getting|get high", "a|another|his|her drink"])
+           r"champagne", r"brandy", r"bourbon", r"tipsy", r"stoned"],
+    phrases=["got|getting|get high", "a|another|his|her drink",
+             "!shrimp|prawn|prawns|crab|crabmeat|lobster|fruit|seafood|oyster|tomato|juice|molotov|drug|vitamin|chemical|medication|antibiotic|antiviral cocktail|cocktails !sauce|sauces|dress|dresses|fork|forks|napkin|napkins|onion|onions|frank|franks|sausage|sausages|wieners|weenies|stick|sticks|umbrella|umbrellas|glass|glasses|shaker|shakers", "!cotton gin !rummy|rummy's",
+             "smoked !turkey|ham|hams|salmon|trout|haddock|mackerel|herring|herrings|kipper|kippers|fish|meat|meats|sausage|sausages|bacon|cheese|cheeses|oysters|brisket|pork|beef|chicken|duck|eel|paprika|glass|glasses|almonds|venison|tongue|sturgeon|whitefish|cod|ribs", "smoking !gun|guns|ruin|ruins|wreck|wreckage|crater|craters|embers|remains|rubble|chimney|chimneys|volcano|barrel|barrels|hole|holes|debris|ashes|cinders|logs|fire|fires|wick|candle|candles|lamp|lamps|stove|torch|torches|pan|grease|oil|engine|engines|exhaust|tires|brakes|fuse|crack|cracks|hot"])
 SUBSTANCES = NotSoftDrink(SUBSTANCES)
 
 # CleanView's other filters, for books (1.11.0): smoking, drinking and drugs as three boxes, and
 # nudity, implied nudity, immodest clothing, rude gestures, violence and disturbing violence.
 # The word lists catch the plain cases; the AI helper and Claude read for the rest.
+# Not food or fire (the training run, 2026-11-15): "smoked turkey, baked ham", "the smoking ruins",
+# "a smoking gun"
+SMOKED_NOT = "turkey|ham|hams|salmon|trout|haddock|mackerel|herring|herrings|kipper|kippers|fish|meat|meats|sausage|sausages|bacon|cheese|cheeses|oysters|brisket|pork|beef|chicken|duck|eel|paprika|glass|glasses|almonds|venison|tongue|sturgeon|whitefish|cod|ribs"
+SMOKING_NOT = ("gun|guns|ruin|ruins|wreck|wreckage|crater|craters|embers|remains|rubble|chimney|chimneys|volcano|barrel|barrels|hole|holes|debris|ashes|cinders|logs|fire|fires|wick|candle|candles|lamp|lamps|stove|torch|torches|pan|grease|oil|engine|engines|exhaust|tires|brakes|fuse|crack|cracks|hot")
 SMOKING = Matcher(
-    words=[r"cigarettes?", r"cigars?", r"cigarillos?", r"tobacco", r"vap(e|es|ing|ed)", r"smoked",
-           r"smoking", r"smokes", r"nicotine"],
-    phrases=["lit|lighting|lights a|his|her|another cigarette|cigar|pipe",
+    words=[r"cigarettes?", r"cigars?", r"cigarillos?", r"tobacco", r"vap(e|es|ing|ed)",
+           r"smokes", r"nicotine"],
+    phrases=["smoked !" + SMOKED_NOT, "smoking !" + SMOKING_NOT,
+             "lit|lighting|lights a|his|her|another cigarette|cigar|pipe",
              "smoke|smoked|smoking|smokes a|his|her pipe"])
 DRINKING = Matcher(
     words=[r"drunk(en|enly|ard|ards|s)?", r"beers?", r"wines?", r"whiske?y", r"vodka", r"tequila",
            r"booze", r"boozing", r"liquor", r"alcohol(ic|ics|ism)?", r"hangover", r"hungover",
-           r"champagne", r"cocktails?", r"brandy", r"bourbon", r"gin", r"tipsy", r"rum", r"scotch",
-           r"sloshed"],
-    phrases=["a|another|his|her drink", "had|has|have been drinking", "got|getting|get drunk"])
+           r"champagne", r"brandy", r"bourbon", r"tipsy", r"rum", r"scotch", r"sloshed"],
+    # not "shrimp cocktail", "crabmeat cocktail", "cocktail sauce", "a Molotov cocktail", "a drug
+    # cocktail" (the training run, 2026-11-15), "a cotton gin", "gin rummy"
+    phrases=["a|another|his|her drink", "had|has|have been drinking", "got|getting|get drunk",
+             "!shrimp|prawn|prawns|crab|crabmeat|lobster|fruit|seafood|oyster|tomato|juice|molotov|drug|vitamin|chemical|medication|antibiotic|antiviral cocktail|cocktails !sauce|sauces|dress|dresses|fork|forks|napkin|napkins|onion|onions|frank|franks|sausage|sausages|wieners|weenies|stick|sticks|umbrella|umbrellas|glass|glasses|shaker|shakers",
+             "!cotton gin !rummy|rummy's"])
 DRINKING = NotSoftDrink(DRINKING)
-DRUGS = Matcher(
+# Not "the price was high enough", "the walls were high", "Grace's head shot up", "Sparks were
+# shooting up", "his hand shot up" (the training run, 2026-11-15): "high" only after someone
+# ("she was high", "they got high", "high as a kite"), and "shooting up" only with a drug word
+HIGH_NOT_NEXT = ("enough|up|above|over|ground|school|schools|tide|noon|marks|grades|scores|praise|"
+                 "ratings|time|in|on|and|or|but|to|for|with|of|as|that|this|than|price|prices|"
+                 "spirits|hopes|places|standards|stakes|quality|regard|esteem|treason|alert|level|"
+                 "levels|degree|speed|pitch|pitched|winds|seas|water|waters|heels|ceiling|ceilings")
+_DRUGS = Matcher(
     words=[r"marijuana", r"cocaine", r"heroin", r"meth", r"methamphetamine", r"opioids?",
            r"overdos(e|ed|es|ing)", r"bong", r"stoned", r"ecstasy", r"lsd",
            r"junkie", r"junkies", r"narcotics?"],
-    phrases=["got|getting|get|was|were high", "smoked|smoking|smoke|smokes pot|weed",
+    phrases=["got|getting|get|gets high !" + HIGH_NOT_NEXT,
+             "he|she|i|they|we|you|who|everyone|everybody was|were|is|are|am|got high !" + HIGH_NOT_NEXT,
+             "he's|she's|i'm|they're|we're|you're high !" + HIGH_NOT_NEXT,
+             "high as a kite", "high on drugs|pot|weed|cocaine|heroin|meth|crack|ecstasy|glue|something",
+             "smoked|smoking|smoke|smokes pot|weed",
              "smoked|smoking|smoke|smokes a joint",
-             "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line",
-             "shot|shooting up"])
+             "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line"])
+_SHOOT_UP = Phrases(["shot|shooting|shoot|shoots up"])
+SHOOT_UP_NEAR = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", "dope", "smack",
+                 "meth", "cocaine", "speedball", "drugs", "drug", "needle", "needles", "syringe",
+                 "syringes", "vein", "veins", "spoon", "junk", "fix"}
+
+
+def DRUGS(words, near=None):
+    """Drug use by the word lists; "shooting up" only when a drug word is in the sentence."""
+    sp = _DRUGS(words, near)
+    if SHOOT_UP_NEAR & set(words):
+        sp = sp + _SHOOT_UP.spans(words)
+    return sp
 # Medical (the owner, 2026-11-12, via CleanView 1.18.62/1.18.63: "a lot of the gore that gets flagged
 # is medical. would it be good to create a separate filter", "autopsies are medical only for adults
 # though. ticked everywhere else"; needles too, "but be sure drugs are separated")
@@ -964,7 +995,22 @@ TOPLESS_NOT_NEXT = {"car", "cars", "automobile", "automobiles", "motorcar", "mot
                     "roadsters", "convertible", "convertibles", "bus", "buses", "jeep", "jeeps"}
 NAKED_NOT_AFTER = {"eyes", "fear", "discomfort", "grief", "pain", "emotion", "longing", "soul"}
 NAKED_NOT_NEXT = {"eye", "truth", "flame", "flames", "ambition", "blade", "blades", "steel",
-                  "branches"}
+                  "branches",
+                  # a feeling laid bare: "read the naked hostility in them", "such naked hatred in
+                  # his green eyes" (the training run, 2026-11-15)
+                  "hostility", "hatred", "hate", "fear", "terror", "greed", "aggression", "anger",
+                  "rage", "contempt", "envy", "jealousy", "despair", "longing", "honesty",
+                  "emotion", "emotions", "admiration", "curiosity", "panic", "misery", "grief",
+                  "pain", "power", "force", "violence", "threat", "menace", "horror", "appeal",
+                  "plea", "need", "hunger", "loathing", "disgust", "scorn", "malice", "spite",
+                  "relief", "joy", "adoration", "worship", "yearning", "hope", "suspicion",
+                  "dislike", "distrust", "agony", "anguish", "vulnerability", "self-interest",
+                  "selfishness", "cruelty", "brutality", "aggression", "defiance", "resentment",
+                  # things, and arms and feet ("my naked arms had nowhere to hide": families kept it)
+                  "bulb", "bulbs", "lightbulb", "light", "lights", "wire", "wires", "walls", "wall",
+                  "floor", "floors", "rock", "rocks", "hill", "hills", "earth", "land", "trees",
+                  "tree", "sword", "swords", "knife", "arms", "arm", "feet", "foot", "hands",
+                  "hand", "toes", "wrists", "wrist", "face", "scalp", "head"}
 
 
 def innocent_nudity(words, i):
@@ -1016,18 +1062,49 @@ GESTURES = Matcher(
              "flipped|flip|flips|flipping him|her|them|me|us|you the bird",
              "gave|give|gives|giving him|her|them|me|us|you the finger", "middle finger",
              "flipped|flip the bird"])
-VIOLENCE = Matcher(
+# Not a time clock or a button ("punching clocks", "punched the button"), a look ("shot him a
+# quick look"), or a camera shot ("a farmyard shot at sunset") (the training run, 2026-11-15)
+PUNCH_NOT = {"clock", "clocks", "button", "buttons", "number", "numbers", "key", "keys", "code", "codes",
+             "card", "cards", "ticket", "tickets", "hole", "holes", "bowl", "line", "lines", "keypad",
+             "time", "timecard", "timeclock", "buttons", "pin", "digits", "elevator"}
+SHOT_AT_NOT = ("sunset|sunrise|dusk|night|noon|midnight|twilight|golden|blue|magic|eye|ground|low|"
+               "close|wide|f|iso|location|locations")
+
+
+class ViolenceMatcher(Matcher):
+    def __call__(self, words, near=None):
+        out = []
+        for i, j in super().__call__(words, near):
+            if j == i + 1 and words[i].startswith("punch"):
+                nxt = [w for w in words[i + 1:i + 4] if w not in ("the", "a", "an", "his", "her", "their",
+                                                                  "my", "your", "our", "in", "some")]
+                if nxt and nxt[0] in PUNCH_NOT:
+                    continue
+            out.append((i, j))
+        return out
+
+
+VIOLENCE = ViolenceMatcher(
     words=[r"kill(s|ed|ing)", r"murder(s|ed|ing)?", r"punch(ed|es|ing)", r"stab(s|bed|bing)",
            r"strangl(ed|es|ing)", r"slaughter(ed|ing)?", r"brawl(s|ed|ing)?", r"assault(ed|ing)",
            r"slapp(ed|ing)", r"pummel(l)?(ed|ing)", r"clubbed", r"bludgeon(ed|ing)", r"gunshots?",
            r"shootout", r"gunfire", r"fistfight"],
     phrases=["beat|beats|beating|beaten him|her|them|me|you|us up", "beat up",
-             "shot him|her|them|me|you|at|dead", "slit his|her|their throat",
+             "shot him|her|them|me|you|us !a|an|another|one|that|this|daggers|looks|glances",
+             "shot at !" + SHOT_AT_NOT, "shot dead", "slit his|her|their throat",
              "kicked|kicks|kicking him|her|them|me in", "hit|punched him|her|them in the"])
 DISTURBING = Matcher(
-    words=[r"tortur(e|ed|es|ing|er|ers)", r"executions?", r"executioners?", r"behead(ed|ing)",
+    words=[r"tortur(e|es|ing|er|ers)", r"executions?", r"executioners?", r"behead(ed|ing)",
            r"hanged", r"lynch(ed|ing)", r"massacre(d|s)?"],
-    phrases=["executed him|her|them", "firing squad", "burned alive", "buried alive"])
+    phrases=["executed him|her|them", "firing squad", "burned alive", "buried alive",
+             # "tortured" but not a pained look ("his tortured face", "my already tortured soul",
+             # "Frank's tortured eyes", "the tortured look in his eyes"): families kept those
+             # (Wings of a Dream, 2026-11-15)
+             "tortured !face|faces|soul|souls|eyes|look|looks|expression|expressions|heart|hearts|"
+             "mind|minds|gaze|voice|cry|cries|sob|sobs|groan|moan|spirit|spirits|conscience|"
+             "thoughts|dreams|sleep|night|nights|smile|features|brow|mouth|whisper|breath|breathing|"
+             "silence|memories|past|existence|artist|genius|sigh|scream|howl|wail|love|longing|"
+             "feelings|emotions|self|psyche|grief|sorrow|despair|guilt|wretch|countenance|visage"])
 
 
 CLEAN_AI = dict(E.AI_TYPES)     # the same definitions as CleanListen (kissing, drinking... too)
@@ -1039,6 +1116,61 @@ CLEAN_AI = dict(E.AI_TYPES)     # the same definitions as CleanListen (kissing, 
 # (key, group, label, what it covers, matcher or special)
 SCAN_GROUPS = ["Magic & the supernatural", "Behavior & attitudes", "Romance & relationships",
                "Violence & scary content", "Faith", "Language", "Other mature topics"]
+
+# The content check's false alarms in the owner's "Not a problem" choices (Wings of a Dream,
+# 2026-11-15): "Tears stole down my cheeks", "Humiliation stole over me", "That he trusted me stole my
+# breath", "Ollie stealing along the side porch"; "Mr. Graves", "Barney Graves"; "The whistle
+# shrieked", "screamed with laughter".
+class Except(Matcher):
+    """A matcher with some single-word hits left out: drop(words, i) says which."""
+
+    def __init__(self, drop, **kw):
+        super().__init__(**kw)
+        self.drop = drop
+
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in super().__call__(words, near)
+                if not (j == i + 1 and self.drop(words, i))]
+
+
+STEAL_MOVES = {"over", "down", "up", "across", "along", "through", "around", "round", "between",
+               "toward", "towards", "upon", "in", "into", "out", "away", "back", "closer", "nearer",
+               "quietly", "softly", "silently", "inside", "outside", "past", "forward", "behind",
+               "beneath", "under", "onto", "off"}
+STEAL_FIGURATIVE = {"breath", "breaths", "heart", "hearts", "glance", "glances", "look", "looks", "kiss",
+                    "kisses", "show", "sleep", "thoughts", "thought", "moisture", "clarity", "color",
+                    "colour", "words", "smile", "peek", "peeks", "moment", "moments", "thunder", "march",
+                    "limelight", "spotlight", "attention", "focus", "scene", "nap", "minute", "minutes",
+                    "voice", "strength", "joy", "warmth", "hope", "courage", "sense", "senses"}
+
+
+def steal_innocent(words, i):
+    """"Tears stole down my cheeks", "stole a glance", "stole my breath", "stole their hearts"."""
+    if not words[i].startswith(("steal", "stole")):
+        return False
+    nxt = words[i + 1:i + 5]
+    return bool(nxt) and (nxt[0] in STEAL_MOVES or any(x in STEAL_FIGURATIVE for x in nxt))
+
+
+NOT_SCARY_NEAR = {"whistle", "whistles", "wind", "winds", "brakes", "tires", "tyres", "kettle",
+                  "siren", "sirens", "train", "trains", "gull", "gulls", "seagull", "seagulls", "hinges",
+                  "hinge", "violin", "violins", "engine", "engines", "steam", "laughter", "laughing",
+                  "delight", "glee", "joy", "excitement", "fans", "crowd", "referee", "timekeeper",
+                  "headline", "headlines"}
+
+
+def scary_innocent(words, i):
+    """"The whistle shrieked", "the wind shrieked", "screamed with laughter"."""
+    return words[i].startswith(("shriek", "scream")) and bool(NOT_SCARY_NEAR & set(words))
+
+
+def death_innocent(words, i):
+    """"Mr. Graves", "Barney Graves" (a surname); "dead tired", "dead end"? (not those: left as they
+    are)."""
+    return words[i] == "graves" and i > 0 and words[i - 1] in {
+        "mr", "mrs", "ms", "miss", "dr", "dear", "old", "barney", "and", "sergeant", "captain",
+        "professor", "rev", "reverend", "judge", "officer", "uncle", "aunt"}
+
 
 SCAN = [
     ("witchcraft", 0, "Witches & spells", "witches, spells, potions, hexes, covens",
@@ -1142,12 +1274,17 @@ SCAN = [
              phrases=["shut up !in|here|there|for|inside|the|a|an|his|her|my|their|our|with|within|at|by|alone|like|together|tight|tightly|shop|house|and|all|day|night|forever|so|until",
                       "hate you", "you suck !from|out|the|it|on|up|in|at|all|my|his|her"])),
     ("lying", 1, "Lying, sneaking & stealing", "lies, cheating on tests, stealing, shoplifting",
-     Matcher(words=[r"lied", r"liars?", r"steal(s|ing)?", r"stole", r"stolen", r"shoplift.*",
+     Except(steal_innocent, words=[r"lied", r"liars?", r"steal(s|ing)?", r"stole", r"stolen", r"shoplift.*",
                     r"thie(f|ves|very|ving)", r"pickpocket.*", r"robb(ed|ing|ery)"],
-             phrases=["told|tell|telling|tells a lie|lies", "lying to", "lie to",
+             phrases=["told|tell|telling|tells a lie|lies", "lying to",
+                      # not "He wouldn't lie to me"
+                      "!wouldn't|won't|never|didn't|couldn't|doesn't|wouldnt|wont lie to",
                       "cheat|cheated|cheating|cheats on the|a|his|her|my|your|their test|exam|quiz|homework",
                       "copied|copy|copying " + POSS + " answers|homework",
-                      "behind " + POSS + " back", "sneak|snuck|sneaked|sneaking into|past|away"])),
+                      # not "clasped his hands behind his back", "one hand behind their back"
+                      "!hands|hand|arms|arm|clasped|wrists|wrist|fingers|tied|crossed|cuffed|"
+                      "handcuffed|bound|folded behind " + POSS + " back",
+                      "sneak|snuck|sneaked|sneaking into|past|away"])),
     ("revenge", 1, "Revenge", "getting even, vengeance, payback",
      Matcher(words=[r"revenge", r"vengeance", r"vengeful", r"aveng(e|ed|es|ing)", r"payback"],
              phrases=["get|got|getting|gets even", "teach|taught him|her|them|you a lesson"])),
@@ -1186,12 +1323,12 @@ SCAN = [
      "surgery, autopsies, wounds being treated, needles and shots, coroner and doctor case talk",
      MEDICAL),
     ("scary", 3, "Scary & creepy moments", "monsters, nightmares, terror, screaming, skeletons",
-     Matcher(words=[r"monsters?", r"monstrous", r"nightmares?", r"terrif(ied|ying)", r"terror",
+     Except(scary_innocent, words=[r"monsters?", r"monstrous", r"nightmares?", r"terrif(ied|ying)", r"terror",
                     r"horrif(ied|ying)", r"horrors?", r"creep(y|ier|iest)", r"scream(s|ed|ing)?",
                     r"shriek(s|ed|ing)?", r"skeletons?", r"corpses?", r"bloodcurdling",
                     r"spooky", r"eerie", r"sinister", r"menacing"])),
     ("death", 3, "Death & grief", "characters dying, funerals, graves, grieving",
-     Matcher(words=[r"died", r"dies", r"deaths?", r"dead", r"dying", r"funerals?", r"graves?",
+     Except(death_innocent, words=[r"died", r"dies", r"deaths?", r"dead", r"dying", r"funerals?", r"graves?",
                     r"graveyards?", r"cemeter(y|ies)", r"coffins?", r"caskets?", r"mourn(ed|ing|s)?",
                     r"grie(f|ving|ved|ve|ves)", r"orphan(s|ed)?"],
              phrases=["passed away", "pass away"])),
@@ -2483,8 +2620,9 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
     found = ai_find(book, kinds, progress=lambda f, m: say(0.7 * f, m), cancel=cancel,
                     notes=notes, info=info) if kinds else {}
     answers = _answers_for(book)
-    added = sugg = off = 0
-    # verified finds become sentence cuts (very sure = ticked, somewhat sure = unticked)
+    sugg = off = 0
+    # verified finds become sentence cuts, always unticked for you to decide: the AI on this PC
+    # never ticks anything on its own (the owner, 2026-11-15: in Wings of a Dream the small AI ticked 38 sentences on its own ("Doc shook his head." as a sexual reference, "Blood rushed into my face." as gore, a kiss on the cheek as passionate) and none fit; in a CleanListen report 21 of 25 of its finds were wrong). The word lists, the hard rule and Claude still tick.
     by_kind = {}
     for (si, kind), conf in found.items():
         if si in taken or book.sents[si][0] in in_passage:
@@ -2499,16 +2637,10 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
                 runs.append([si])
         for run_ in runs:
             c = _sent_cut(book, kind, run_)
-            sure = any(idx[si] == "high" for si in run_)
-            if kind == "relationship":   # only ticked when the word lists see it too: the small
-                # AI put 56 ordinary man-and-woman lines of one romance there (Love Songs Suck)
-                sure = sure and rel_hit([w for si in run_ for w in (
-                    E.norm(t) for t in book.sent_text(si).split()) if w], book.old_style)
-            c.update(ai=True, cut=sure, ai_note="found by AI" if sure else "AI suggests")
+            c.update(ai=True, cut=False, ai_note="AI suggests")
             cuts.append(c)
             taken.update(run_)
-            added += sure
-            sugg += not sure
+            sugg += 1
     # second opinion on what the word lists flagged
     checks = [c for c in cuts if not c.get("ai") and c["kind"] in kinds]
     for n, c in enumerate(checks):
@@ -2551,8 +2683,8 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
                     off += 1
         except Exception:
             pass
-    return (f"AI helper added {added} it's sure about, suggested {sugg} more for you to decide "
-            f"(left unticked), and unticked {off} it thinks were flagged by mistake." + ai_run_note(info))
+    return (f"AI helper suggested {sugg} more for you to decide (left unticked) and unticked {off} "
+            f"it thinks were flagged by mistake." + ai_run_note(info))
 
 
 # ---------------------------------------------------------------------------

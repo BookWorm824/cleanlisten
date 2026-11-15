@@ -959,7 +959,10 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                  **{w: {"her", "him", "me", "them", "it", "us", "up", "away", "back", "open", "out",
                         "forward", "free", "awake", "his", "my", "your", "their", "our", "the"}
                     for w in ("jerk", "jerks")},
-                 "fool": {"around", "with", "proof"}, "fools": {"gold", "around", "rush"},
+                 "fool": {"around", "with", "proof", "yourself", "himself", "herself", "myself",
+                          "themselves", "ourselves", "yourselves", "me", "you", "him", "her", "them",
+                          "us", "anyone", "anybody", "everyone", "everybody", "nobody", "people", "of"},
+                 "fools": {"gold", "around", "rush"},
                  "butt": {"in", "heads"}, "butts": {"in", "heads"},
                  "dumb": {"waiter", "waiters", "luck", "founded", "show"},
                  # "gee up" to a horse; the letter G ("a gee string", "gee major")
@@ -1002,7 +1005,8 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
                  "butt": {"cigarette", "cigar", "rifle", "gun"},
                  "butts": {"cigarette", "cigar", "rifle", "gun"},
-                 "dumb": {"deaf", "struck"}, "dummy": {"test", "ventriloquist", "ventriloquist's"},
+                 # "play dumb", "he played dumb when they asked" (Camp Club Girls)
+                 "dumb": {"deaf", "struck", "play", "played", "playing", "plays"}, "dummy": {"test", "ventriloquist", "ventriloquist's"},
                  "dummies": {"test", "crash"}, "brat": {"army", "navy", "military"},
                  "brats": {"army", "navy", "military"}, "twits": {"the"},   # Roald Dahl's book
                  "craps": {"two", "play", "playing", "played", "shoot", "shooting", "rolled",
@@ -1035,7 +1039,11 @@ RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "tra
                 ("you", "sucker"), ("you", "suckers")]
 # (not "bug off": "get that bug off me")
 NOT_RUDE_NEXT = {"down", "off", "in", "into", "on", "onto", "up", "out", "together", "tight",
-                 "tightly", "shut", "back", "open", "closed", "loose", "tighter", "away"}
+                 "tightly", "shut", "back", "open", "closed", "loose", "tighter", "away",
+                 # closing a door: "tiptoed to the door, shut it softly" (Camp Club Girls; training
+                 # run, 2026-11-15), "he shut it behind him"
+                 "softly", "quietly", "gently", "behind", "firmly", "carefully", "slowly",
+                 "noiselessly", "silently", "hard", "quickly", "fast", "again", "against", "after"}
 # "shut up shop", "shut up in the attic", "shut up the house": shut away, not rude
 SHUT_UP_SAFE_NEXT = {"in", "inside", "shop", "house", "the", "his", "her", "my", "their", "our",
                      "with", "within", "together", "tight", "tightly", "alone", "for", "here",
@@ -1090,8 +1098,32 @@ NOT_SEX_BEFORE = {
     "sex": {"your", "our", "her", "his", "their", "fair", "fairer", "weaker", "gentle",
             "gentler", "opposite", "same", "other", "either", "each", "whose",
             # "the others of my sex", "we are a marvelous sex" (My Fair Lady, CleanView 1.18.11)
-            "my", "marvelous", "marvellous", "stronger", "superior", "inferior", "noble"},
+            "my", "marvelous", "marvellous", "stronger", "superior", "inferior", "noble",
+            # "if I know anything about my own sex" (the training run, 2026-11-15)
+            "own"},
 }
+# ... and not marked out as a sexual word or a sexual reference either ("members of the opposite
+# sex", "my own sex", "the battle of the sexes"), unless sex talk follows ("her sex life")
+SEXES_BEFORE = {"both", "the", "two", "opposite", "either", "all", "between", "of"}
+SEX_TALK_NEXT = {"life", "lives", "appeal", "drive", "scene", "scenes", "symbol", "symbols", "ed",
+                 "education", "act", "acts", "toy", "toys", "tape", "tapes", "offender", "offenders",
+                 "worker", "workers", "trafficking", "abuse", "change", "addict", "addiction", "kitten",
+                 "object", "objects", "organ", "organs", "partner", "partners", "slave", "slaves",
+                 "with", "was", "is", "and", "talk", "game", "games", "club", "shop", "shops", "video",
+                 "videos", "doll", "dolls", "crime", "crimes", "pistol", "bomb", "bombs", "kitten",
+                 "god", "goddess", "dream", "dreams", "pot", "machine", "position", "positions"}
+
+
+def sex_means_gender(words, i):
+    """Is words[i] ("sex", "sexes") about men or women, not sex? ("the opposite sex", "my own
+    sex", "both sexes"; not "her sex life".)"""
+    prev = words[i - 1] if i else ""
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    if nxt in SEX_TALK_NEXT:
+        return False
+    if words[i] == "sexes":
+        return prev in SEXES_BEFORE | NOT_SEX_BEFORE["sex"]
+    return prev in NOT_SEX_BEFORE["sex"]
 SEX_WINDOW_SCORE = 9   # a stretch of ~3 paragraphs (or ~60s) scoring this much gets flagged
 SEX_PARA_SCORE = 3     # a single paragraph inside such a stretch must score this to be cut
 
@@ -1365,6 +1397,7 @@ def _find_language(words, cats, breaks=()):
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w == "gay" and gay_happy(words, i) or
+                        w in ("sex", "sexes") and sex_means_gender(words, i) or
                         w == "bondage" and bondage_slavery(words, i) or
                         w.startswith("stripper") and stripper_tool(words, i) or
                         w.startswith("safeword") and (words[i + 1] if i + 1 < n else "") in SAFE_WORD_NOT_NEXT or
@@ -1645,8 +1678,7 @@ RELATIONSHIP_PHRASES = [
     ("open", "marriage"), ("open", "relationship"), ("wife", "swapping"), ("wife", "swap"),
     ("sister", "wives"), ("sister", "wife"), ("our", "girlfriend"), ("our", "boyfriend"),
     ("both", "of", "us", "are", "dating"), ("dating", "both", "of"), ("married", "to", "both"),
-    ("came", "out", "of", "the", "closet"),
-    ("in", "the", "closet"), ("swinging", "couple"), ("swinging", "couples"), ("swinging", "lifestyle"),
+    ("swinging", "couple"), ("swinging", "couples"), ("swinging", "lifestyle"),
 ]
 KISS_AFTER = {"", "again", "back", "gently", "softly", "hard", "deeply", "passionately", "then",
               "and", "slowly", "hungrily", "tenderly", "fiercely"}
@@ -1677,6 +1709,32 @@ def _came_out(words, i):
     return nxt in OUT_TO_OWNER and (after in OUT_TO_FAMILY or (nxt == "her" and after in KISS_AFTER))
 
 
+# "In the closet" / "came out of the closet" as coming out, not a real closet (the owner's Camp Club
+# Girls report: "I'm in the closet." a girl hiding, "the crack in the closet door"; training run,
+# 2026-11-15): "still in the closet", "stayed in the closet for years", "in the closet about it",
+# "came out of the closet at sixteen"; not "hid in the closet", "came out of the closet with a broom"
+CLOSET_STAY = {"still", "deep", "deeply", "stayed", "staying", "stay", "stays", "living", "lived",
+               "live", "remain", "remained", "remaining", "remains", "kept", "keep", "keeping",
+               "firmly", "safely", "secretly", "years", "being"}
+CLOSET_THINGS = {"with", "holding", "carrying", "clutching", "dressed", "wearing", "door", "doors",
+                 "again", "quickly", "slowly", "shelf", "shelves", "floor", "light", "coat", "coats",
+                 "broom", "mop", "shoes", "boots", "hanger", "hangers", "box", "boxes", "blanket",
+                 "blankets", "towel", "towels", "vacuum", "sweater", "dress", "jacket", "suitcase",
+                 "toys", "games", "sheets", "pillow", "pillows", "clothes", "hat", "umbrella"}
+
+
+def closet_ref(words, i):
+    """Coming out ("still in the closet", "came out of the closet at sixteen"), not a real closet."""
+    if words[i:i + 3] == ["in", "the", "closet"]:
+        nxt = words[i + 3] if i + 3 < len(words) else ""
+        return (nxt == "about" or (words[i - 1] if i else "") in CLOSET_STAY or
+                "for" in words[i + 3:i + 5] and "years" in words[i + 3:i + 7]) and not (
+                    CLOSET_THINGS & set(words))
+    if words[i:i + 5] == ["came", "out", "of", "the", "closet"] or             words[i:i + 5] == ["coming", "out", "of", "the", "closet"]:
+        return not CLOSET_THINGS & set(words)
+    return False
+
+
 def relationship_hit(words):
     """Does this sentence make a same-sex or non-traditional relationship clear?"""
     if any(any(p.match(w) for p in RELATIONSHIP_WORDS) and not (
@@ -1688,7 +1746,7 @@ def relationship_hit(words):
         for ph in RELATIONSHIP_PHRASES:
             if tuple(words[i:i + len(ph)]) == ph:
                 return True
-        if _came_out(words, i):
+        if _came_out(words, i) or closet_ref(words, i):
             return True
         # "my husband, he said" / "my wife, she told him": partner word + same-gender speaker tag
         for partner, tags in (((("my", "husband"), ("my", "boyfriend")), ("he",)),
@@ -2519,8 +2577,30 @@ def apply_hard_rule(st, asr):
     return changed
 
 
+# Not lovesick ("mooning like a lovesick schoolgirl", "I mooned around her for months") or a horn
+# ("the tooting of boats", "tooted the horn") (the training run, 2026-11-15)
+MOON_NOT_NEXT = {"around", "about", "over", "like", "after", "along", "away", "through", "by", "for",
+                 "uke", "at", "on", "in", "upon", "into"}
+TOOT_NOT_NEAR = {"horn", "horns", "whistle", "whistles", "car", "cars", "boat", "boats", "train",
+                 "trains", "ship", "ships", "tugboat", "tugboats", "tug", "tugs", "bugle", "bugles",
+                 "trumpet", "trumpets", "truck", "trucks", "bus", "buses", "taxi", "taxis", "cab",
+                 "cabs", "siren", "sirens", "signal", "signaling", "signalling", "own", "flute",
+                 "engine", "engines", "steamboat", "steamer", "ferry", "river", "harbor", "harbour"}
+
+
+def _crude_word(words, i):
+    w = words[i]
+    if not any(p.match(w) for p in CRUDE_WORDS):
+        return False
+    if w in ("mooned", "mooning"):
+        return (words[i + 1] if i + 1 < len(words) else "") not in MOON_NOT_NEXT
+    if w in ("tooted", "tooting"):
+        return not TOOT_NOT_NEAR & set(words)
+    return True
+
+
 def crude_hit(words):
-    if any(any(p.match(w) for p in CRUDE_WORDS) for w in words):
+    if any(_crude_word(words, i) for i in range(len(words))):
         return True
     return any(tuple(words[i:i + len(ph)]) == ph for ph in CRUDE_PHRASES for i in range(len(words)))
 
@@ -2789,8 +2869,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
     # same-sex relationships too (Lauren, 2026-10-30: "I still want it to look for those"), but
-    # the small AI here flags many man-and-woman scenes there, so its finds are only ticked when
-    # the word lists back them (_ai_backed); the rest come in unticked for you to decide
+    # the small AI here flags many man-and-woman scenes there; like all its finds (1.17.44), they
+    # come in unticked for you to decide
     kinds = [k for k in kinds if k in AI_TYPES]
     lang = [c for c in cats if c in LANGUAGE_DEFS]
     mutes = mutes if mutes is not None else []
@@ -2997,12 +3077,12 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                       "ctx_after": _masked_text([w["t"] for w in asr[j:j + 5]]),
                       **raw_fields([w["t"] for w in asr[max(0, i - 6):j + 5]],
                                    min(i, 6), min(i, 6) + (j - i)),
-                      "on": conf == "high",
-                      "note": "found by AI" if conf == "high" else "AI suggests"})
+                      "on": False, "note": "AI suggests"})
     mutes.sort(key=lambda m: (m["part"], m["s"]))
 
-    # ---- 6. turn verified AI finds into passages (adjacent sentences merge).
-    # Very sure = ticked; somewhat sure = unticked "AI suggests" for you to decide.
+    # ---- 6. turn verified AI finds into passages (adjacent sentences merge), always unticked
+    # "AI suggests" for you to decide: the AI on this PC never ticks anything on its own
+    # (the owner, 2026-11-15: in Wings of a Dream the small AI ticked 38 sentences on its own ("Doc shook his head." as a sexual reference, "Blood rushed into my face." as gore, a kiss on the cheek as passionate) and none fit; in a CleanListen report 21 of 25 of its finds were wrong).
     for kind, idx_conf in found.items():
         runs = []
         for i in sorted(idx_conf):
@@ -3018,11 +3098,8 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
             part = asr[a_]["part"]
             if any(x["part"] == part and not (e_ < x["s"] or s_ > x["e"]) for x in scenes):
                 continue  # already flagged by the word lists
-            sure = any(idx_conf[i] == "high" for i in run_)
-            # only ticked when the word lists back it up; otherwise left for you to decide
-            sure = sure and _ai_backed(kind, [asr[k]["n"] for k in range(a_, b_ + 1)])
             scenes.append({"kind": kind, "part": part, "s": s_, "e": e_, "ai": True,
-                           "cut": sure, "ai_note": "found by AI" if sure else "AI suggests",
+                           "cut": False, "ai_note": "AI suggests",
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
     say(1.0, "AI check done")
     return scenes

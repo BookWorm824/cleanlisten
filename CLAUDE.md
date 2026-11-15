@@ -119,8 +119,11 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    this, 2026-10-29; 1.6.7–1.9.3 skipped it): `ai_assist` works on its own copies in a thread
    (`in_background`/`wait_for`) and `_merge_ai` adds only what it alone found, unticked; the
    final check decides the rest (if the final check fails, it works as it does alone). On its
-   own it skips relationships and its finds start unticked unless the word lists back them up
-   (`_ai_backed`). It may only untick listed words that can be innocent (`INNOCENT_WORDS`).
+   own it skips relationships and **its finds always start unticked** ("AI suggests"; 1.17.44,
+   the owner, 2026-11-15: in Wings of a Dream CleanRead's small AI ticked 38 sentences on its own,
+   "Doc shook his head." as a sexual reference, "Blood rushed into my face." as gore, a kiss on the
+   cheek as passionate, and none fit; CleanListen's `_ai_backed` let a cheek kiss through as
+   "kissing"). It may only untick listed words that can be innocent (`INNOCENT_WORDS`).
 6. **Learned choices** (`cleanlisten_learn.apply`): sentences the family kept/cut before, words
    muted in context, shared knowledge. A learned sentence under 5 words is never cut again just
    for being learned (`LEARNED_SHORTEST`), and one cut for a filter (`cut_for`, also in
@@ -293,8 +296,8 @@ plain words, learned from Lauren directly and from her exported reviews:
   a killing heard or described by what follows is violence; accident blood is disturbing.
   Learning is still shared across ages (CleanView learns per age). Loud music is video-only.
 - **Same-sex relationships and the small AI** (Lauren, 2026-10-30: "I still want it to look for
-  those in books"): both apps' AI helper looks for them, but its finds are only ticked when the
-  word lists see it too (`_ai_backed` / CleanRead `rel_hit`); otherwise "AI suggests", unticked.
+  those in books"): both apps' AI helper looks for them; its finds (like all of the PC AI's finds
+  since 1.17.44) come in as "AI suggests", unticked.
   It once ticked 56 ordinary man-and-woman lines of one romance (Love Songs Suck).
 - **CleanRead cuts less, and you can tell Claude** (Jason, 2026-11-03): in a sentence of 14+
   words, a list hit of a `PART_KINDS` kind (drinking, smoking, violence, kissing... not jokes,
@@ -407,6 +410,22 @@ book-check kinds like "lying" and "romance" count too). Taught: lines she or Cla
 don't fit their filter ("slapped his hat on his head" as violence, "stole over me" as lying, a
 man-and-woman romance as same-sex). Not taught: anything she ticked back after Claude kept it, lines
 that fit (blood as gore, preaching or prayers as religion), and lines with a listed word.
+
+**Training runs** (the owner, 2026-11-15: "can you do an in depth training on clean read", while
+away): CleanRead's clean check with every filter on over the books on this PC (A Candle in Her
+Heart, a PDF, and her own children's story scripts turned into text), plus the "Not a problem" marks
+in her reports; every flag read by hand, and each clear false alarm fixed in the word lists with
+tests (`tests/test_training_1_17_44.py`), keeping the real ones. 1.17.44 fixed: "high" for drugs
+only after someone ("the price were high enough"), "shooting up" only with a drug word ("Sparks were
+shooting up", "Grace's head shot up"), "smoked turkey" / "the smoking ruins", "shrimp cocktail" /
+"cocktail sauce" / "a Molotov cocktail" / "cotton gin", "the naked hostility in them" / "my naked
+arms", "punching clocks", "shot him a quick look", "a shot at sunset", "mooning like a lovesick
+schoolgirl", "the tooting of boats", "sex" meaning men or women ("the opposite sex", "my own sex":
+`sex_means_gender`, as NOT_SEX_BEFORE already did for sex scenes), "fool" as a verb ("fool
+yourself", "made a fool of myself"); and in the content check "Tears stole down my cheeks",
+"clasped his hands behind his back", "He wouldn't lie to me", "Mr. Graves", "The whistle shrieked"; and "in the closet" only as coming out ("I'm in the closet." was a girl hiding: `closet_ref`).
+The script is scratchpad-only (`train_run.py`: a throwaway LOCALAPPDATA, so no real settings are
+touched); public-domain books from Project Gutenberg would make a bigger set (downloads need her OK).
 Third (2026-11-04, Wings of a Dream again): 16 lines she kept this time after ticking them back
 on 11-03 (the cotton gin as drinking, "eyebrows shot up" as drugs, a tortured look, "My naked arms").
 
