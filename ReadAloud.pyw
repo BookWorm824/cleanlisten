@@ -148,12 +148,22 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP)
+        # Text size, as CleanView's (the owner, 2026-11-14: "you need the text menu like clean
+        # view"), kept with CleanListen's and CleanRead's choice like light / dark. First: tk uses
+        # it as each part is drawn, and the window is sized with it.
+        self._base_scaling = float(self.tk.call("tk", "scaling"))
+        try:
+            self.text_size = F.text_size()
+        except Exception:
+            self.text_size = "Normal"
+        F.apply_text_size(self, self.text_size, self._base_scaling)
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         w = min(int(860 * scale), sw - 40)
         h = min(int(820 * scale), sh - 90)
         self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
         self.minsize(min(w, int(640 * scale)), min(h, int(480 * scale)))
+        self.size_link = None
         try:                        # light or dark, before anything is drawn (shared with CleanListen)
             use_theme(F.load().get("theme"))
         except Exception:
@@ -361,6 +371,34 @@ class App(tk.Tk):
             self.series_var.set(typed[0])
             self.number_var.set(typed[1])
 
+    def _text_size_menu(self):
+        """Normal / Larger / Largest, the chosen one ticked, just above the link."""
+        ln = self.size_link
+        F.text_size_menu(self, getattr(ln, "label", ln) or self, self.text_size, self._set_text_size)
+
+    def _set_text_size(self, name):
+        """The text bigger or smaller at once: the start page is built again at the new size, keeping
+        what's chosen and the step (no restart: on a slow PC that looked like it had closed)."""
+        if name == self.text_size or name not in F.TEXT_SIZES:
+            return
+        self._remember()
+        try:                                # for CleanListen and CleanRead too, as light / dark
+            d = F.load()
+            d["text_size"] = name
+            F.save(d)
+        except Exception:
+            pass
+        self.text_size = name
+        typed = (self.series_var.get(), self.number_var.get())
+        step = getattr(getattr(self, "steps_page", None), "now", 1)
+        F.apply_text_size(self, name, self._base_scaling)
+        self._style()                       # the ttk styles and tick boxes at the new size
+        F.grow_window(self, 860, 820)
+        self.show_setup(step=step)
+        if self.book:
+            self.series_var.set(typed[0])
+            self.number_var.set(typed[1])
+
     def show_setup(self, step=1):
         if getattr(self, "watch", None):
             self.watch.doing["page"] = APP
@@ -380,7 +418,9 @@ class App(tk.Tk):
         sp = self.steps_page = CL.StepPage(
             self, p, APP, LOGO.logo_png("readaloud.ico", X(40))[0], self.STEPS, self._step_summary,
             ("Make audiobook", self.start), done=lambda i: i == 1 and bool(self.book),
-            scroll_area=self._scroll_area, start=step, theme=(self._theme_var(), self._set_theme))
+            scroll_area=self._scroll_area, start=step, theme=(self._theme_var(), self._set_theme),
+            links=[(f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")])
+        self.size_link = sp.links[f"Text size: {self.text_size}"]
         self.footer = sp.nav
         self.start_btn = sp.main_btn
         self.start_btn.config(state="disabled")
@@ -1130,10 +1170,21 @@ class App(tk.Tk):
                                             "so far is kept, and it carries on from there next time "
                                             "you open ReadAloud."):
                 return
+        # The window goes at once and the rest happens out of sight (the owner, 2026-11-14: "when
+        # closing the app it lags for several seconds"): stopping a book waits for its reading
+        # programs to close, and taking the window apart took about a second on its own.
+        stop_playing()
+        try:
+            self.withdraw()
+            self.update_idletasks()
+        except tk.TclError:
+            pass
+        if getattr(self, "watch", None):
+            self.watch.stop()               # waiting below isn't the window freezing
+        if self.maker:
             self.maker.stop()
         for w, e in self.ending:            # a book told to stop: let it close its reading programs
             e.join(timeout=30)
-        stop_playing()
         self.destroy()
 
     def show_done(self, res):

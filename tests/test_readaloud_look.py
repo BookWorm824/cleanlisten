@@ -124,3 +124,33 @@ def test_ai_outside_the_choice_of_which_one(window):
     assert dict(win.App.STEPS)["Reading director"].startswith("An AI goes through the book")
     src = (REPO / "ReadAloud.pyw").read_text("utf8")
     assert "isn't set up on this computer, so it can't go" in src and 'f"{AI_NAMES[ai]} isn\'t set up' in src
+
+
+def test_the_window_goes_at_once_when_closed(window, monkeypatch):
+    # the owner, 2026-11-14: "when closing the app it lags for several seconds". Stopping a book
+    # waits for its reading programs, so the window is hidden first and that happens out of sight.
+    win, app = window
+    seen = {}
+
+    class Maker:
+        def stop(self):
+            seen["while stopping"] = app.state()
+            seen["watching"] = not app.watch.gone
+            time.sleep(0.2)
+
+    app.maker = Maker()
+    monkeypatch.setattr(win.messagebox, "askyesno", lambda *a, **k: True)
+    monkeypatch.setattr(win, "chime", lambda: None)
+    monkeypatch.setattr(app, "destroy", lambda: seen.setdefault("destroyed", app.state()))
+    app.on_close()
+    assert seen == {"while stopping": "withdrawn", "watching": False, "destroyed": "withdrawn"}
+
+
+def test_saying_no_keeps_the_window(window, monkeypatch):
+    win, app = window
+    app.maker = type("Maker", (), {"stop": lambda self: pytest.fail("stopped")})()
+    monkeypatch.setattr(win.messagebox, "askyesno", lambda *a, **k: False)
+    monkeypatch.setattr(win, "chime", lambda: None)
+    app.on_close()
+    assert app.state() == "normal" and not app.watch.gone
+    app.maker = None
