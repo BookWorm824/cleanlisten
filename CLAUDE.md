@@ -718,6 +718,30 @@ furniture, scraper, brush...), and knows "stripper clip" and "asset stripper". C
 immodest-clothing list (`IMMODEST`, now a function over `_IMMODEST`) leaves the tool alone the same
 way. `tests/test_stripper.py`.
 
+**Send to phone (CleanShelf)** (the owner, 2026-11-14: after talking through the law on edited
+copies, "go head and start building something like that"; her family reads and listens on Android).
+CleanShelf is a separate Android app (`C:\Users\morga\Downloads\CleanShelf`, its own CLAUDE.md and
+FORMAT.md) that plays the ORIGINAL audio and follows a list of where to go quiet and what to skip,
+so no cleaned copy is ever saved. On the review page, More → "Send to phone (CleanShelf)…" writes
+`<folder>/<title>/`: copies of the original audio files (flat names as saving gives them,
+`phone_names`) and `cleanshelf.json` (`phone_list`): only what's ticked, as saving would use it
+(mutes `on`, scenes `cut`), overlaps joined, in seconds from each part's start, with each file's size,
+length and SHA-1 so the phone can check it has the same files. Times only, never the book's words.
+`send_to_phone` writes into "<title> (getting ready)" and swaps it in; sent again it replaces the
+folder. The folder asked for is remembered (`save_places()["phone_dir"]`). `tests/test_send_to_phone.py`.
+Every way to the phone (the owner, 2026-11-14: "lets do every way wifi bluetooth google drive"): More →
+"Send to phone or tablet (CleanShelf)…" opens a small window with two ways:
+- **Over Wi-Fi:** `find_phones()` calls out by UDP broadcast on port 47610 and hears tablets whose
+  CleanShelf "Receive from PC" page is open; `send_to_phone_wifi()` sends the book to the first one by
+  HTTP `POST /book`. The PC doesn't wait for connections, but Windows may ask once whether CleanListen
+  may use the network (the tablets' answers to its own call come back either way). Tests use
+  `bind_host="127.0.0.1"` so nothing asks on this PC.
+- **Save a book file:** `save_phone_file()` writes `<title>.cleanshelf`, one file for Google Drive,
+  Bluetooth, a USB cable or email; then "Send it by Bluetooth…" opens Windows' own sender
+  (`fsquirt.exe`; slow for a big book).
+Both use the same stream (`phone_book`, `phone_stream`): `PHONE_MAGIC`, the list's length, the list, the
+original files (CleanShelf's FORMAT.md). `tests/test_phone_ways.py`.
+
 **"Gay" meaning happy, more words** (1.17.37, as CleanView 1.18.94; the owner, 2026-11-14, of I Love
 Lucy's "one gay round of nightclubs": "this is an old show so gay means happy"). `GAY_HAPPY_NEXT` also
 leaves "gay" alone before round(s), old, whirl, spirits, mood(s), tune(s), song(s), melody, music,

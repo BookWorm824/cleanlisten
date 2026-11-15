@@ -4336,6 +4336,278 @@ def _range_filters(mr, cr):
     return filt
 
 
+# ---------------------------------------------------------------------------
+# Send to phone (CleanShelf, the Android app: the owner, 2026-11-14, "go head and start building
+# something like that"). The phone plays the ORIGINAL audio and follows a list of where to go quiet
+# and what to skip, so no cleaned copy is ever saved. The list holds times only, never the book's
+# words. Its format is CleanShelf's FORMAT.md (C:\Users\morga\Downloads\CleanShelf).
+# ---------------------------------------------------------------------------
+PHONE_LIST = "cleanshelf.json"
+PHONE_LIST_VERSION = 1
+
+
+def phone_names(parts):
+    """The names the book's audio files get in the phone folder: flat (no folders) and as saving
+    names them, so Disc 1/Track 01 and Disc 2/Track 01 don't clash."""
+    multi_dir = len({str(Path(p).parent) for p in parts}) > 1
+    names, used = [], set()
+    for p in parts:
+        src = Path(p)
+        stem = safe_name(f"{src.parent.name} - {src.stem}" if multi_dir else src.stem, "Part")
+        name, k = stem + src.suffix.lower(), 2
+        while name.lower() in used or name.lower() == PHONE_LIST:
+            name, k = f"{stem} ({k}){src.suffix.lower()}", k + 1
+        used.add(name.lower())
+        names.append(name)
+    return names
+
+
+def _joined(rs):
+    """Ranges (start, end, why) sorted and with overlaps joined."""
+    out = []
+    for s, e, why in sorted(rs):
+        if out and s <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], e), out[-1][2])
+        else:
+            out.append((s, e, why))
+    return out
+
+
+def phone_list(st, files, title, author="", profile="", summary="", made_by=""):
+    """The list for CleanShelf: what's ticked on the review page (as saving would use it), in
+    seconds from each part's start. files: [{"file", "bytes", "seconds", "sha1"}] per part."""
+    parts = []
+    mute, skip = [], []
+    for pi in range(len(st["parts"])):
+        ms = _joined((float(m["s"]), float(m["e"]), m.get("cat", "")) for m in st["mutes"]
+                     if m["part"] == pi and m.get("on", True) and float(m["e"]) > float(m["s"]))
+        cs = _joined((float(c["s"]), float(c["e"]), c.get("kind", "")) for c in st["scenes"]
+                     if c["part"] == pi and c.get("cut", True) and float(c["e"]) > float(c["s"]))
+        mute += [{"part": pi, "from": round(s, 3), "to": round(e, 3), "why": w} for s, e, w in ms]
+        skip += [{"part": pi, "from": round(s, 3), "to": round(e, 3), "why": w} for s, e, w in cs]
+        parts.append(files[pi])
+    return {"format": "cleanshelf-list", "version": PHONE_LIST_VERSION, "kind": "audiobook",
+            "title": title, "author": author or "", "made_by": made_by,
+            "made": time.strftime("%Y-%m-%d"), "profile": profile or "",
+            "language": st.get("language") or "en", "parts": parts, "mute": mute, "skip": skip,
+            "summary": summary or ""}
+
+
+def send_to_phone(workdir, dest, title="", author="", profile="", summary="", made_by="",
+                  progress=None, cancel=None):
+    """Write <dest>/<title>/: copies of the book's original audio files and cleanshelf.json, for
+    CleanShelf on a phone or tablet ("Add books…"). Sent again, it replaces the folder. Returns the
+    folder."""
+    import hashlib
+    say = progress or (lambda f, m: None)
+    work = Path(workdir)
+    st = json.loads((work / "analysis.json").read_text())
+    title = title or st.get("title") or book_title_guess(st["parts"])
+    names = phone_names(st["parts"])
+    folder = Path(dest) / safe_name(title, "Audiobook")
+    tmp = folder.with_name(folder.name + " (getting ready)")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    files = []
+    try:
+        for pi, (src, name) in enumerate(zip(st["parts"], names)):
+            say(pi / max(len(names), 1), f"Getting it ready for the phone: part {pi + 1} of {len(names)}…")
+            sha = hashlib.sha1()
+            with open(src, "rb") as fin, open(tmp / name, "wb") as fout:
+                while True:
+                    if cancel and cancel():
+                        raise KeyboardInterrupt
+                    block = fin.read(1 << 20)
+                    if not block:
+                        break
+                    sha.update(block)
+                    fout.write(block)
+            files.append({"file": name, "bytes": (tmp / name).stat().st_size,
+                          "seconds": round(probe_duration(src), 3), "sha1": sha.hexdigest()})
+        lst = phone_list(st, files, title, author, profile, summary, made_by)
+        (tmp / PHONE_LIST).write_text(json.dumps(lst, indent=1, ensure_ascii=False), encoding="utf8")
+        if folder.exists():
+            shutil.rmtree(folder)
+        tmp.rename(folder)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    say(1.0, "Ready for the phone.")
+    return folder
+
+
+# One file per book, and Wi-Fi (the owner, 2026-11-14: "lets do every way wifi bluetooth google
+# drive"). A .cleanshelf file is the list and the original files in one stream (CleanShelf's
+# FORMAT.md): 12 bytes "CLEANSHELF\x01\n", the list's length (8 bytes, big-endian), the list, then
+# each part's bytes in order. Google Drive, Bluetooth, USB and email carry the file; Wi-Fi sends the
+# same stream to a tablet whose "Receive from PC" page is open.
+PHONE_MAGIC = b"CLEANSHELF\x01\n"
+PHONE_EXT = ".cleanshelf"
+PHONE_UDP_PORT = 47610
+
+
+def phone_book(workdir, title="", author="", profile="", summary="", made_by="", progress=None,
+               cancel=None):
+    """(list bytes, [(audio file, size)], title): a book ready to save as one file or send. Each file
+    is read once here for its SHA-1 (the list, which goes first, carries it)."""
+    import hashlib
+    say = progress or (lambda f, m: None)
+    st = json.loads((Path(workdir) / "analysis.json").read_text())
+    title = title or st.get("title") or book_title_guess(st["parts"])
+    files = []
+    for pi, (src, name) in enumerate(zip(st["parts"], phone_names(st["parts"]))):
+        say(0.3 * pi / max(len(st["parts"]), 1), f"Getting it ready for the phone: part {pi + 1} of "
+            f"{len(st['parts'])}…")
+        sha = hashlib.sha1()
+        with open(src, "rb") as f:
+            while True:
+                if cancel and cancel():
+                    raise KeyboardInterrupt
+                block = f.read(1 << 20)
+                if not block:
+                    break
+                sha.update(block)
+        files.append({"file": name, "bytes": Path(src).stat().st_size,
+                      "seconds": round(probe_duration(src), 3), "sha1": sha.hexdigest()})
+    data = json.dumps(phone_list(st, files, title, author, profile, summary, made_by),
+                      ensure_ascii=False).encode("utf8")
+    return data, [(src, f["bytes"]) for src, f in zip(st["parts"], files)], title
+
+
+def phone_stream_length(data, sources):
+    return len(PHONE_MAGIC) + 8 + len(data) + sum(n for _, n in sources)
+
+
+def phone_stream(data, sources, progress=None, cancel=None, what="Sending"):
+    """The .cleanshelf bytes, a piece at a time (a big book never has to fit in memory)."""
+    yield PHONE_MAGIC + len(data).to_bytes(8, "big") + data
+    total, done = max(sum(n for _, n in sources), 1), 0
+    for src, n in sources:
+        with open(src, "rb") as f:
+            left = n
+            while left:
+                if cancel and cancel():
+                    raise KeyboardInterrupt
+                block = f.read(min(1 << 20, left))
+                if not block:
+                    raise OSError(f"“{Path(src).name}” got shorter while it was being sent.")
+                left -= len(block)
+                done += len(block)
+                if progress:
+                    progress(0.3 + 0.7 * done / total, f"{what}: {100 * done // total}%")
+                yield block
+
+
+def save_phone_file(workdir, dest_dir, title="", author="", profile="", summary="", made_by="",
+                    progress=None, cancel=None):
+    """Write <dest_dir>/<title>.cleanshelf (for Google Drive, Bluetooth, USB or email). Returns it."""
+    data, sources, title = phone_book(workdir, title, author, profile, summary, made_by, progress, cancel)
+    Path(dest_dir).mkdir(parents=True, exist_ok=True)
+    out = Path(dest_dir) / (safe_name(title, "Audiobook") + PHONE_EXT)
+    tmp = out.with_name(out.name + ".part")
+    try:
+        with open(tmp, "wb") as f:
+            for block in phone_stream(data, sources, progress, cancel, "Saving the book file"):
+                f.write(block)
+        os.replace(tmp, out)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    if progress:
+        progress(1.0, "Saved.")
+    return out
+
+
+def _broadcast_addresses():
+    """Where to call out for tablets: everyone on this network, and each of this PC's own
+    networks (x.y.z.255) for routers that don't pass the general call on."""
+    import socket
+    out = ["255.255.255.255"]
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127."):
+                out.append(ip.rsplit(".", 1)[0] + ".255")
+    except OSError:
+        pass
+    return list(dict.fromkeys(out))
+
+
+def find_phones(timeout=2.5, port=PHONE_UDP_PORT, targets=None, bind_host=""):
+    """Tablets with CleanShelf's "Receive from PC" page open on this Wi-Fi:
+    [{"name", "host", "port"}]. The PC calls out and hears the answers (it doesn't wait for
+    connections), so Windows may ask once whether CleanListen may use the network; the answers to
+    its own call come back either way. bind_host: the tests stay inside this PC ("127.0.0.1")."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    found = {}
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.bind((bind_host, 0))
+        s.settimeout(0.25)
+        call = json.dumps({"cleanshelf": "find", "v": 1}).encode()
+        end, next_call = time.monotonic() + timeout, 0.0
+        while time.monotonic() < end:
+            if time.monotonic() >= next_call:
+                for t in targets or _broadcast_addresses():
+                    try:
+                        s.sendto(call, (t, port))
+                    except OSError:
+                        pass
+                next_call = time.monotonic() + 0.8
+            try:
+                data, (host, _) = s.recvfrom(4096)
+            except (socket.timeout, OSError):
+                continue
+            try:
+                d = json.loads(data.decode("utf8"))
+            except ValueError:
+                continue
+            if isinstance(d, dict) and d.get("cleanshelf") == "here" and isinstance(d.get("port"), int):
+                found[(host, d["port"])] = str(d.get("name") or "A tablet")[:60]
+    finally:
+        s.close()
+    return [{"name": n, "host": h, "port": p} for (h, p), n in sorted(found.items(), key=lambda x: x[1])]
+
+
+def send_to_phone_wifi(workdir, phone, title="", author="", profile="", summary="", made_by="",
+                       progress=None, cancel=None, timeout=60):
+    """Send the book to a tablet found by find_phones(). Returns the title the tablet took it as;
+    the tablet's own plain words if it said no."""
+    import http.client
+    data, sources, title = phone_book(workdir, title, author, profile, summary, made_by, progress, cancel)
+    conn = http.client.HTTPConnection(phone["host"], int(phone["port"]), timeout=timeout)
+    try:
+        try:
+            conn.putrequest("POST", "/book")
+            conn.putheader("Content-Type", "application/octet-stream")
+            conn.putheader("Content-Length", str(phone_stream_length(data, sources)))
+            conn.putheader("X-CleanShelf", "1")
+            conn.endheaders()
+            for block in phone_stream(data, sources, progress, cancel, f"Sending to {phone.get('name')}"):
+                conn.send(block)
+            r = conn.getresponse()
+            body = r.read()
+        except (OSError, http.client.HTTPException) as ex:
+            raise RuntimeError(f"The tablet stopped answering. Keep CleanShelf's “Receive from PC” "
+                               f"page open on it and try again. ({ex})") from ex
+        try:
+            d = json.loads(body.decode("utf8") or "{}")
+        except ValueError:
+            d = {}
+        if r.status != 200 or not d.get("ok"):
+            raise RuntimeError(d.get("problem") or f"The tablet didn't take the book ({r.status}).")
+    finally:
+        conn.close()
+    if progress:
+        progress(1.0, "Sent.")
+    return d.get("title") or title
+
+
+def book_title_guess(parts):
+    p = Path(parts[0]) if parts else Path("Audiobook")
+    return p.stem if len(parts) == 1 else p.parent.name
+
+
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
            m4b=False, cover=None, author=None, chapters_dir=None, m4b_dir=None, abs_layout=False,
            series="", series_no="", cover_online=False):

@@ -1454,6 +1454,148 @@ class App(tk.Tk):
             next(k for k, n in cc.MODELS if n == var.get())))
         return row
 
+    # ---------- Send to phone (CleanShelf) ----------
+
+    def send_to_phone(self):
+        """A small window with every way to put the book on a phone or tablet, where CleanShelf
+        plays the original clean without a cleaned copy ever being saved (the owner, 2026-11-14:
+        "lets do every way wifi bluetooth google drive"): straight over Wi-Fi, or one book file
+        for Google Drive, Bluetooth, a USB cable or email."""
+        if not getattr(self, "analysis", None) or not getattr(self, "workdir", None):
+            return
+        if getattr(self, "_phone_busy", False):
+            return
+        self._sync_ticks()
+        self._save_analysis()
+        a, opts = self.analysis, self.saved_opts or {}
+        self._phone_book = dict(
+            title=a.get("title") or book_title(a.get("parts", [])),
+            author=getattr(self, "author", "") or "",
+            profile=dict(F.PROFILES).get(opts.get("profile"), ""),
+            summary=F.summary(opts) if F.anything_on(opts) else "",
+            made_by=f"CleanListen {app_version()}")
+        w = self._phone_win = tk.Toplevel(self)
+        w.title("Send to phone or tablet")
+        w.configure(bg=BG)
+        w.transient(self)
+        try:
+            w.iconbitmap(str(Path(__file__).resolve().parent / "icon.ico"))
+        except Exception:
+            pass
+        pad = dict(padx=self._px(20))
+        tk.Label(w, text="Send to phone or tablet", bg=BG, fg=INK, font=(HEAD, 15)).pack(
+            anchor="w", pady=(self._px(16), 0), **pad)
+        tk.Label(w, text="CleanShelf plays the book clean on the phone or tablet. It takes the "
+                 "original files and the list of what to mute and skip; nothing cleaned is saved.",
+                 bg=BG, fg=MUTED, font=(FONT, 9), wraplength=self._px(420), justify="left").pack(
+                     anchor="w", pady=(self._px(4), self._px(12)), **pad)
+        for head, sub, cmd in (
+                ("Over Wi-Fi", "On the phone or tablet, open CleanShelf, press “Add books”, then "
+                 "“Send from my computer”, and keep that page open.", self._phone_wifi),
+                ("Save a book file", "One file for the book, to put in Google Drive, send by "
+                 "Bluetooth, copy over a USB cable or email. Open it on the phone or tablet with "
+                 "CleanShelf.", self._phone_file)):
+            box = CL.card(w, pad=(16, 12))
+            box.pack(fill="x", pady=(0, self._px(10)), **pad)
+            row = tk.Frame(box.body, bg=CARD)
+            row.pack(fill="x")
+            words = tk.Frame(row, bg=CARD)
+            words.pack(side="left", fill="x", expand=True, padx=(0, self._px(12)))
+            tk.Label(words, text=head, bg=CARD, fg=INK, font=(HEAD, 11), anchor="w").pack(anchor="w")
+            tk.Label(words, text=sub, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=self._px(290),
+                     justify="left", anchor="w").pack(anchor="w", pady=(self._px(2), 0))
+            ttk.Button(row, text="Send" if head == "Over Wi-Fi" else "Save…", style="Accent.TButton",
+                       command=cmd).pack(side="right")
+        self._phone_status = tk.Label(w, text="", bg=BG, fg=ACCENT_DK, font=(FONT, 10),
+                                      wraplength=self._px(420), justify="left")
+        self._phone_status.pack(anchor="w", pady=(0, self._px(4)), **pad)
+        foot = tk.Frame(w, bg=BG)
+        foot.pack(fill="x", pady=(0, self._px(16)), **pad)
+        self._phone_bt = ttk.Button(foot, text="Send it by Bluetooth…", style="Plain.TButton",
+                                    command=self._phone_bluetooth)
+        ttk.Button(foot, text="Close", style="Plain.TButton", command=w.destroy).pack(side="right")
+
+    def _phone_run(self, job, first):
+        """Run job(progress) in the background; its answer comes back as ("phone_done", text)."""
+        self._phone_busy = True
+        self._phone_msg("phone_progress", first)
+
+        def work():
+            try:
+                self.q.put(("phone_done", job(lambda f, m: self.q.put(("phone_progress", m)))))
+            except Exception as ex:
+                self.q.put(("phone_fail", str(ex) or ex.__class__.__name__))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _phone_wifi(self):
+        if getattr(self, "_phone_busy", False):
+            return
+        b, wd = self._phone_book, self.workdir
+
+        def job(say):
+            say(0, "Looking for CleanShelf on this Wi-Fi…")
+            phones = engine.find_phones()
+            if not phones:
+                raise RuntimeError("No phone or tablet answered. On it, open CleanShelf, press “Add "
+                                   "books”, then “Send from my computer”, keep that page open, "
+                                   "and make sure it's on the same Wi-Fi as this PC.")
+            phone = phones[0]           # (one at a time: the first that answered)
+            took = engine.send_to_phone_wifi(wd, phone, progress=say, **b)
+            return f"✓ “{took}” is on {phone['name']}."
+        self._phone_run(job, "Looking for CleanShelf on this Wi-Fi…")
+
+    def _phone_file(self):
+        if getattr(self, "_phone_busy", False):
+            return
+        places = load_places()
+        d = filedialog.askdirectory(parent=self._phone_win, title="Where should the book file go?",
+                                    initialdir=places.get("phone_dir") or None)
+        if not d:
+            return
+        places["phone_dir"] = d
+        save_places(places)
+        b, wd = self._phone_book, self.workdir
+
+        def job(say):
+            out = engine.save_phone_file(wd, d, progress=say, **b)
+            self._phone_saved = str(out)
+            return (f"✓ Saved {out.name} in {os.path.normpath(str(out.parent))}.\nPut it in Google "
+                    "Drive, send it by Bluetooth, copy it over a USB cable or email it, then open "
+                    "it on the phone or tablet with CleanShelf.")
+        self._phone_run(job, "Saving the book file…")
+
+    def _phone_bluetooth(self):
+        """Windows' own Bluetooth file sender, for the book file just saved (it's slow: a big book
+        takes a long while; Wi-Fi is quicker)."""
+        try:
+            subprocess.Popen(["fsquirt.exe"])
+        except OSError:
+            messagebox.showinfo("CleanListen", "This PC's Bluetooth file sender couldn't be opened. "
+                                "Right-click the book file, choose “Send to”, then “Bluetooth "
+                                "device”.", parent=self._phone_win)
+
+    def _phone_msg(self, kind, text):
+        lbl = getattr(self, "_phone_status", None)
+        shown = lbl is not None and lbl.winfo_exists()
+        if kind == "phone_progress":
+            if shown:
+                lbl.config(text=text, fg=MUTED)
+            return
+        self._phone_busy = False
+        if kind == "phone_done":
+            if shown:
+                lbl.config(text=text, fg=ACCENT_DK)
+                bt = getattr(self, "_phone_bt", None)
+                if getattr(self, "_phone_saved", None) and bt is not None and bt.winfo_exists():
+                    bt.pack(side="left")
+            else:
+                messagebox.showinfo("CleanListen", text)
+        else:
+            if shown:
+                lbl.config(text=text, fg=FAIL)
+            else:
+                messagebox.showerror("CleanListen", text)
+
     def _sync_ticks(self):
         """Copy the review screen's ticks into the analysis (before Claude reads it)."""
         for v, sc in getattr(self, "scene_vars", []):
@@ -2025,6 +2167,8 @@ class App(tk.Tk):
             self._show_claude_status(*msg[1:])
         elif kind == "sent":
             self._sent(msg[1], msg[2])
+        elif kind in ("phone_progress", "phone_done", "phone_fail"):
+            self._phone_msg(kind, msg[1])
         elif kind == "claude_done":
             if msg[1] == getattr(self, "claude_job", None) and self.page_name == "working":
                 self.analysis = msg[2]
@@ -2626,6 +2770,8 @@ class App(tk.Tk):
                        activebackground=ACCENT, activeforeground="white")
         # (this list is for your chat with Claude, the one who works on CleanListen, so it
         # still says so, as "Drag this file into your chat with Claude" does)
+        menu.add_command(label="Send to phone or tablet (CleanShelf)…", command=self.send_to_phone)
+        menu.add_separator()
         menu.add_command(label="Save a list of everything for Claude…", command=self.export_findings)
         menu.add_command(label="Open the AI's findings for this book (spreadsheet)",
                          command=lambda: self._open_findings(this_book=True))
