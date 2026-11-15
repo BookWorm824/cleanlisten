@@ -126,7 +126,7 @@ foreach ($dir in {where}) {{
     $l.TargetPath = {_q(_pythonw())}
     $l.Arguments = {_q(args)}
     $l.WorkingDirectory = {_q(HERE)}
-    $l.IconLocation = {_q(HERE / ico)}
+    $l.IconLocation = {_q(shown_icon(ico))}
     $l.Description = {_q(desc)}
     $l.Save()
 }}
@@ -136,3 +136,100 @@ foreach ($dir in {where}) {{
         marker.write_text(f"{name} shortcut created. Delete this file to make it again.\n")
         return True
     return False
+
+
+# ---------- a new logo on the shortcuts ----------
+# The slight 3D logos (the owner, 2026-11-15, in CleanView: "E · All of it", "apply to each chat").
+# Windows keeps a picture of a shortcut's icon by the icon file's name, so the desktop, Start menu
+# and taskbar shortcuts kept the old logo after an update changed icon.ico. As CleanView 1.18.107:
+# once each time an app's .ico changes, a copy named by its contents (icon-<mark>.ico), this
+# install's shortcuts pointed at it, and Windows told to draw icons again.
+ICON_APPS = (("CleanListen", "icon.ico"), ("CleanRead", "cleanread.ico"), ("ReadAloud", "readaloud.ico"))
+SHORTCUT_PLACES = r"""@([Environment]::GetFolderPath('Desktop'),
+  [Environment]::GetFolderPath('Programs'),
+  (Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar'),
+  (Join-Path $env:APPDATA 'Microsoft\Internet Explorer\Quick Launch\User Pinned\StartMenu'))"""
+
+
+def icon_mark(path):
+    """The first 12 characters of the file's sha1: a new logo, a new mark."""
+    import hashlib
+    return hashlib.sha1(Path(path).read_bytes()).hexdigest()[:12]
+
+
+def shown_icon(ico, here=None):
+    """The icon file a shortcut should show: the copy named by its contents if there is one (a
+    name Windows hasn't kept an old picture for), else the .ico itself."""
+    here = Path(here or HERE)
+    try:
+        copy = here / f"{Path(ico).stem}-{icon_mark(here / ico)}.ico"
+        return copy if copy.exists() else here / ico
+    except OSError:
+        return here / ico
+
+
+def new_icons_on_shortcuts(here=None, places=None):
+    """Point each app's shortcuts at its new logo, once per change. Returns the apps whose
+    shortcuts were changed. here/places: the app folder and shortcut folders (for tests); by
+    default only the installed copy does this."""
+    if os.name != "nt" or (here is None and not installed_copy()):
+        return []
+    done = []
+    for name, ico in ICON_APPS:
+        try:
+            if _new_icon_on_shortcuts(Path(here or HERE), name, ico, places):
+                done.append(name)
+        except Exception as ex:
+            try:
+                APP_DATA.mkdir(parents=True, exist_ok=True)
+                (APP_DATA / "shortcut_icon_problem.txt").write_text(f"{name}: {ex}", encoding="utf8")
+            except OSError:
+                pass
+    return done
+
+
+def _new_icon_on_shortcuts(here, name, ico, places=None):
+    import re
+    import shutil
+    icon = here / ico
+    if not icon.exists():
+        return False
+    mark = icon_mark(icon)
+    seen = APP_DATA / f"icon_shown_{name.lower()}.txt"
+    try:
+        if seen.read_text(encoding="utf8").strip() == mark:
+            return False
+    except OSError:
+        pass
+    stem = Path(ico).stem
+    shown = here / f"{stem}-{mark}.ico"
+    shutil.copy2(icon, shown)
+    where = ("@(" + ", ".join(_q(d) for d in places) + ")") if places is not None else SHORTCUT_PLACES
+    ps = f"""
+$ws = New-Object -ComObject WScript.Shell
+foreach ($d in {where}) {{
+    if (-not $d) {{ continue }}
+    $p = Join-Path $d '{name}.lnk'
+    if (Test-Path -LiteralPath $p) {{
+        $l = $ws.CreateShortcut($p)
+        if ($l.Arguments.ToLower().Contains({_q(str(here / "launcher.pyw").lower())})) {{
+            $l.IconLocation = {_q(shown)} + ',0'; $l.Save(); Write-Output $p }}
+    }}
+}}
+"""
+    r = _powershell(ps)
+    if r.returncode:
+        raise RuntimeError((r.stderr or "").strip()[:300])
+    changed = [p.strip() for p in (r.stdout or "").splitlines() if p.strip()]
+    if changed:
+        import ctypes
+        sh = ctypes.windll.shell32
+        for p in changed:
+            sh.SHChangeNotify(0x2000, 0x0005, ctypes.c_wchar_p(p), None)    # this one changed
+        sh.SHChangeNotify(0x08000000, 0, None, None)                      # draw icons again
+    for old in here.glob(f"{stem}-*.ico"):
+        if re.fullmatch(re.escape(stem) + r"-[0-9a-f]{12}\.ico", old.name) and (old != shown or not changed):
+            old.unlink(missing_ok=True)
+    APP_DATA.mkdir(parents=True, exist_ok=True)
+    seen.write_text(mark, encoding="utf8")
+    return bool(changed)

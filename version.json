@@ -1,5 +1,5 @@
 {
- "version": "1.17.46",
+ "version": "1.17.47",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -26,6 +26,8 @@
   "cleanread.py",
   "CleanRead.pyw",
   "cleanread.ico",
+  "cleanlisten_logo.png",
+  "cleanread_logo.png",
   "update.json",
   "readaloud.py",
   "ReadAloud.pyw",

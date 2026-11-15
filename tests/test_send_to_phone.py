@@ -75,5 +75,8 @@ def test_disc_folders_get_flat_names_that_dont_clash(tmp_path, monkeypatch):
 
 def test_the_review_page_offers_it():
     src = (REPO / "CleanListen.pyw").read_text(encoding="utf8")
-    assert 'menu.add_command(label="Send to phone or tablet (CleanShelf)…", command=self.send_to_phone)' in src
+    # a button in plain sight above Save, not in the More menu (the owner, 2026-11-15: "i didnt see
+    # the send to phone button", "Yes, add the button")
+    assert 'ttk.Button(srow, text="Send to phone or tablet…", style="Plain.TButton",' in src
+    assert "(CleanShelf)…" not in src
     assert 'places["phone_dir"] = d' in src

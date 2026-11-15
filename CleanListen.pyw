@@ -1480,7 +1480,7 @@ class App(tk.Tk):
             next(k for k, n in cc.MODELS if n == var.get())))
         return row
 
-    # ---------- Send to phone (CleanShelf) ----------
+    # ---------- Send to phone (CleanRead Mobile, was CleanShelf) ----------
 
     def send_to_phone(self):
         """A small window with every way to put the book on a phone or tablet, where CleanShelf
@@ -1511,16 +1511,16 @@ class App(tk.Tk):
         pad = dict(padx=self._px(20))
         tk.Label(w, text="Send to phone or tablet", bg=BG, fg=INK, font=(HEAD, 15)).pack(
             anchor="w", pady=(self._px(16), 0), **pad)
-        tk.Label(w, text="CleanShelf plays the book clean on the phone or tablet. It takes the "
+        tk.Label(w, text="CleanRead Mobile plays the book clean on the phone or tablet. It takes the "
                  "original files and the list of what to mute and skip; nothing cleaned is saved.",
                  bg=BG, fg=MUTED, font=(FONT, 9), wraplength=self._px(420), justify="left").pack(
                      anchor="w", pady=(self._px(4), self._px(12)), **pad)
         for head, sub, cmd in (
-                ("Over Wi-Fi", "On the phone or tablet, open CleanShelf, press “Add books”, then "
+                ("Over Wi-Fi", "On the phone or tablet, open CleanRead Mobile, press “Add books”, then "
                  "“Send from my computer”, and keep that page open.", self._phone_wifi),
                 ("Save a book file", "One file for the book, to put in Google Drive, send by "
                  "Bluetooth, copy over a USB cable or email. Open it on the phone or tablet with "
-                 "CleanShelf.", self._phone_file)):
+                 "CleanRead Mobile.", self._phone_file)):
             box = CL.card(w, pad=(16, 12))
             box.pack(fill="x", pady=(0, self._px(10)), **pad)
             row = tk.Frame(box.body, bg=CARD)
@@ -1559,16 +1559,16 @@ class App(tk.Tk):
         b, wd = self._phone_book, self.workdir
 
         def job(say):
-            say(0, "Looking for CleanShelf on this Wi-Fi…")
+            say(0, "Looking for CleanRead Mobile on this Wi-Fi…")
             phones = engine.find_phones()
             if not phones:
-                raise RuntimeError("No phone or tablet answered. On it, open CleanShelf, press “Add "
+                raise RuntimeError("No phone or tablet answered. On it, open CleanRead Mobile, press “Add "
                                    "books”, then “Send from my computer”, keep that page open, "
                                    "and make sure it's on the same Wi-Fi as this PC.")
             phone = phones[0]           # (one at a time: the first that answered)
             took = engine.send_to_phone_wifi(wd, phone, progress=say, **b)
             return f"✓ “{took}” is on {phone['name']}."
-        self._phone_run(job, "Looking for CleanShelf on this Wi-Fi…")
+        self._phone_run(job, "Looking for CleanRead Mobile on this Wi-Fi…")
 
     def _phone_file(self):
         if getattr(self, "_phone_busy", False):
@@ -1587,7 +1587,7 @@ class App(tk.Tk):
             self._phone_saved = str(out)
             return (f"✓ Saved {out.name} in {os.path.normpath(str(out.parent))}.\nPut it in Google "
                     "Drive, send it by Bluetooth, copy it over a USB cable or email it, then open "
-                    "it on the phone or tablet with CleanShelf.")
+                    "it on the phone or tablet with CleanRead Mobile.")
         self._phone_run(job, "Saving the book file…")
 
     def _phone_bluetooth(self):
@@ -2796,8 +2796,6 @@ class App(tk.Tk):
                        activebackground=ACCENT, activeforeground="white")
         # (this list is for your chat with Claude, the one who works on CleanListen, so it
         # still says so, as "Drag this file into your chat with Claude" does)
-        menu.add_command(label="Send to phone or tablet (CleanShelf)…", command=self.send_to_phone)
-        menu.add_separator()
         menu.add_command(label="Save a list of everything for Claude…", command=self.export_findings)
         menu.add_command(label="Open the AI's findings for this book (spreadsheet)",
                          command=lambda: self._open_findings(this_book=True))
@@ -2866,8 +2864,15 @@ class App(tk.Tk):
             ch.pack(side="left", padx=(8, 0))
             ch.bind("<Button-1>", lambda e: self._change_review_cover())
             self._show_review_cover()
-        self.summary_lbl = tk.Label(self.footer, text="", bg=BG, fg=INK, font=(FONT, 10))
-        self.summary_lbl.pack(side="top", anchor="w", pady=(0, 6))
+        # Send to phone in plain sight, just above Save (the owner, 2026-11-15: "i didnt see the
+        # send to phone button", "Yes, add the button"; it was only in the More menu). Packed
+        # first so a long summary gives way, not the button.
+        srow = tk.Frame(self.footer, bg=BG)
+        srow.pack(side="top", fill="x", pady=(0, 6))
+        ttk.Button(srow, text="Send to phone or tablet…", style="Plain.TButton",
+                   command=self.send_to_phone).pack(side="right")
+        self.summary_lbl = tk.Label(srow, text="", bg=BG, fg=INK, font=(FONT, 10), anchor="w")
+        self.summary_lbl.pack(side="left", fill="x", expand=True)
         row = tk.Frame(self.footer, bg=BG)
         row.pack(fill="x")
         ttk.Button(row, text="Save clean audiobook", style="Main.TButton",

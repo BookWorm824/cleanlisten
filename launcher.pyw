@@ -179,6 +179,49 @@ def _rename_exe(path, name, icon):
         raise ctypes.WinError(ctypes.get_last_error())
 
 
+def _icon_mark(icon):
+    import hashlib
+    return hashlib.sha1(Path(icon).read_bytes()).hexdigest()[:12]
+
+
+def _new_icon_on_exe(exe, name, icon):
+    """A new logo (the slight 3D look, 2026-11-15, as CleanView 1.18.107): give an .exe made
+    before it the new icon, once. It's changed as a copy that then takes its place, so one in use
+    (or a failure) is left as it was, to be tried again next time."""
+    mark = exe.parent / "icon.txt"
+    try:
+        h = _icon_mark(icon)
+    except OSError:
+        return
+    try:
+        if mark.read_text(encoding="utf8").strip() == h:
+            return
+    except OSError:
+        pass
+    tmp = exe.with_name(exe.name + ".new")
+    try:
+        import shutil
+        shutil.copy2(exe, tmp)
+        _rename_exe(tmp, name, icon)
+        os.replace(tmp, exe)
+        mark.write_text(h, encoding="utf8")
+    except Exception:
+        pass
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _new_icons_on_shortcuts():
+    try:
+        import shortcuts
+        shortcuts.new_icons_on_shortcuts()
+    except Exception:
+        pass
+
+
 def make_own_exe(name, icon, folder=None, base=None):
     """<name>.exe in `folder` (venv\\<name>), made once and tried out. Returns its path, or
     None to keep using pythonw.exe."""
@@ -198,7 +241,10 @@ def make_own_exe(name, icon, folder=None, base=None):
     for f in (done, failed):
         try:
             if f.read_text(encoding="utf8").splitlines()[0] == stamp:
-                return exe if f is done and exe.exists() else None
+                if f is done and exe.exists():
+                    _new_icon_on_exe(exe, name, icon)
+                    return exe
+                return None
         except (OSError, IndexError):
             pass
     try:
@@ -218,6 +264,10 @@ def make_own_exe(name, icon, folder=None, base=None):
             raise RuntimeError(f"{exe.name} used {out.read_text(encoding='utf8')}")
         out.unlink(missing_ok=True)
         done.write_text(stamp, encoding="utf8")
+        try:
+            (folder / "icon.txt").write_text(_icon_mark(icon), encoding="utf8")
+        except OSError:
+            pass
         return exe
     except Exception as ex:
         try:
@@ -609,6 +659,9 @@ def run_app(arg=""):
         runpy.run_path(str(HERE / "launcher.pyw"), run_name="__main__")
         return
     opening(f"Opening {name}…", arg)
+    # a new logo on the desktop, Start menu and taskbar shortcuts (once per change, out of the way)
+    import threading
+    threading.Thread(target=_new_icons_on_shortcuts, daemon=True).start()
     app = APPS.get(arg, ("", "CleanListen.pyw"))[1]
     if not (HERE / app).exists():
         app = "CleanListen.pyw"

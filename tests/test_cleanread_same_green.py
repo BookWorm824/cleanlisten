@@ -24,7 +24,8 @@ def test_main_button_is_the_logo_green():
 def test_the_logo_is_that_green_too():
     PIL = __import__("pytest").importorskip("PIL.Image")
     import logo
-    png, _ = logo.logo_png("cleanread.ico", 128)
+    # the flat logo the 3D one is made from (tools/icon_3d.py shades that green, 2026-11-15)
+    png, _ = logo.logo_png("tools/cleanread_flat.ico", 128)
     im = PIL.open(io.BytesIO(png)).convert("RGBA")
     colours = Counter("#%02X%02X%02X" % p[:3] for p in getattr(im, "get_flattened_data", im.getdata)() if p[3] > 200)
     cr = load("cr_same_green2", "CleanRead.pyw")

@@ -8,8 +8,10 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-WORKING_LOGO = 192      # the logo on the working page, pixels (was 128; the owner, 2026-11-15:
-                        # "lets make it 50% larger on screen", as CleanView 1.18.107)
+WORKING_LOGO = 384      # the logo on the working page, pixels (128 until 2026-11-15; the owner:
+                        # "lets make it 50% larger on screen", as CleanView 1.18.107, then "the logo
+                        # on the clean screen needs to go double from where it is"). Bigger than the
+                        # icon's 256-px picture, so it's enlarged smoothly (_resize).
 
 
 def logo_png(ico, px=128):
@@ -29,6 +31,25 @@ def logo_png(ico, px=128):
         return png, w
     except (OSError, struct.error, ValueError):
         return None, 0
+
+
+# The logo at 512 px with the 3D look, for showing it bigger than the .ico's 256-px picture (made by
+# tools/icon_3d.py with its edges kept sharp, as CleanView's cleanview_logo.png).
+BIG_LOGOS = {"icon.ico": "cleanlisten_logo.png", "cleanread.ico": "cleanread_logo.png",
+             "readaloud.ico": "readaloud_logo.png"}
+
+
+def _big_logo(ico, px):
+    """The 512-px picture as an h x w x 4 array, when px is bigger than the .ico's pictures and it's
+    there; else None."""
+    name = BIG_LOGOS.get(Path(ico).name)
+    _, w = logo_png(ico, px)
+    if not name or w >= px:
+        return None
+    try:
+        return _png_rgba((HERE / name).read_bytes())
+    except OSError:
+        return None
 
 
 def _png_rgba(png):
@@ -93,6 +114,36 @@ def _shrink(rgba, n):
     return np.clip(np.dstack([rgb, alpha]) + 0.5, 0, 255).astype(np.uint8)
 
 
+def _grow(rgba, n):
+    """The picture made n x n (bigger) by smooth (Catmull-Rom) enlarging, weighted by how
+    see-through each pixel is, so the edges stay clean and don't go dark."""
+    import numpy as np
+    h, w = rgba.shape[:2]
+
+    def weights(size):
+        m = np.zeros((n, size))
+        for j in range(n):
+            x = (j + 0.5) * size / n - 0.5          # where pixel j falls in the small picture
+            k0 = int(np.floor(x))
+            for k in range(k0 - 1, k0 + 3):
+                t = abs(x - k)
+                wt = (1.5 * t ** 3 - 2.5 * t ** 2 + 1 if t < 1 else
+                      -0.5 * t ** 3 + 2.5 * t ** 2 - 4 * t + 2 if t < 2 else 0.0)
+                m[j, min(max(k, 0), size - 1)] += wt
+        return m / m.sum(axis=1, keepdims=True)
+    ry, rx = weights(h), weights(w)
+    f = rgba.astype(float)
+    alpha = np.clip(ry @ f[..., 3] @ rx.T, 0, 255)
+    rgb = np.stack([ry @ (f[..., c] * f[..., 3]) @ rx.T for c in range(3)], -1)
+    rgb = rgb / np.maximum(alpha, 1e-6)[..., None]
+    return np.clip(np.dstack([rgb, alpha]) + 0.5, 0, 255).astype(np.uint8)
+
+
+def _resize(rgba, n):
+    """n x n: shrunk by averaging, or enlarged smoothly."""
+    return rgba if rgba.shape[0] == n else _shrink(rgba, n) if rgba.shape[0] > n else _grow(rgba, n)
+
+
 def _to_png(rgba):
     """PNG bytes of an h x w x 4 uint8 array."""
     import zlib
@@ -106,18 +157,37 @@ def _to_png(rgba):
             + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
+def logo_rgba(ico, px):
+    """The best picture to make a px-wide logo from (h x w x 4), or None: the 512-px one when the
+    .ico's are too small, else the .ico's nearest bigger one."""
+    try:
+        big = _big_logo(ico, px)
+        if big is not None:
+            return big
+        png, w = logo_png(ico, px)
+        return _png_rgba(png) if png and w != px else None
+    except Exception:
+        return None
+
+
 def logo_image(ico, px=128):
-    """A tk picture of the logo px wide, shrunk smoothly from a bigger picture in the .ico (tk
-    itself only shrinks by dropping pixels); if that fails, the old way (nearest size, or every
-    other pixel). None if there's no picture."""
+    """A tk picture of the logo px wide, made smoothly from the nearest bigger picture in the .ico
+    (or the biggest, enlarged: tk itself only drops or repeats pixels); if that fails, the old way
+    (nearest size, or every other pixel). None if there's no picture."""
+    pic = logo_rgba(ico, px)
+    if pic is not None:
+        try:
+            return tk.PhotoImage(data=base64.b64encode(_to_png(_resize(pic, px))).decode(), format="png")
+        except (tk.TclError, ValueError, ImportError):
+            pass
     png, w = logo_png(ico, px)
     if not png:
         return None
     if w != px:
         try:
-            big = _png_rgba(png)
-            if big is not None and big.shape[0] >= px:
-                return tk.PhotoImage(data=base64.b64encode(_to_png(_shrink(big, px))).decode(),
+            pic = _png_rgba(png)
+            if pic is not None:
+                return tk.PhotoImage(data=base64.b64encode(_to_png(_resize(pic, px))).decode(),
                                      format="png")
         except (tk.TclError, ValueError, ImportError):
             pass
@@ -127,6 +197,16 @@ def logo_image(ico, px=128):
         return None
     step = max(1, round(w / px))
     return img.subsample(step) if step > 1 else img
+
+
+def fit_size(px, room_w, room_h):
+    """How big the logo can be in the room left (made smaller rather than cut off in a small
+    window, as CleanView's _fit_logo); px at most, 48 at least, in steps of 16 so a window being
+    dragged bigger or smaller doesn't remake it at every pixel."""
+    room = min(room_w, room_h) - 24
+    if room >= px:
+        return px
+    return max(48, room // 16 * 16)
 
 
 def put_logo(parent, ico, bg, px=128):
@@ -139,5 +219,19 @@ def put_logo(parent, ico, bg, px=128):
     mid.pack(fill="both", expand=True)
     lbl = tk.Label(mid, image=img, bg=bg)
     lbl.image = img                 # keep the picture alive
+    lbl.size = px
     lbl.place(relx=0.5, rely=0.45, anchor="center")
+    pic = logo_rgba(ico, px) if px > 128 else None
+
+    def fit(event):
+        n = fit_size(px, event.width, event.height)
+        if pic is None or n == lbl.size or event.width < 2 or event.height < 2:
+            return
+        try:
+            small = tk.PhotoImage(data=base64.b64encode(_to_png(_resize(pic, n))).decode(), format="png")
+        except (tk.TclError, ValueError):
+            return
+        lbl.configure(image=small)
+        lbl.image, lbl.size = small, n
+    mid.bind("<Configure>", fit)
     return lbl

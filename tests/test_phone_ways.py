@@ -158,7 +158,7 @@ def test_a_tablet_that_stops_answering_is_said_plainly(book):
 
 def test_the_window_offers_every_way():
     src = (REPO / "CleanListen.pyw").read_text(encoding="utf8")
-    for said in ('"Send to phone or tablet (CleanShelf)…"', '("Over Wi-Fi", ', '("Save a book file", ',
+    for said in ('text="Send to phone or tablet…"', "command=self.send_to_phone)", '("Over Wi-Fi", ', '("Save a book file", ',
                  '"Send it by Bluetooth…"',
                  'subprocess.Popen(["fsquirt.exe"])', "engine.find_phones()",
                  "engine.send_to_phone_wifi(", "engine.save_phone_file("):
