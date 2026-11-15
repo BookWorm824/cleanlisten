@@ -802,6 +802,17 @@ helper on this PC…", plus the reason) with the same button, and the bar's butt
 checked is still unknown (no `claude_note`, so the check never ran or its note was lost): the
 yellow line now shows any reason. `tests/test_check_with_ai.py`.
 
+**Text size, and the kissing buttons say "Cut"** (1.17.41; the owner, 2026-11-14: "clean listen needs a
+text size adjuster like clean view", and "the kisses menu fixed to say cut", as CleanView 1.18.103).
+"Text size: Normal / Larger / Largest" (1.0 / 1.15 / 1.3) is a link under the steps on the start page
+of CleanListen and CleanRead, with a small menu (`F.text_size_menu`). It multiplies Tk's scaling
+(`F.apply_text_size`, before anything is built), so every font, `_px` size and drawn piece grows;
+fixed wrapping widths grow through `F.wrap(n)`. Changing it rebuilds the start page as a new look
+does (`_set_text_size`: `_keep_for_rebuild`, `_style`, `F.grow_window`, `show_setup`). Saved as
+`text_size` in filters.json, so both apps share it, like light / dark. The kissing buttons read
+"Keep / Cut passionate / Cut all kisses" (`F.KISS_SHORT`); the saved levels are unchanged.
+`tests/test_text_size.py`.
+
 **Someone's "other woman", "grateful señoritas", "screwed us"** (1.17.40, as CleanView 1.18.104 for
 Person of Interest S1E3; the owner said "Yes, do both" there, words go to every app). Sexual words, just
 the words muted: "other woman/women" after his/her/my/your/their, after someone's ("Joey's other

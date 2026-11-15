@@ -275,6 +275,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("CleanListen")
+        # the text size chosen (CleanView's "Text size"): Tk sizes text as each part of the window
+        # is built, so this comes first; changing it builds the start page again (_set_text_size)
+        self._base_scaling = float(self.tk.call("tk", "scaling"))
+        self.text_size = F.text_size()
+        F.apply_text_size(self, self.text_size, self._base_scaling)
         # Size the window for this screen. Windows display scaling (125%, 150%)
         # makes everything larger, so scale up but never taller than the screen.
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
@@ -381,7 +386,7 @@ class App(tk.Tk):
         tk.Frame(self.footer, bg=LINE, height=1).pack(side="top", fill="x", pady=(0, self._px(10)))
         if name:                # which book this is (Jason: "you don't know what you've cleaned")
             tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
-                     wraplength=560, justify="left").pack(anchor="w", pady=(0, 2))
+                     wraplength=F.wrap(560), justify="left").pack(anchor="w", pady=(0, 2))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(HEAD, 21)).pack(anchor="w")
         self.page_name = "other"
         # "Check for updates" on every screen: updates and comes straight back to where you were
@@ -398,7 +403,7 @@ class App(tk.Tk):
             self._show_books_count()
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
-                     wraplength=700, justify="left").pack(anchor="w", pady=(4, 12))
+                     wraplength=F.wrap(700), justify="left").pack(anchor="w", pady=(4, 12))
         return self.page
 
     def _px(self, n):
@@ -580,6 +585,26 @@ class App(tk.Tk):
         CL.title_bar(self)
         self.show_setup(step=getattr(getattr(self, "steps_page", None), "now", 1))
 
+    # ---------- text size ----------
+    def _text_size_menu(self):
+        ln = self.steps_page.links[f"Text size: {self.text_size}"]
+        F.text_size_menu(self, getattr(ln, "label", ln), self.text_size, self._set_text_size)
+
+    def _set_text_size(self, name):
+        """Build the start page again at the new size, keeping what's chosen and the step (as a new
+        look does). Kept for next time, for CleanListen and CleanRead."""
+        if name == self.text_size or name not in F.TEXT_SIZES:
+            return
+        self._keep_for_rebuild()
+        d = F.load()
+        d["text_size"] = name
+        F.save(d)
+        self.text_size = name
+        F.apply_text_size(self, name, self._base_scaling)
+        self._style()                       # the ttk styles and tick boxes at the new size
+        F.grow_window(self, 820, 880)
+        self.show_setup(step=getattr(getattr(self, "steps_page", None), "now", 1))
+
     def _step_summary(self, n):
         """What's chosen in step n, in a few words, for the list on the left."""
         if n == 1:
@@ -620,6 +645,7 @@ class App(tk.Tk):
         links = [(f"v{app_version()} \u00b7 Check for updates", self.check_updates, "refresh")]
         if have_past:
             links.append(("Re-check a book I've already done\u2026", self.show_past, "back"))
+        links.append((f"Text size: {self.text_size}", self._text_size_menu, "text"))
         links.append(("Send what CleanListen learned\u2026", self.share_learned, "send"))
         sp = self.steps_page = CL.StepPage(
             self, p, "CleanListen", LOGO.logo_png("icon.ico", X(40))[0], self.STEPS,
@@ -758,7 +784,7 @@ class App(tk.Tk):
         ttk.Button(row, text="Change…", style="Plain.TButton",
                    command=self.pick_out).pack(side="right")
         self.out_lbl = tk.Label(row, text="A “Clean” folder next to the audiobook", bg=CARD,
-                                fg=MUTED, font=(FONT, 10), wraplength=480, justify="left")
+                                fg=MUTED, font=(FONT, 10), wraplength=F.wrap(480), justify="left")
         self.out_lbl.pack(side="left")
         self.split_var = tk.BooleanVar(value=self.saved_opts.get("split", False))
         self.split_chk = ttk.Checkbutton(b5, text="Also split into chapter files  (for Yoto and "
@@ -783,7 +809,7 @@ class App(tk.Tk):
         zone.pack(fill="x", pady=(4, 0))
         self.cover_img_lbl = tk.Label(zone, bg=CARD)     # the picture found online, small
         self.cover_lbl = tk.Label(zone, text="", bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w",
-                                  wraplength=360, justify="left")
+                                  wraplength=F.wrap(360), justify="left")
         self.cover_lbl.pack(side="left")
         ttk.Button(zone, text="Choose a picture\u2026", style="Plain.TButton",
                    command=self.pick_cover).pack(side="right")
@@ -822,7 +848,7 @@ class App(tk.Tk):
         ttk.Entry(self.series_row, textvariable=self.series_no_var, width=5).pack(side="left",
                                                                                  padx=(8, 0))
         self.abs_lbl = tk.Label(self.m4b_box, text="", bg=CARD, fg=MUTED, font=(FONT, 9),
-                                wraplength=480, justify="left", anchor="w")
+                                wraplength=F.wrap(480), justify="left", anchor="w")
         for v in (self.series_var, self.series_no_var, self.author_var):
             v.trace_add("write", lambda *_: self._abs_preview())
         self._m4b_shown()
@@ -841,7 +867,7 @@ class App(tk.Tk):
         row = tk.Frame(parent, bg=CARD)
         row.pack(fill="x", pady=(6, 0))
         lbl = tk.Label(row, text="", bg=CARD, fg=INK, font=(FONT, 10), anchor="w",
-                       wraplength=330, justify="left")
+                       wraplength=F.wrap(330), justify="left")
         lbl.pack(side="left")
         lbl.usual_btn = ttk.Button(row, text="Usual place", style="Plain.TButton",
                                    command=lambda: self._set_place(which, None))
@@ -1076,7 +1102,7 @@ class App(tk.Tk):
         tk.Label(win, text="Choose the cover", bg=BG, fg=INK,
                  font=(FONT, 14, "bold")).pack(anchor="w")
         tk.Label(win, text=(f"Now: {now}.  " if now else "") + "Click a picture to use it, or drag "
-                 "one here from a folder.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=560,
+                 "one here from a folder.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(560),
                  justify="left").pack(anchor="w", pady=(2, 8))
         grid = tk.Frame(win, bg=BG)
         grid.pack(fill="both", expand=True)
@@ -1123,7 +1149,7 @@ class App(tk.Tk):
                         img = tk.PhotoImage(file=p["thumb"])
                     except tk.TclError:
                         img = None
-                b = tk.Button(grid, text=p["label"], image=img, compound="top", wraplength=130,
+                b = tk.Button(grid, text=p["label"], image=img, compound="top", wraplength=F.wrap(130),
                               bg=CARD, fg=INK, activebackground=CARD, activeforeground=INK,
                               relief="flat", cursor="hand2", font=(FONT, 9), padx=6, pady=6,
                               command=lambda f=p["file"]: pick(f))
@@ -1721,14 +1747,14 @@ class App(tk.Tk):
         hint = ("Tip: highlight part of the text above first to point at it. " if txt is not None else "")
         tip = tk.Label(box, text=hint + "e.g. \u201cjust cut the bed line\u201d, \u201ckeep "
                        "this\u201d, \u201cmute only that word\u201d", bg=TINT, fg=MUTED,
-                       font=(FONT, 8), wraplength=640, justify="left", anchor="w")
+                       font=(FONT, 8), wraplength=F.wrap(640), justify="left", anchor="w")
         tip.pack(anchor="w")
         CL.fit_text(tip, box, margin=20)                    # the box's width, less its padding
         row = tk.Frame(box, bg=TINT)
         row.pack(fill="x", pady=(2, 0))
         entry = ttk.Entry(row)
         entry.pack(side="left", fill="x", expand=True)
-        status = tk.Label(box, text="", bg=TINT, fg=ACCENT_DK, font=(FONT, 9), wraplength=640,
+        status = tk.Label(box, text="", bg=TINT, fg=ACCENT_DK, font=(FONT, 9), wraplength=F.wrap(640),
                           justify="left", anchor="w")
         CL.fit_text(status, box, margin=20)
 
@@ -1952,7 +1978,7 @@ class App(tk.Tk):
                 ttk.Button(c, text="Export last results", style="Plain.TButton",
                            command=lambda b=b: self._export_past(b)).pack(side="right", padx=(0, 8))
             tk.Label(c, text=b["title"], bg=CARD, fg=INK, font=(FONT, 11, "bold"),
-                     wraplength=520, justify="left").pack(anchor="w")
+                     wraplength=F.wrap(520), justify="left").pack(anchor="w")
             n = len(b["audio"])
             meta = (f"{n} file{'s' if n != 1 else ''} · last run "
                     f"{_t.strftime('%b %d, %I:%M %p', _t.localtime(b['when']))}"
@@ -2356,7 +2382,7 @@ class App(tk.Tk):
         tk.Label(top, text="More at once finishes a pile of books sooner, but each one takes "
                  "longer. With the final check on, it also uses up your Claude, ChatGPT or "
                  "Gemini plan's limits faster." + low, bg=BG, fg=MUTED, font=(FONT, 9),
-                 wraplength=560, justify="left").pack(side="left", padx=(12, 0))
+                 wraplength=F.wrap(560), justify="left").pack(side="left", padx=(12, 0))
         ttk.Button(self.footer, text="Add another book" if self.books.jobs else "Add a book",
                    style="Main.TButton", command=self._add_book).pack(side="right")
         if self.books.count(BQ.DONE):
@@ -2419,16 +2445,16 @@ class App(tk.Tk):
         left = tk.Frame(c, bg=CARD)
         left.pack(side="left", fill="x", expand=True)
         tk.Label(left, text=job.get("title") or "Book", bg=CARD, fg=INK, font=(FONT, 12, "bold"),
-                 wraplength=360, justify="left", anchor="w").pack(anchor="w")
+                 wraplength=F.wrap(360), justify="left", anchor="w").pack(anchor="w")
         summ = (f"For {job['profile']}. " if job.get("profile") else "") + (job.get("summary") or "")
         short = summ if len(summ) <= 80 else summ[:77].rsplit(" ", 1)[0] + "…"
         if short:
             tk.Label(left, text=short, bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w",
-                     wraplength=360, justify="left").pack(anchor="w")
+                     wraplength=F.wrap(360), justify="left").pack(anchor="w")
         color = {BQ.READY: READY_GREEN, BQ.DONE: ACCENT_DK, BQ.FAILED: FAIL}.get(step, INK)
         status = tk.Label(left, text=self._job_status(job), bg=CARD, fg=color,
                           font=(FONT, 10, "bold" if step in (BQ.READY, BQ.DONE) else "normal"),
-                          wraplength=360, justify="left", anchor="w")
+                          wraplength=F.wrap(360), justify="left", anchor="w")
         status.pack(anchor="w", pady=(4, 0))
         pb = None
         if step in (BQ.WAITING, BQ.PREPARING, BQ.SAVE_WAITING, BQ.SAVING):
@@ -2495,7 +2521,7 @@ class App(tk.Tk):
         if (job.get("found") or {}).get("claude_note"):
             lines.append(engine.plain_ai(job["found"]["claude_note"]))
         for line in lines:
-            tk.Label(d, text=line, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=360,
+            tk.Label(d, text=line, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(360),
                      justify="left", anchor="w").pack(anchor="w")
         row = tk.Frame(d, bg=CARD)
         row.pack(anchor="w", pady=(6, 0))
@@ -2738,7 +2764,7 @@ class App(tk.Tk):
             full, first = "\n".join(notes), notes[0]
             short = first if len(first) <= 115 else first[:112].rsplit(" ", 1)[0] + "…"
             nlbl = tk.Label(nrow, text=full if getattr(self, "_notes_open", False) else short, bg=BG,
-                            fg=MUTED, font=(FONT, 9), wraplength=660, justify="left")
+                            fg=MUTED, font=(FONT, 9), wraplength=F.wrap(660), justify="left")
             nlbl.pack(side="left", anchor="w")
             if full != short:
                 more = tk.Label(nrow, text="Less" if getattr(self, "_notes_open", False) else "More",
@@ -2921,7 +2947,7 @@ class App(tk.Tk):
                              padx=6).pack(side="right")
                 if sc.get("claude_reason"):
                     tk.Label(card, text=engine.AI + ": " + sc["claude_reason"], bg=CARD,
-                             fg=MUTED, font=(FONT, 9, "italic"), wraplength=680, justify="left"
+                             fg=MUTED, font=(FONT, 9, "italic"), wraplength=F.wrap(680), justify="left"
                              ).pack(anchor="w", pady=(4, 0))
                 txt = tk.Text(card, wrap="word", width=20, height=min(8, 1 + len(sc["text"]) // 95),
                               font=(FONT, 10), bg=QUOTE, fg=INK, relief="flat",
@@ -2932,7 +2958,7 @@ class App(tk.Tk):
                 txt.bind("<Configure>", lambda e, t=txt: fit(t))
                 if sc.get("chat_answer"):
                     said = tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg=TINT,
-                                    fg=ACCENT_DK, font=(FONT, 9), wraplength=680, justify="left",
+                                    fg=ACCENT_DK, font=(FONT, 9), wraplength=F.wrap(680), justify="left",
                                     padx=8, pady=4, anchor="w")
                     said.pack(fill="x", pady=(6, 0))
                     CL.fit_text(said, said, margin=20)      # its own width, less its padding

@@ -139,6 +139,55 @@ def load():
     return d
 
 
+# Text size, as CleanView's (the owner, 2026-11-14: "clean listen needs a text size adjuster like
+# clean view"). Tk's scaling is multiplied, so every font and drawn piece grows; fixed wrapping
+# widths grow with wrap(). Kept for CleanListen and CleanRead together, like light / dark.
+TEXT_SIZES = {"Normal": 1.0, "Larger": 1.15, "Largest": 1.3}
+TEXT_SCALE = 1.0
+
+
+def text_size(d=None):
+    name = (d if d is not None else load()).get("text_size")
+    return name if name in TEXT_SIZES else "Normal"
+
+
+def apply_text_size(win, name, base):
+    """Tk sizes text as each part of a window is built: call this before building a page."""
+    global TEXT_SCALE
+    TEXT_SCALE = TEXT_SIZES.get(name, 1.0)
+    win.tk.call("tk", "scaling", base * TEXT_SCALE)
+
+
+def wrap(n):
+    """A width for wrapping text that grows with the chosen text size."""
+    return round(n * TEXT_SCALE)
+
+
+def text_size_menu(win, widget, current, pick):
+    """The little menu of sizes, just above the "Text size" link."""
+    m = tk.Menu(win, tearoff=0)
+    for name in TEXT_SIZES:
+        m.add_command(label=("✓ " if name == current else "    ") + name,
+                      command=lambda n=name: pick(n))
+    m.tk_popup(widget.winfo_rootx(), widget.winfo_rooty() - look.px(win, 90))
+
+
+def grow_window(win, base_w, base_h):
+    """After a bigger text size: the window as big as it would open at that size (never smaller
+    than it's been made, never past the screen, left alone when maximised)."""
+    try:
+        if win.state() == "zoomed":
+            return
+        win.update_idletasks()
+        scale = max(1.0, win.winfo_fpixels("1i") / 96.0)
+        sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+        w = max(min(int(base_w * scale), sw - 40), win.winfo_width())
+        h = max(min(int(base_h * scale), sh - 90), win.winfo_height())
+        win.geometry(f"{w}x{h}")
+    except tk.TclError:
+        pass
+
+
 def save(d):
     try:
         APP_DATA.mkdir(parents=True, exist_ok=True)
@@ -268,7 +317,9 @@ class FilterCard:
 SECTION_ICONS = {"Bad language": "mute", "Sex and nudity": "eye", "Romance and relationships": "heart",
                  "Violence": "warning", "Medical": "health", "Attitude": "smile",
                  "Smoking, drinking and drugs": "cup", "Faith, holidays and magic": "star"}
-KISS_SHORT = {"Keep": "Keep", "Cut passionate kisses": "Passionate", "Cut all kisses": "All kisses"}
+# "Cut" on the buttons, as CleanView 1.18.103 (the owner: "keep" "passonate" "all kisses" "arent
+# the 2 redundant": "Passionate" didn't say it cuts only those). The levels saved are as before.
+KISS_SHORT = {"Keep": "Keep", "Cut passionate kisses": "Cut passionate", "Cut all kisses": "Cut all kisses"}
 HEAD_FONT = "Segoe UI Semibold" if os.name == "nt" else "DejaVu Sans"
 
 
@@ -587,7 +638,7 @@ class FiltersWindow(tk.Toplevel):
                  font=(FONT, 15, "bold")).pack(anchor="w", padx=16, pady=(12, 0))
         tk.Label(self, text="Bad words are marked out or muted; everything else is listed for you "
                  "to check before anything is cut.", bg=BG, fg=MUTED, font=(FONT, 9),
-                 wraplength=640, justify="left").pack(anchor="w", padx=16, pady=(0, 6))
+                 wraplength=wrap(640), justify="left").pack(anchor="w", padx=16, pady=(0, 6))
         body = self._scroll()
         self._open = set(d.get("open_sections") or [])
         self.heads = {}

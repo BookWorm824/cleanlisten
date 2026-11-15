@@ -111,6 +111,11 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP)
+        # the text size chosen (CleanView's "Text size"): Tk sizes text as each part of the window
+        # is built, so this comes first; changing it builds the start page again (_set_text_size)
+        self._base_scaling = float(self.tk.call("tk", "scaling"))
+        self.text_size = F.text_size()
+        F.apply_text_size(self, self.text_size, self._base_scaling)
         scale = max(1.0, self.winfo_fpixels("1i") / 96.0)
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
         w = min(int(860 * scale), sw - 40)
@@ -196,13 +201,13 @@ class App(tk.Tk):
         self.name_lbl = None
         if name:                # which book this is (Jason: "you don't know what you've cleaned")
             self.name_lbl = tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
-                                     wraplength=760, justify="left")
+                                     wraplength=F.wrap(760), justify="left")
             self.name_lbl.pack(anchor="w", pady=(0, X(2)))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(HEAD, 21),
-                 wraplength=760, justify="left").pack(anchor="w")
+                 wraplength=F.wrap(760), justify="left").pack(anchor="w")
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
-                     wraplength=740, justify="left").pack(anchor="w", pady=(X(4), X(14)))
+                     wraplength=F.wrap(740), justify="left").pack(anchor="w", pady=(X(4), X(14)))
         # the version and "Check for updates" on every page, as in CleanListen (Jason,
         # 2026-11-06: "Clean read doesn't have anything on top that says current version")
         self._page_title = title
@@ -330,7 +335,7 @@ class App(tk.Tk):
             inner._canvas.yview_moveto(max(0.0, (w.winfo_rooty() - inner.winfo_rooty() - 120) / h))
 
     def _note(self, parent, text, bg=None):
-        tk.Label(parent, text=text, bg=bg or CARD, fg=MUTED, font=(FONT, 9), wraplength=640,
+        tk.Label(parent, text=text, bg=bg or CARD, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(640),
                  justify="left").pack(anchor="w", padx=(22, 0))
 
     def _link(self, parent, text, cmd, bg=None):
@@ -401,7 +406,8 @@ class App(tk.Tk):
         sp = self.steps_page = CL.StepPage(
             self, p, APP, LOGO.logo_png("cleanread.ico", X(40))[0], self._steps(),
             self._step_summary, ("Start checking" if check else "Start cleaning", self.start),
-            links=[(f"v{app_version()} \u00b7 Check for updates", self.check_updates, "refresh")],
+            links=[(f"v{app_version()} \u00b7 Check for updates", self.check_updates, "refresh"),
+                   (f"Text size: {self.text_size}", self._text_size_menu, "text")],
             done=lambda i: i == 1 and bool(self.book_path), scroll_area=self._scroll_area,
             start=step, theme=(self._theme_var(), self._set_theme))
         self.footer = sp.nav
@@ -532,6 +538,26 @@ class App(tk.Tk):
 
     def _keep_for_rebuild(self):
         self._save_opts()
+
+    # ---------- text size ----------
+    def _text_size_menu(self):
+        ln = self.steps_page.links[f"Text size: {self.text_size}"]
+        F.text_size_menu(self, getattr(ln, "label", ln), self.text_size, self._set_text_size)
+
+    def _set_text_size(self, name):
+        """Build the start page again at the new size, keeping what's chosen and the step (as a new
+        look does). Kept for next time, for CleanListen and CleanRead."""
+        if name == self.text_size or name not in F.TEXT_SIZES:
+            return
+        self._keep_for_rebuild()
+        d = F.load()
+        d["text_size"] = name
+        F.save(d)
+        self.text_size = name
+        F.apply_text_size(self, name, self._base_scaling)
+        self._style()                       # the ttk styles and tick boxes at the new size
+        F.grow_window(self, 860, 800)
+        self.show_setup(step=getattr(getattr(self, "steps_page", None), "now", 1))
 
     # ---------- light or dark ----------
     def _set_theme(self, name=None):
@@ -851,7 +877,7 @@ class App(tk.Tk):
         p = self._new_page(r["title"] or "Content check", " · ".join(b for b in bits if b))
         for note in (r.get("ai_note"), r.get("learn_note")):
             if note:
-                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(740),
                          justify="left").pack(anchor="w", pady=(0, 6))
         ttk.Button(self.footer, text="Open full report", style="Accent.TButton",
                    command=lambda: (self._write_report(r), open_path(r["report_path"]))).pack(side="right")
@@ -874,11 +900,11 @@ class App(tk.Tk):
                  f"press “Ask {self._ai_name()}” beside it (or at the bottom) and tell it in your own words. What "
                  "you mark is left out of the report, and CleanRead remembers it next time. When "
                  "you're done, click “Send what you marked” so CleanRead can get better.",
-                 bg=TINT, fg=ACCENT_DK, font=(FONT, 10), wraplength=720,
+                 bg=TINT, fg=ACCENT_DK, font=(FONT, 10), wraplength=F.wrap(720),
                  justify="left").pack(anchor="w")
         tk.Label(body, text="The full report (with every sentence, printable) is saved as:\n"
                  + os.path.normpath(r["report_path"]), bg=BG, fg=MUTED, font=(FONT, 9),
-                 justify="left", wraplength=740).pack(anchor="w", pady=(0, 8))
+                 justify="left", wraplength=F.wrap(740)).pack(anchor="w", pady=(0, 8))
 
         for kind, c in r["cats"].items():
             c["kind"] = kind
@@ -905,10 +931,10 @@ class App(tk.Tk):
             tk.Label(body, text="Not found in this book", bg=BG, fg=INK,
                      font=(FONT, 13, "bold")).pack(anchor="w", pady=(18, 4))
             tk.Label(body, text=", ".join(none_found), bg=BG, fg=MUTED, font=(FONT, 10),
-                     wraplength=740, justify="left").pack(anchor="w")
+                     wraplength=F.wrap(740), justify="left").pack(anchor="w")
         tk.Label(body, text="This is a guide, not a guarantee: a theme can be there without the words "
                  "that flag it, and a flagged sentence may be harmless in context — that's why the "
-                 "sentences are shown.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                 "sentences are shown.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(740),
                  justify="left").pack(anchor="w", pady=(18, 0))
         if place:
             self.update_idletasks()
@@ -927,7 +953,7 @@ class App(tk.Tk):
         left = tk.Frame(top, bg=CARD)
         left.pack(side="left", fill="x", expand=True)
         tk.Label(left, text=c["label"], bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(anchor="w")
-        where_lbl = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=560, justify="left")
+        where_lbl = tk.Label(left, bg=CARD, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(560), justify="left")
         where_lbl.pack(anchor="w")
 
         def show_counts():
@@ -1108,7 +1134,7 @@ class App(tk.Tk):
         p = self._new_page("Review before saving", sub, name=a.get("title", ""))
         for note in (a.get("ai_note"), a.get("learn_note")):
             if note:
-                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740,
+                tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(740),
                          justify="left").pack(anchor="w", pady=(0, 4))
         ttk.Button(self.footer, text="Save clean copy", style="Main.TButton",
                    command=self._save_from_review).pack(side="right")
@@ -1203,7 +1229,7 @@ class App(tk.Tk):
                 ttk.Checkbutton(row, variable=v, command=self._update_summary).pack(side="left")
                 # wraps: "Chapter One · 10% of the way through the book" was cut off at 22 letters
                 tk.Label(row, text=m["where"], bg=rbg, fg=MUTED, font=(FONT, 9), width=24,
-                         wraplength=170, justify="left", anchor="w").pack(side="left")
+                         wraplength=F.wrap(170), justify="left", anchor="w").pack(side="left")
                 ask = self._link(row, "Ask", bg=rbg, cmd=lambda m=m: self.open_chat("clean", ("word", m)))
                 ask.config(padx=4)
                 ask.pack(side="right")
@@ -1517,10 +1543,10 @@ class App(tk.Tk):
             tk.Label(box, text=big, bg=CARD, fg=ACCENT, font=(HEAD, 26)).pack()
             tk.Label(box, text=small, bg=CARD, fg=MUTED, font=(FONT, 10)).pack()
         tk.Label(p, text=f"Saved as:  {os.path.normpath(res['out'])}", bg=BG, fg=INK, font=(FONT, 10),
-                 wraplength=740, justify="left").pack(anchor="w", pady=(4, 6))
+                 wraplength=F.wrap(740), justify="left").pack(anchor="w", pady=(4, 6))
         tk.Label(p, text="To read it on a Kindle, send the EPUB with Amazon's Send to Kindle (email, app "
                  "or website). Kobo, Apple Books, Google Play Books and most reading apps open EPUB directly.",
-                 bg=BG, fg=MUTED, font=(FONT, 9), wraplength=740, justify="left").pack(anchor="w", pady=(0, 16))
+                 bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(740), justify="left").pack(anchor="w", pady=(0, 16))
         row = tk.Frame(p, bg=BG)
         row.pack(anchor="w")
         ttk.Button(row, text="Clean another book", style="Main.TButton",
