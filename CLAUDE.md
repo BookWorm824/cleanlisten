@@ -746,6 +746,17 @@ left (it was muted before). "Lover(s)" after my/his/her/your/their/our/secret, n
 before a capitalised name (find_language only sees lowercased words). CleanView's cross-check
 accepts these (its LINE_WORDS has them). `tests/test_castle_s2e6.py`.
 
+**'d / 'll / 're / 've on a listed word, and stepping out on someone** (1.17.38, as CleanView 1.18.102
+for Person of Interest S1E2; the owner said "Yes, release" here, 2026-11-14). A word whose base (with
+'d, 'll, 're or 've taken off, 2+ letters left: `contracted_base`) is on a list counts: "how the
+hell'd", "who the hell're", "damn'd". 's is left to the lists as before ("God's" isn't an oath on its
+own), so this is narrower than CleanView's `_base`, which strips 's too. Sexual words
+(`SEXUAL_PHRASES`, just the words): cheat/cheats/cheated/cheating or step/steps/stepped/stepping out
++ on his/her/my/your/their/our + wife, husband, girlfriend, boyfriend, partner, fiancé(e) and plurals
+(`CHEAT_PARTNERS`; norm() makes "fiancé" "fianc"), and "step(ped) out on him/me/you/them/her"; "...out
+on her" only before a small word or at the end, as `SLEEP_HER_NEXT` ("she stepped out on her porch"
+is left). Not "cheat on the test", "cheated on his taxes". `tests/test_poi_s1e2.py`.
+
 **"Check with Claude" on "Your books"** (1.17.37; the owner, 2026-11-14: books run overnight with
 Claude on came back never checked by it, 203 "explicit" false alarms from the AI on this PC, and "you
 need a button that I can hit to just check the book again with claude/chat/Gemini"; "have it say

@@ -585,6 +585,23 @@ def lover_ref(words, i):
             (words[i + 1] if i + 1 < len(words) else "") != "of")
 
 
+# Stepping out on or cheating on a person (Person of Interest S1E2, CleanView 1.18.102; the owner
+# approved it there, words go to every app): "If you're gonna step out on your wife", "he cheated
+# on his wife", "she's been stepping out on her husband", "he stepped out on her", "my man don't
+# step out on me". Not "step out on the balcony", "she stepped out on her porch", "he cheated on
+# his taxes", "cheat on the test". "Stepped out on her" counts only before a small word or at the
+# end, as "slept with her" does (SLEEP_HER_NEXT, in _find_language).
+CHEAT_FORMS = [("cheat",), ("cheats",), ("cheated",), ("cheating",)]
+STEP_OUT_FORMS = [(s, "out") for s in ("step", "steps", "stepped", "stepping")]
+CHEAT_PARTNERS = ("wife", "wives", "husband", "husbands", "girlfriend", "girlfriends", "boyfriend",
+                  "boyfriends", "partner", "partners",
+                  # fiancé(e)(s): norm() drops the accent, so "fiancé" is "fianc"
+                  "fiance", "fiancee", "fiances", "fiancees", "fianc", "fiancs")
+SEXUAL_PHRASES += [(*v, "on", p, x) for v in CHEAT_FORMS + STEP_OUT_FORMS
+                   for p in ("his", "her", "my", "your", "their", "our") for x in CHEAT_PARTNERS]
+SEXUAL_PHRASES += [(*v, "on", o) for v in STEP_OUT_FORMS for o in ("him", "me", "you", "them", "her")]
+
+
 # "screw you" / "screw it" as an insult (muted with the mild words). "Screw" on its
 # own is left alone, and so is "screw it in / on / tight..." (hardware).
 SCREW_PHRASES = [("screw", o) for o in ("you", "him", "her", "them", "it", "this", "that", "off",
@@ -1094,6 +1111,21 @@ def _c(pats):
     return [re.compile(p + r"$") for p in pats]
 
 
+# A listed word with 'd, 'll, 're or 've joined on: "How the hell'd you get in here?", "Who the
+# hell're you?", "damn'd" (Person of Interest S1E2, CleanView 1.18.102). "he'd", "we'll", "they're"
+# and "I've" aren't listed, so nothing changes for them. ('s is left to the lists, as before:
+# "God's" is not an oath on its own.)
+CONTRACTED = ("'d", "'ll", "'re", "'ve")
+
+
+def contracted_base(w):
+    """'hell'd' -> 'hell' (at least 2 letters left), else None."""
+    for c in CONTRACTED:
+        if w.endswith(c) and len(w) - len(c) >= 2:
+            return w[:-len(c)]
+    return None
+
+
 CATS = {"strong": _c(STRONG), "moderate": _c(MODERATE), "mild": _c(MILD),
         "minced": _c(MINCED), "deity": _c(DEITY_WORDS), "sexual": _c(SEXUAL_WORDS)}
 PHRASES["deity"] = DEITY_PHRASES
@@ -1196,10 +1228,11 @@ def _find_language(words, cats, breaks=()):
                     if "blast" in ph and (ph[-1] == "blast" and nxt in OH_BLAST_NOT_NEXT or
                                           ph[-1] != "blast" and nxt in BLAST_NOT_NEXT):
                         continue  # "blast it open", "oh, blast from the past"
-                    if (cat == "sexual" and len(ph) == 3 and ph[0] in SLEEP_FORMS and
-                            ph[1:] == ("with", "her") and nxt not in SLEEP_HER_NEXT and
-                            (i + 3) not in breaks):
-                        continue  # "she slept with her teddy bear"
+                    if (cat == "sexual" and ph[-1] == "her" and
+                            (len(ph) == 3 and ph[0] in SLEEP_FORMS and ph[1] == "with" or
+                             len(ph) == 4 and ph[1:3] == ("out", "on")) and
+                            nxt not in SLEEP_HER_NEXT and (i + len(ph)) not in breaks):
+                        continue  # "she slept with her teddy bear", "stepped out on her porch"
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
                     if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
@@ -1245,9 +1278,12 @@ def _find_language(words, cats, breaks=()):
             hits.append((i, i + 1, "rude"))
             i += 1
             continue
-        w = words[i]
+        base = contracted_base(words[i])
         for cat in cats:
             pats = CATS.get(cat) or EXTRA_CATS.get(cat) or KID_CATS.get(cat) or []
+            w = words[i]
+            if base and not any(p.match(w) for p in pats):
+                w = base      # "hell'd", "hell're"
             if any(p.match(w) for p in pats):
                 if w == "bloody" and (words[i + 1] if i + 1 < n else "") not in BLOODY_SWEAR_NEXT:
                     break
