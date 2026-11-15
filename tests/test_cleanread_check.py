@@ -95,13 +95,14 @@ def test_ai_double_check_shows_a_counter(book, monkeypatch):
 
         def chat(self, prompt, schema=None, timeout=300):
             if "numbered sentences" in prompt:      # flag every sentence that mentions the witch
-                return {"flags": [{"n": int(k), "type": "ref", "words": t} for k, t in
+                return {"flags": [{"n": int(k), "type": "gore", "words": t} for k, t in
                                   re.findall(r"^(\d+)\. (.*witch.*)$", prompt, re.M)]}
             return {"fits": True, "confidence": "high"}
 
     monkeypatch.setattr(R, "_ai", lambda: FakeAI())
     said = []
-    found = R.ai_find(book, {"ref": "sex"}, progress=lambda f, m: said.append(m))
+    # (not "ref": the general read leaves sexual references alone since 1.17.46)
+    found = R.ai_find(book, {"gore": "gore"}, progress=lambda f, m: said.append(m))
     assert len(found) == 2
     checks = [m for m in said if m.startswith("AI is double-checking what it found")]
     assert checks == ["AI is double-checking what it found · 1 of 2",

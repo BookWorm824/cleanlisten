@@ -155,8 +155,8 @@ def test_no_logo_without_a_picture(root):
 
 def test_the_progress_pages_show_the_logo_and_logo_py_is_shipped():
     assert "logo.py" in json.loads((REPO / "version.json").read_text())["files"]
-    assert 'LOGO.put_logo(p, "icon.ico", BG)' in (REPO / "CleanListen.pyw").read_text(encoding="utf8")
-    assert (REPO / "CleanRead.pyw").read_text(encoding="utf8").count('LOGO.put_logo(p, "cleanread.ico", BG)') == 2
+    assert 'LOGO.put_logo(p, "icon.ico", BG' in (REPO / "CleanListen.pyw").read_text(encoding="utf8")
+    assert (REPO / "CleanRead.pyw").read_text(encoding="utf8").count('LOGO.put_logo(p, "cleanread.ico", BG') == 2
 
 
 def test_a_spreadsheet_of_just_this_book_and_every_book_newest_first(tmp_path, monkeypatch):

@@ -695,7 +695,7 @@ class App(tk.Tk):
         self.pause_btn = ttk.Button(self.footer, text="Pause", style="Plain.TButton",
                                     command=self.toggle_pause)
         self.pause_btn.pack(side="right", padx=(0, 10))
-        LOGO.put_logo(p, "cleanread.ico", BG)     # the empty space (Jason, 2026-11-07)
+        LOGO.put_logo(p, "cleanread.ico", BG, LOGO.WORKING_LOGO)  # the empty space (Jason, 2026-11-07), 50% bigger (2026-11-15)
 
     def toggle_pause(self):
         """Pause or carry on. The check waits at its next step (a question the AI is already

@@ -2406,6 +2406,12 @@ def span_times(asr, i, j):
 # gemma3:4b on this PC, nothing uploaded): reads the book for what the word
 # lists miss, and gives a second opinion on what they flagged.
 # ---------------------------------------------------------------------------
+# Types the AI on this PC no longer looks for in its general read (the owner, 2026-11-15: "stop
+# showing them"). Every sexual reference it suggested in a training run on her books was wrong: 160
+# in one book, "Jasper found her udder. And began to nurse.", "Twice.", "A gentle Thank You!".
+# The innuendo check (sexual_talk), the word lists, the hard rule and Claude still find them.
+AI_NOT_READ = {"ref"}
+
 AI_TYPES = {
     "ref": "a sexual reference, sexual joke or innuendo, or talk about sex, including "
            "talk of sex drugs: pills for sex or erections (Viagra, Cialis, 'the little blue pill', erectile dysfunction), aphrodisiacs ('Spanish fly', a love potion meant to make someone want sex) and drugging someone to have sex with them, talk of oral "
@@ -2897,9 +2903,10 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         k = b_ + 1
     # ---- 1. AI reads the book and QUOTES what it flags (no line numbers: a
     # small model often gets numbers wrong and flags the sentence next door)
-    types = list(kinds) + (["language"] if lang else [])
+    read_kinds = [k for k in kinds if k not in AI_NOT_READ]    # not sexual references (2026-11-15)
+    types = read_kinds + (["language"] if lang else [])
     T = {**AI_TYPES, **(defs_for or {})}     # religion and kissing as the boxes say
-    defs = "\n".join(f'- "{t}": {T[t]}' for t in kinds)
+    defs = "\n".join(f'- "{t}": {T[t]}' for t in read_kinds)
     if lang:
         defs += ('\n- "language": a word that is ' + "; or ".join(LANGUAGE_DEFS[c] for c in lang)
                  + ' (put the exact word in "word")')
@@ -2929,7 +2936,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
 
     cands, word_cands = set(), set()
     chunk = 25
-    starts = list(range(0, len(sents), chunk - 3))
+    starts = list(range(0, len(sents), chunk - 3)) if types else []
     for n, a in enumerate(starts):
         if cancel and cancel():
             raise KeyboardInterrupt
@@ -2951,7 +2958,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
             i = locate(f.get("quote", ""), a, a + len(part))
             if i is None:
                 continue
-            if f.get("type") in kinds:
+            if f.get("type") in read_kinds:
                 cands.add((i, f["type"]))
             elif f.get("type") == "language" and f.get("word"):
                 word_cands.add((i, str(f["word"]).strip()))

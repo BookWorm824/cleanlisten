@@ -123,7 +123,9 @@ button and use the family's **own plan** (no API keys; `ANTHROPIC_API_KEY` / `OP
    the owner, 2026-11-15: in Wings of a Dream CleanRead's small AI ticked 38 sentences on its own,
    "Doc shook his head." as a sexual reference, "Blood rushed into my face." as gore, a kiss on the
    cheek as passionate, and none fit; CleanListen's `_ai_backed` let a cheek kiss through as
-   "kissing"). It may only untick listed words that can be innocent (`INNOCENT_WORDS`).
+   "kissing"). It may only untick listed words that can be innocent (`INNOCENT_WORDS`). Its general read no longer looks for sexual references (`AI_NOT_READ`, 1.17.46, the owner:
+   "stop showing them"; every one it suggested in a training run on her books was wrong, e.g. "Jasper
+   found her udder.", "Twice."); the innuendo check (`sexual_talk`) still runs for them.
 6. **Learned choices** (`cleanlisten_learn.apply`): sentences the family kept/cut before, words
    muted in context, shared knowledge. A learned sentence under 5 words is never cut again just
    for being learned (`LEARNED_SHORTEST`), and one cut for a filter (`cut_for`, also in

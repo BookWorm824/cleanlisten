@@ -65,5 +65,5 @@ def test_the_check_and_find_notes_carry_it(tmp_path, monkeypatch):
     assert "The AI ran on the processor only and read about" in res["ai_note"]
     again = R.scan(book, use_ai=True)
     assert again["ai_note"].endswith("It reused what it had already read in this book.")
-    an = R.analyze(book, {"refs": True, "ai": True})
+    an = R.analyze(book, {"gore": True, "ai": True})     # (not refs: no general read for those, 1.17.46)
     assert "The AI ran on the processor only and read about" in an["ai_note"]

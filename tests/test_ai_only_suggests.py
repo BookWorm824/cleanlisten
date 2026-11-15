@@ -50,7 +50,8 @@ def test_cleanread_offers_every_ai_find_unticked(tmp_path, monkeypatch):
     an = R.analyze(R.Book(str(p)), {"refs": True, "gore": True, "disturbing": True,
                                     "kiss": "passionate", "ai": True})
     ai_cuts = [c for c in an["cuts"] if c.get("ai")]
-    assert {c["raw"] for c in ai_cuts} == set(WINGS)
+    # not sexual references any more (the owner, 2026-11-15: "stop showing them")
+    assert {c["raw"] for c in ai_cuts} == {s for s, k in WINGS.items() if k != "ref"}
     assert all(c["cut"] is False and c["ai_note"] == "AI suggests" for c in ai_cuts)
     note = " ".join(an.get("notes", [])) + str(an.get("ai_note", ""))
     assert "sure about" not in note
@@ -69,7 +70,8 @@ def test_cleanlisten_offers_every_ai_find_unticked(monkeypatch):
     monkeypatch.setattr(E, "_learned_examples", lambda title="": "")
     scenes = E.ai_assist(asr, [], ["ref", "gore", "disturbing", "kiss"], to_sentences, E.span_times)
     assert scenes and all(sc["cut"] is False and sc["ai_note"] == "AI suggests" for sc in scenes)
-    assert {sc["kind"] for sc in scenes} >= {"ref", "disturbing"}
+    assert "disturbing" in {sc["kind"] for sc in scenes}
+    assert "ref" not in {sc["kind"] for sc in scenes}       # (2026-11-15: "stop showing them")
 
 
 def words(s):

@@ -1711,8 +1711,8 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
     ai = _ai()
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
-    types = list(defs)
-    if not types:
+    types = [t for t in defs if t not in E.AI_NOT_READ]    # not sexual references (2026-11-15)
+    if not defs:
         return {}
     answers = Answers(book, getattr(ai, "MODEL", ""))
     listing_defs = "\n".join(f'- "{t}": {defs[t]}' for t in types)
@@ -1791,7 +1791,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
             run["fresh"] += b - a
             run["fresh_time"] += time.perf_counter() - t0
         for f in res.get("flags", []) if isinstance(res, dict) else []:
-            if f.get("type") not in defs or not isinstance(f.get("n"), int):
+            if f.get("type") not in types or not isinstance(f.get("n"), int):
                 continue
             k = f["n"] - 1
             # the number is sometimes one off; the quoted words decide
@@ -1802,7 +1802,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
         return True
 
     pos, size = 0, chunk
-    while pos < P:
+    while types and pos < P:
         end = min(P, pos + size)
         left = ""
         if run["fresh"] >= 3 * chunk:
