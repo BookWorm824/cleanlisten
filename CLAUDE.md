@@ -421,7 +421,7 @@ shooting up", "Grace's head shot up"), "smoked turkey" / "the smoking ruins", "s
 "cocktail sauce" / "a Molotov cocktail" / "cotton gin", "the naked hostility in them" / "my naked
 arms", "punching clocks", "shot him a quick look", "a shot at sunset", "mooning like a lovesick
 schoolgirl", "the tooting of boats", "sex" meaning men or women ("the opposite sex", "my own sex":
-`sex_means_gender`, as NOT_SEX_BEFORE already did for sex scenes), "fool" as a verb ("fool
+`sex_means_gender`, as NOT_SEX_BEFORE already did for sex scenes), "fool" as a verb (1.17.45: but "What a fool you are!" still counts, `fool_called`; "fool
 yourself", "made a fool of myself"); and in the content check "Tears stole down my cheeks",
 "clasped his hands behind his back", "He wouldn't lie to me", "Mr. Graves", "The whistle shrieked"; and "in the closet" only as coming out ("I'm in the closet." was a girl hiding: `closet_ref`).
 The script is scratchpad-only (`train_run.py`: a throwaway LOCALAPPDATA, so no real settings are

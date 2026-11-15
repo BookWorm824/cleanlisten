@@ -160,3 +160,9 @@ def test_in_the_closet(want, s):
 ])
 def test_shut_it_and_play_dumb(want, s):
     assert bool(E.find_language(w(s), ["rude"])) is want
+
+
+@pytest.mark.parametrize("s", ["What a fool you are!", "Such a fool you are", "You old fool, you!"])
+def test_calling_someone_a_fool_still_counts(s):
+    # 1.17.45, from CleanView 1.18.106: the 1.17.44 verb guard let these through
+    assert E.find_language(w(s), ["rude"])

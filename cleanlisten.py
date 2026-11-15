@@ -983,6 +983,18 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                              "back", "across", "past", "on", "in", "by", "for", "over", "heath",
                              "landscape", "ruins", "crater", "craters", "rock", "rocks", "oak",
                              "holes", "hole"}}
+# ... but "What a fool you are!", "Such a fool you are" call someone a fool (CleanView 1.18.106,
+# cvcore.fool_called): after "a", "such", "old"... it's the noun, unless "of" follows ("made a
+# complete fool of myself")
+FOOL_NOUN_PREV = {"a", "an", "the", "such", "big", "old", "little", "silly", "stupid", "complete",
+                  "total", "utter", "damn", "damned", "bloody"}
+
+
+def fool_called(w, prev, nxt):
+    """Is "fool" here a name someone is called, though an object word follows?"""
+    return w == "fool" and prev in FOOL_NOUN_PREV and nxt != "of"
+
+
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WWI army camp
                  # "the rocket was blasted", "he got blasted", "the guns blasted" (CleanView
                  # 1.18.93); "you blasted fool" still counts, so not "you"
@@ -1393,7 +1405,8 @@ def _find_language(words, cats, breaks=()):
                     break
                 if w in FREAK_WORDS and "out" in words[i + 1:i + 3]:
                     break     # "you're freaking me out", "she's freaking out"
-                if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) or
+                if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) and
+                        not fool_called(w, words[i - 1] if i else "", words[i + 1] if i + 1 < n else "") or
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w == "gay" and gay_happy(words, i) or
