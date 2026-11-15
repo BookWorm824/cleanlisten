@@ -254,8 +254,9 @@ class App(tk.Tk):
         return self.page
 
     def _logo(self, parent):
-        """The logo in the middle of the empty space below (Jason: "a lot of dead space")."""
-        LOGO.put_logo(parent, "readaloud.ico", BG)
+        """The logo in the middle of the empty space below (Jason: "a lot of dead space"), 50% bigger
+        (the owner, 2026-11-15: 192 px, shrunk smoothly; logo.py, as CleanListen's and CleanRead's)."""
+        return LOGO.put_logo(parent, "readaloud.ico", BG, px=LOGO.WORKING_LOGO)
 
     def _scroll_area(self, parent):
         wrap = tk.Frame(parent, bg=BG)

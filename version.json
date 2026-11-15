@@ -1,5 +1,5 @@
 {
- "version": "1.17.47",
+ "version": "1.17.48",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -32,6 +32,7 @@
   "readaloud.py",
   "ReadAloud.pyw",
   "readaloud.ico",
+  "readaloud_logo.png",
   "readaloud_ai.py",
   "readaloud_gpu.py",
   "readaloud_gpu_req.txt",
