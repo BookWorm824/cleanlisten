@@ -601,6 +601,33 @@ SEXUAL_PHRASES += [(*v, "on", p, x) for v in CHEAT_FORMS + STEP_OUT_FORMS
                    for p in ("his", "her", "my", "your", "their", "our") for x in CHEAT_PARTNERS]
 SEXUAL_PHRASES += [(*v, "on", o) for v in STEP_OUT_FORMS for o in ("him", "me", "you", "them", "her")]
 
+# Someone's "other woman" (Person of Interest S1E3, CleanView 1.18.104; the owner approved it there,
+# words go to every app): "Who's the other woman?", "Looks like Joey's other woman's got a little
+# girl", "He went back to his other woman". Just "other woman" is muted. Not "Where's the other
+# woman going?", "the two other women in the car", "hurt other women", "two other men"
+# (other_woman_ref, in _find_language).
+OTHER_WOMAN = {"woman", "women", "woman's", "women's"}
+OTHER_WOMAN_OWNER = {"his", "her", "my", "your", "their"}
+# 's words that aren't someone's: "where's the other woman", "that's other women's business"
+NOT_OWNER_S = {"who's", "what's", "where's", "when's", "why's", "how's", "that's", "it's", "there's",
+               "here's", "he's", "she's", "let's", "one's"}
+
+
+def other_woman_ref(words, i):
+    """Is words[i:i+2] someone's "other woman" (his / Joey's / who's the other woman)?"""
+    if not i or words[i] != "other" or i + 1 >= len(words) or words[i + 1] not in OTHER_WOMAN:
+        return False
+    prev = words[i - 1]
+    if prev in OTHER_WOMAN_OWNER or (prev.endswith("'s") and len(prev) > 3 and prev not in NOT_OWNER_S):
+        return True
+    return prev == "the" and (i >= 2 and words[i - 2] in ("who's", "whos") or
+                              i >= 3 and words[i - 3] == "who" and words[i - 2] in ("is", "was"))
+
+
+# "Join Manny and Danny in the land of tequila / and grateful señoritas" (Person of Interest S1E3,
+# CleanView 1.18.104): innuendo. norm() drops the accent, so "señoritas" is "seoritas".
+SEXUAL_PHRASES += [("grateful", w) for w in ("senorita", "senoritas", "seorita", "seoritas")]
+
 
 # "screw you" / "screw it" as an insult (muted with the mild words). "Screw" on its
 # own is left alone, and so is "screw it in / on / tight..." (hardware).
@@ -612,6 +639,19 @@ SCREW_PHRASES += [("up", "yours")] + [(*w.split(), "screwed") for w in (
     "totally", "completely", "royally", "so", "really", "just",
     "get", "gets", "got", "getting", "gotten",
     "be", "been", "is", "are", "was", "were")]        # "we would be screwed" (CleanView 1.18.5)
+# "Latimer screwed us" (Person of Interest S1E3, CleanView 1.18.104), "he screwed me over", "you
+# don't screw with us", "someone is screwing with me", "screwed over", "we didn't want to screw Max
+# over". Not "screwed him up" (messed up), "screws them in tight" (SCREWED_WHO_SAFE_NEXT), "screw the
+# lid over the jar" (screw_over, in _find_language).
+SCREW_FORMS = ("screw", "screws", "screwed", "screwing")
+SCREW_WHO = ("us", "me", "you", "him", "her", "them", "everybody", "everyone")
+SCREW_PHRASES += [(v, o, *ov) for v in SCREW_FORMS[1:] for o in SCREW_WHO for ov in ((), ("over",))]
+SCREW_PHRASES += [("screw", "us"), ("screw", "us", "over")]
+SCREW_PHRASES += [(v, "with", o) for v in SCREW_FORMS for o in ("me", "us", "you", "him", "her", "them", "people")]
+SCREW_PHRASES += [(v, "over") for v in SCREW_FORMS]
+SCREWED_WHO_SAFE_NEXT = {"up", "in", "into", "onto", "down", "together", "shut", "tight", "tightly", "back"}
+SCREW_OVER_NOT = {"the", "a", "an", "it", "its", "this", "that", "these", "those", "in", "into", "on",
+                  "onto", "up", "down", "off", "back", "around"}
 SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "tight", "tightly", "to",
                      "the", "it", "that", "this", "back", "off", "up"}
 # "jerked off the road", "jacked off his feet": a place or thing follows, so it's literal
@@ -653,6 +693,12 @@ def screw_noun(words, i):
     prev = words[i - 1]
     return prev in SCREW_NOUN_AFTER or (len(prev) > 4 and prev.endswith("est")
                                         and prev not in ("honest", "modest"))
+
+
+def screw_over(words, i):
+    """"screw Max over", "screwed his partner over" (one word between), not "screw the lid over"."""
+    return (words[i] in SCREW_FORMS and i + 2 < len(words) and words[i + 2] == "over" and
+            words[i + 1] not in SCREW_OVER_NOT and not (words[i] == "screw" and screw_noun(words, i)))
 
 
 SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
@@ -1219,6 +1265,8 @@ def _find_language(words, cats, breaks=()):
                         continue  # "screw it in tight", "screw that lid on"
                     if ph[0] == "screw" and screw_noun(words, i):
                         continue  # "the meanest screw that ever lived" (a prison guard)
+                    if ph[0] in SCREW_FORMS[1:] and ph[1] in SCREW_WHO and nxt in SCREWED_WHO_SAFE_NEXT:
+                        continue  # "he screwed him up good", "screws them in tight"
                     if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
                                           ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT or
                                           ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT):
@@ -1265,6 +1313,14 @@ def _find_language(words, cats, breaks=()):
         if "sexual" in cats and lover_ref(words, i):                   # "my lover", "her lovers"
             hits.append((i, i + 1, "sexual"))
             i += 1
+            continue
+        if "sexual" in cats and other_woman_ref(words, i):             # "Joey's other woman"
+            hits.append((i, i + 2, "sexual"))
+            i += 2
+            continue
+        if "mild" in cats and screw_over(words, i):                     # "screw Max over"
+            hits.append((i, i + 3, "mild"))
+            i += 3
             continue
         if ("mild" in cats or "moderate" in cats) and bull_swear(words, i):   # "that's bull"
             hits.append((i, i + 1, "mild" if "mild" in cats else "moderate"))

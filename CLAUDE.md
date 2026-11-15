@@ -802,6 +802,20 @@ helper on this PC…", plus the reason) with the same button, and the bar's butt
 checked is still unknown (no `claude_note`, so the check never ran or its note was lost): the
 yellow line now shows any reason. `tests/test_check_with_ai.py`.
 
+**Someone's "other woman", "grateful señoritas", "screwed us"** (1.17.40, as CleanView 1.18.104 for
+Person of Interest S1E3; the owner said "Yes, do both" there, words go to every app). Sexual words, just
+the words muted: "other woman/women" after his/her/my/your/their, after someone's ("Joey's other
+woman's got a little girl"; not who's/where's/that's...: `NOT_OWNER_S`), or in "who's / who is / who
+was the other woman" (`other_woman_ref`); not "where's the other woman going?", "two other men",
+"hurt other women". "Grateful señorita(s)" (`SEXUAL_PHRASES`; norm() makes "señoritas" "seoritas").
+Mild words (`SCREW_PHRASES`): screws/screwed/screwing + us/me/you/him/her/them/everybody/everyone,
+optionally + "over", and "screw us (over)", but not before up/in/into/onto/down/together/shut/tight/
+back (`SCREWED_WHO_SAFE_NEXT`: "screwed him up good"); screw(s/ed/ing) with me/us/you/him/her/them/
+people; screw(s/ed/ing) over; and one word between ("screw Max over", `screw_over`), not after
+the/a/it/this/in/on/up... (`SCREW_OVER_NOT`: "screw the lid over"). Not added: "cheat"/"cheater"
+(mostly games; CleanView taught "Bank robber and a cheat" for that show only).
+`tests/test_poi_s1e3.py`.
+
 **Portuguese and Russian** (1.17.36, as CleanView 1.18.88; the owner, 2026-11-13, in CleanView's
 session: "can do both portuguise and russian now"; asked about the book apps: "both"). They come with
 `cvlang.py`, now CleanView's e01caed copy byte for byte (it also has CleanView's Auto choice, `AUTO`,
