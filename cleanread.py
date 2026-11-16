@@ -2444,7 +2444,11 @@ def analyze(book, opts, progress=None, cancel=None):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
-        mutes.append(_mute(book, q, a, book.words[j - 1][2], cat, book.doubtful_word(i, j, cat)))
+        doubt = book.doubtful_word(i, j, cat)
+        if doubt and cat == "orientation" and book.old_style:
+            continue    # an older book's "queer"/"gay" meaning strange or cheerful: left alone, not even
+            #             offered (the owner, 2026-11-16, of The Boxcar Children: "yes leave alone in old books")
+        mutes.append(_mute(book, q, a, book.words[j - 1][2], cat, doubt))
 
     cuts = []
 
