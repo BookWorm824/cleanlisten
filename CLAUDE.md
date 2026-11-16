@@ -435,6 +435,17 @@ AI's unticked suggestions like "He growled again" as disturbing, the laptop's "M
 "stole"/"behind his back" as lying, everyday lines as sexual references); not taught: religion she kept,
 romance and kisses that fit, "coquettish smile" as flirting, and lines with a listed word ("queer" in its
 old meaning, "suck, suck" of a thumb, "Camp Dick").
+Fifth (2026-11-16, Black Beauty from her laptop): 103 taught, all the local AI's or word lists' flags
+she left unticked that don't fit their filter (40 everyday lines as disrespect, "Who is your master, young
+man? if it be a proper question."; 28 as violence: a horse being shod, the bridge is broken, a lame horse,
+"killed a good many of your plants"; "I was high bred" as drugs, a buyer looking a horse over as medical,
+"his master and mistress" as sleeping around/unmarried), plus the 11-16 lying mark for the basketball line
+fixed (its key was cut at 200 letters, so it never matched). Not taught: what fits even though she kept it
+(whipping, flogging, beatings, the bearing rein, the fire, the war, deaths of horses and people, drink,
+real insults and a son talking back, prayers and Jerry's Sunday preaching), any line with a listed word
+("stupid boy", "such a fool", "jerk of his head"), lines under 5 words ("XXII", "Lame!"), and from the
+laptop's learned block its new religion, romance and "word" marks (as on 11-16). The local AI over-flags
+disrespect (55, hardly any fit) and violence (88: accidents, falls, lameness, shoeing) in old books.
 
 **The little cleaner (1.17.50):** `sweeper.py` is CleanView's `cvsweeper.py` (1.18.111, push broom) with one
 change, `tile` (where the logo's tile is; CleanRead's is 28-484 of 512). `logo.put_logo(..., sweeper=True,
