@@ -2159,7 +2159,9 @@ class App(tk.Tk):
         self.status.pack(anchor="w", pady=(12, 0))
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
         self.cancel_btn.pack(side="right")
-        LOGO.put_logo(p, "icon.ico", BG, LOGO.WORKING_LOGO)  # the empty space (Jason, 2026-11-07), 50% bigger (2026-11-15)
+        # the empty space (Jason, 2026-11-07), 50% bigger (2026-11-15), with CleanView's little cleaner
+        # sweeping it (the owner, 2026-11-15: "Yes, all apps")
+        LOGO.put_logo(p, "icon.ico", BG, LOGO.WORKING_LOGO, sweeper=True)
 
     def cancel(self):
         """The working page is only used by the Claude check now: back to the list at once,

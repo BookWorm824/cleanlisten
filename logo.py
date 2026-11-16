@@ -209,9 +209,72 @@ def fit_size(px, room_w, room_h):
     return max(48, room // 16 * 16)
 
 
-def put_logo(parent, ico, bg, px=128):
+def _tile(rgba):
+    """Where the logo's tile is, as shares of its width (where it stops being see-through)."""
+    import numpy as np
+    cols = np.nonzero(rgba[..., 3].max(axis=0) > 128)[0]
+    n = rgba.shape[1]
+    return (cols[0] / n, (cols[-1] + 1) / n) if len(cols) else (20 / 512, 492 / 512)
+
+
+def _photo(master, rgba, into=None):
+    """A tk picture of an h x w x 4 array (or drawn into an existing one, which keeps its name)."""
+    data = base64.b64encode(_to_png(rgba)).decode()
+    if into is not None:
+        into.configure(width=0, height=0)
+        into.configure(data=data, format="png")
+        return into
+    return tk.PhotoImage(master=master, data=data, format="png")
+
+
+def _sweeping_logo(parent, ico, bg, px):
+    """The logo on a canvas with the little cleaner sweeping it (sweeper.py, as CleanView 1.18.109;
+    the owner, 2026-11-15: "Yes, all apps"). Shrinks with the room like the plain one, and he with
+    it; he stops by himself when the page changes. None if it can't be made (then the plain logo)."""
+    try:
+        import sweeper as SW
+        pic = logo_rgba(ico, px)
+        if pic is None:
+            return None
+        tile = _tile(pic)
+        back = SW.backdrop(_resize(pic, px), bg)
+    except Exception:
+        return None
+    mid = tk.Frame(parent, bg=bg)
+    mid.pack(fill="both", expand=True)
+    cv = tk.Canvas(mid, width=px, height=px, bg=bg, highlightthickness=0, bd=0)
+    cv.image = _photo(cv, SW.opaque(back))
+    cv.item = cv.create_image(0, 0, image=cv.image, anchor="nw")
+    cv.size = px
+    cv.place(relx=0.5, rely=0.45, anchor="center")
+    cv.sweeper = SW.Sweeper(cv, back, lambda rgba, into: _photo(cv, rgba, into), tile=tile)
+    cv.sweeper.start()
+
+    def fit(event):
+        n = fit_size(px, event.width, event.height)
+        if n == cv.size or event.width < 2 or event.height < 2:
+            return
+        try:
+            b = SW.backdrop(_resize(pic, n), bg)
+            img = _photo(cv, SW.opaque(b))
+        except (tk.TclError, ValueError):
+            return
+        cv.configure(width=n, height=n)
+        cv.itemconfigure(cv.item, image=img)
+        cv.image, cv.size = img, n
+        cv.sweeper.set_backdrop(b)
+    mid.bind("<Configure>", fit)
+    return cv
+
+
+def put_logo(parent, ico, bg, px=128, sweeper=False):
     """The logo in the middle of the room left in `parent` (packed last, filling what's left).
-    Returns the label, or None if there's no picture."""
+    Returns the label (a canvas with sweeper=True: the little cleaner sweeps it, for the working
+    page), or None if there's no picture."""
+    if sweeper and px > 128:
+        cv = _sweeping_logo(parent, ico, bg, px)
+        if cv is not None:
+            return cv
     img = logo_image(ico, px)
     if img is None:
         return None

@@ -17,6 +17,7 @@
   "cvlook.py",
   "cvlang.py",
   "logo.py",
+  "sweeper.py",
   "freezes.py",
   "bookrunner.py",
   "dropfiles.py",
