@@ -436,6 +436,13 @@ AI's unticked suggestions like "He growled again" as disturbing, the laptop's "M
 romance and kisses that fit, "coquettish smile" as flirting, and lines with a listed word ("queer" in its
 old meaning, "suck, suck" of a thumb, "Camp Dick").
 
+**The little cleaner (1.17.50):** `sweeper.py` is CleanView's `cvsweeper.py` (1.18.111, push broom) with one
+change, `tile` (where the logo's tile is; CleanRead's is 28-484 of 512). `logo.put_logo(..., sweeper=True,
+paused=fn)` shows him on the working page (CleanListen; CleanRead with its Pause; ReadAloud can use it).
+Take CleanView's new copy when it changes. CleanListen and CleanRead also set their own taskbar name
+(`own_taskbar_id`, BookWorm824.CleanListen / .CleanRead) before the first window, as CleanView 1.18.111.
+Pinned .lnk files don't carry that ID yet (shortcuts.py could stamp System.AppUserModel.ID).
+
 ## 8. Testing
 
 `tests/` is a pytest suite (not shipped; not in `version.json`). Run it before every release:
