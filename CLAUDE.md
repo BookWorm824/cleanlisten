@@ -430,6 +430,11 @@ The script is scratchpad-only (`train_run.py`: a throwaway LOCALAPPDATA, so no r
 touched); public-domain books from Project Gutenberg would make a bigger set (downloads need her OK).
 Third (2026-11-04, Wings of a Dream again): 16 lines she kept this time after ticking them back
 on 11-03 (the cotton gin as drinking, "eyebrows shot up" as drugs, a tortured look, "My naked arms").
+Fourth (2026-11-16, The Boxcar Children from her laptop, with its learned marks): 58 taught (the
+AI's unticked suggestions like "He growled again" as disturbing, the laptop's "Mr. Graves" as death,
+"stole"/"behind his back" as lying, everyday lines as sexual references); not taught: religion she kept,
+romance and kisses that fit, "coquettish smile" as flirting, and lines with a listed word ("queer" in its
+old meaning, "suck, suck" of a thumb, "Camp Dick").
 
 ## 8. Testing
 
