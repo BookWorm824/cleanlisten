@@ -69,6 +69,71 @@ class Walking(unittest.TestCase):
         self.assertLess((time.perf_counter() - t) / 40, 0.03)
 
 
+class LifelikeWalk(unittest.TestCase):
+    """CleanView 1.18.110's walk tests, as they are there."""
+    """1.18.110: "can we make the cleaner walk a little more realistic. and make him pause with
+    the cleaninig", "When I press Pause"."""
+
+    def test_a_foot_on_the_ground_stays_put(self):
+        w = sw.Walker(384, random.Random(6))
+        w.tx, w.ty = w.x + 300, w.y                         # a long walk to the right
+        for _ in range(20):                                 # past any easing in
+            w.step(1 / sw.FPS)
+        planted = []
+        for _ in range(60):
+            w.step(1 / sw.FPS)
+            fx, fy = w.shown["near"]
+            planted.append((fy == 0.0, w.x + fx * w.h))
+        runs, run = [], []
+        for down, where in planted:
+            if down:
+                run.append(where)
+            elif run:
+                runs.append(run)
+                run = []
+        self.assertGreater(len(runs), 1)
+        for run in runs:
+            self.assertLess(max(run) - min(run), 0.5)       # under half a pixel: no sliding
+
+    def test_knees_bend_and_feet_take_turns(self):
+        ps = [sw.walking(i / 20) for i in range(20)]
+        self.assertTrue(any(p["near"][1] < 0 for p in ps) and any(p["far"][1] < 0 for p in ps))
+        self.assertFalse(any(p["near"][1] < 0 and p["far"][1] < 0 for p in ps))   # one at a time
+        kx, ky = sw._knee(0, -sw.HIP * 38, 0, 0, sw.LEG * 38)
+        self.assertGreater(kx, 0)                           # bent forward
+        self.assertTrue(-sw.HIP * 38 < ky < 0)
+
+    def test_poses_ease_into_each_other(self):
+        w = sw.Walker(384, random.Random(7))
+        w.step(0.05)
+        before = w.shown["near"]
+        w.paused = True
+        w.step(0.05)
+        self.assertNotEqual(w.shown["near"], sw.leaning(w.t)["near"])     # on its way
+        for _ in range(10):
+            w.step(0.05)
+        self.assertEqual(w.shown, sw.leaning(w.t))
+        self.assertNotEqual(before, w.shown["near"])
+
+    def test_paused_he_stays_and_leans_on_his_broom(self):
+        w = sw.Walker(384, random.Random(8))
+        for _ in range(sw.FPS * 6):
+            w.step(1 / sw.FPS)
+        w.paused = True
+        w.step(1 / sw.FPS)
+        where, state = (w.x, w.y), w.state
+        made = len(w.puffs)
+        for _ in range(sw.FPS * 5):
+            w.step(1 / sw.FPS)
+            self.assertLessEqual(len(w.puffs), made)        # no new dust
+        self.assertEqual((w.x, w.y, w.state), where + (state,))
+        self.assertEqual(w.shown["broom"], sw.leaning(0)["broom"])
+        w.paused = False
+        for _ in range(sw.FPS * 8):
+            w.step(1 / sw.FPS)
+        self.assertNotEqual((w.x, w.y), where)              # carries on after Resume
+
+
 class OnTheWorkingPage(unittest.TestCase):
     def test_sweeps_the_logo_and_stops_with_the_page(self):
         try:
