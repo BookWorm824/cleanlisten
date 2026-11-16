@@ -1881,8 +1881,19 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
         "fits": {"type": "boolean"}, "confidence": {"type": "string", "enum": ["high", "medium", "low"]}},
         "required": ["fits", "confidence"]}
     found = {}
-    # the small AI takes plain talk between two girls or two boys for a same-sex relationship
-    todo = sorted(c for c in cands if c[1] != "relationship" or romance_near(book, c[0]))
+    # the small AI takes plain talk between two girls or two boys for a same-sex relationship, and
+    # accidents, falls and a lame horse for violence (the owner, 2026-11-16): a find of a gated kind
+    # needs some sign of it in the sentence or the one before or after (E.ai_gate), else it isn't
+    # double-checked or shown; how many were left out goes in the AI note (gate_note)
+    todo, gated = [], {}
+    for i, kind in sorted(cands):
+        near = [book.sent_words(k) for k in (i - 1, i, i + 1) if 0 <= k < S]
+        if romance_near(book, i) if kind == "relationship" else E.ai_gate(kind, near):
+            todo.append((i, kind))
+        else:
+            gated[kind] = gated.get(kind, 0) + 1
+    if info is not None:
+        info["gated"] = gated
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt
@@ -1959,8 +1970,22 @@ def speed_note(info):
             f" The AI read about {per_min:,.0f} sentences a minute.")
 
 
+GATE_LABELS = {"relationship": "same-sex", "rebellion": "disrespect", "bully": "bullying"}
+
+
+def gate_note(info):
+    """How many of the AI's own finds the word gates left out (E.ai_gate, romance_near)."""
+    g = {k: n for k, n in ((info or {}).get("gated") or {}).items() if n}
+    if not g:
+        return ""
+    parts = ", ".join(f"{GATE_LABELS.get(k, E.MORE_LABELS.get(k, k))} {n}"
+                      for k, n in sorted(g.items(), key=lambda kv: (-kv[1], kv[0])))
+    return (f" It left out {sum(g.values())} of its own ideas because nothing in the words showed "
+            f"them ({parts}).")
+
+
 def ai_run_note(info):
-    return unread_note(info) + speed_note(info)
+    return unread_note(info) + gate_note(info) + speed_note(info)
 
 
 

@@ -2969,6 +2969,223 @@ def _ai_backed(kind, words):
     return False
 
 
+# ---------------------------------------------------------------------------
+# Word gates for the PC AI's own suggestions (the owner, 2026-11-16: "you mentioned it over
+# flagging. i noticed that also. how can we work on it?"). In her Black Beauty report the small AI
+# (gemma3:4b) suggested 55 lines as disrespect (about one fits: a son answering his father back) and
+# 88 as violence (accidents, falls, lameness, a stone in a hoof, a falling tree, a horse being shod),
+# and its own double-check agreed. As with same-sex relationships (cleanread.romance_near,
+# 2026-11-09), a suggestion of these kinds is kept only when the sentence or the one before or after
+# shows some sign of the thing: hitting, whipping, shooting... for violence; a grown-up and something
+# rude, or a plain sign like "sassed back", for disrespect. A gate never drops a line with a sign, so
+# the whippings, the war and the shooting she kept on purpose in Black Beauty are still offered.
+# The word lists' own finds already need their words and aren't gated. Shared by CleanRead
+# (ai_find, before the double-check) and CleanListen (ai_assist), which also gates same-sex finds
+# here (romance_sign; CleanRead uses its own romance_near). Tests: tests/test_cleanread_ai_gates.py.
+# ---------------------------------------------------------------------------
+def _gw(*pats):
+    """One whole normalised word matching any of the patterns."""
+    return re.compile("(?:" + "|".join(pats) + ")$")
+
+
+GATE_VIOLENCE = _gw(
+    r"\w*whip(s|ped|ping|pings)?", r"lash(es|ed|ing|ings)?", r"flog(s|ged|ging|gings)?",
+    r"thrash(es|ed|ing|ings)?", r"beat(s|en|ing|ings)?", r"hit(s|ting)?", r"struck",
+    r"strik(e|es|ing)", r"punch(ed|es|ing)?", r"kick(s|ed|ing)?", r"slap(s|ped|ping)?",
+    r"smack(s|ed|ing)?", r"slash(es|ed|ing)?", r"stab(s|bed|bing)?", r"shoot(s|ing|er|ers)?",
+    r"shootout", r"gun(s|shots?|fire|man|men|point)?", r"pistols?", r"rifles?", r"revolvers?",
+    r"muskets?", r"bullets?", r"cannon(s|balls?)?", r"swords?", r"daggers?", r"knife", r"knives",
+    r"bayonets?", r"spears?", r"arrows?", r"weapons?", r"kill(s|ed|ing|er|ers)?",
+    r"murder(s|ed|ing|er|ers|ous)?", r"slay(s|ing)?", r"slain", r"slew", r"slaughter(s|ed|ing)?",
+    r"massacre[sd]?", r"fight(s|ing|er|ers)?", r"fought", r"battles?", r"battlefield", r"wars?",
+    r"brawl(s|ed|ing)?", r"attack(s|ed|ing|er|ers)?", r"assault(s|ed|ing)?", r"ambush(es|ed)?",
+    r"chok(e|ed|es|ing)", r"strangl(e|ed|es|ing)", r"throttl(e|ed|es|ing)", r"wound(s|ed)?",
+    r"blood(y|ied|shed)?", r"bleed(s|ing)?", r"bled", r"clubbed", r"bludgeon(s|ed|ing)?",
+    r"pummel(l)?(s|ed|ing)?", r"bitten", r"mauled")
+# "shot" is a gunshot, but not a look, a rise or a drink ("shot him a dark look", "fear shot
+# through me", "his eyebrows shot up", "a shot of whiskey")
+SHOT_NOT_NEXT = {"up", "through", "across", "past", "forward", "out", "back", "of", "glass",
+                 "glasses", "look", "looks", "glance", "glances"}
+SHOT_LOOKS = {"look", "looks", "glance", "glances", "glare", "glares", "smile", "smiles", "grin",
+              "grins", "quick", "sharp", "dirty", "withering", "questioning", "warning", "sidelong",
+              "worried", "pleading", "nervous", "wary", "puzzled", "curious", "knowing", "meaningful",
+              "grateful", "amused", "sympathetic", "annoyed", "angry", "dark", "hard", "startled",
+              "surprised", "stern", "black", "furious", "triumphant", "helpless", "desperate"}
+GATE_VIOLENCE_PHRASE = re.compile(
+    r"\bknock(s|ed|ing)? (him|her|them|me|us|you|it) (down|out|over|senseless|about|flat)\b|"
+    r"\bbox(ed|es|ing)? on the ears?\b|\bbox(ed|es|ing)? (his|her|their|my|your|its) ears\b")
+
+
+def _shot(words, i):
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    after = words[i + 2] if i + 2 < len(words) else ""
+    if nxt in SHOT_NOT_NEXT:
+        return False
+    return not (nxt in {"a", "an", "him", "her", "them", "me", "us", "you"} and
+                (after in SHOT_LOOKS or after in {"a", "an"}))
+
+
+def violence_sign(words):
+    """A sign of an act of violence in one sentence (for the gate: generous on purpose)."""
+    if any(GATE_VIOLENCE.match(w) for w in words):
+        return True
+    if any(w in ("shot", "shots") and _shot(words, i) for i, w in enumerate(words)):
+        return True
+    if GATE_VIOLENCE_PHRASE.search(" ".join(words)):
+        return True
+    try:
+        return sentence_hit("violence", words)
+    except Exception:
+        return False
+
+
+GATE_DISTURBING = _gw(
+    r"tortur(e|es|ed|ing|er|ers)", r"execut(e|ed|es|ing|ion|ions|ioner|ioners)", r"hanged",
+    r"gallows", r"nooses?", r"lynch(ed|ing)?", r"cruel(ly|ty|ties|lest|er)?", r"brutal(ly|ity)?",
+    r"brutes?", r"unmerciful(ly)?", r"merciless(ly)?", r"savage(ly|ry)?", r"dead", r"deaths?",
+    r"di(e|es|ed)", r"dying", r"corpses?", r"carcass(es)?", r"injur(y|ies|ed|ing)", r"sores?",
+    r"mangled", r"maim(ed|ing)?", r"crush(ed|ing)", r"drown(s|ed|ing)?", r"starv(e|ed|es|ing|ation)",
+    r"buried", r"burnt", r"abus(e|ed|es|ing)", r"illused", r"illtreated", r"neglect(ed)?")
+GATE_DISTURBING_PHRASE = re.compile(r"\bto death\b|\b(burned|burnt|buried) alive\b")
+
+
+def disturbing_sign(words):
+    """A sign of cruelty, torture, death or injury (or of violence) in one sentence."""
+    if any(GATE_DISTURBING.match(w) for w in words) or GATE_DISTURBING_PHRASE.search(" ".join(words)):
+        return True
+    try:
+        if sentence_hit("disturbing", words):
+            return True
+    except Exception:
+        pass
+    return violence_sign(words)
+
+
+# Disrespect is a child or teen being rude to a grown-up: a grown-up nearby (a parent, a teacher,
+# "sir", "Mr. ...") and something rude or defiant, or a sign that says it all ("sassed back",
+# "talked back", "crossed his arms", "rolled her eyes", "you're not the boss of me")
+GATE_GROWNUP = {"mom", "mother", "mum", "mommy", "mummy", "mama", "momma", "ma", "dad", "father",
+                "daddy", "papa", "pa", "parents", "parent", "stepmom", "stepdad", "stepmother",
+                "stepfather", "grandma", "grandpa", "grandmother", "grandfather", "granny", "gran",
+                "nana", "aunt", "auntie", "uncle", "teacher", "teachers", "principal", "mom's",
+                "dad's", "mother's", "father's", "folks", "grownup", "grownups", "grown", "adult",
+                "adults", "babysitter", "sir", "ma'am", "maam", "madam", "mister", "mr", "mrs", "ms",
+                "miss", "master", "mistress", "governess", "nanny", "coach", "counselor",
+                "counsellor", "sheriff", "officer", "pastor", "reverend", "headmaster",
+                "headmistress", "professor", "boss", "elders", "guardian"}
+GATE_DEFIANT = _gw(
+    r"sass(ed|es|ing|y)?", r"impuden(t|ce|tly)", r"insolen(t|ce|tly)", r"impertinen(t|ce|tly)",
+    r"cheeky", r"disrespect(s|ed|ful|fully)?", r"disobe(y|yed|ys|ying|dient|dience)",
+    r"defian(t|ce|tly)", r"defied", r"def(y|ies|ying)", r"rebel(s|led|ling|lious)?", r"backtalk",
+    r"saucy", r"sullen(ly)?", r"insubordinat\w*")
+GATE_DEFIANT_PHRASE = re.compile(
+    r"\btalk(s|ed|ing)? back\b|\bback ?talk\b|\b(roll|rolls|rolled|rolling) (his|her|their|my) eyes\b|"
+    r"\bcrossed (his|her|their|my) arms\b|\bstuck (out )?(his|her|their|my) tongue\b|"
+    r"\b(stomped|stamped) (his|her|their|my) foot\b|\b(sneak(s|ed|ing)?|snuck) (out|off)\b|"
+    r"\bsmart (mouth|alec|aleck)|\bthe cheek of\b|\bsuch cheek\b")
+GATE_RUDE = _gw(
+    r"hate(s|d)?", r"won't", r"wont", r"shan't", r"shant", r"refus(e|ed|es|ing)", r"angr(y|ily)",
+    r"snap(s|ped)?", r"glar(e|ed|es|ing)", r"scowl(s|ed|ing)?", r"pout(s|ed|ing)?",
+    r"sulk(s|ed|ing|y)?", r"retort(s|ed)?", r"yell(s|ed|ing)?", r"shout(s|ed|ing)?",
+    r"scream(s|ed|ing)?", r"lie(s|d)?", r"liars?", r"lying", r"mock(s|ed|ing)?", r"sneer(s|ed|ing)?",
+    r"smirk(s|ed|ing)?", r"unfair", r"rude(ly|ness)?", r"stubborn(ly)?", r"whatever",
+    r"grumbl(e|ed|es|ing)", r"huff(s|ed|y)?", r"bossy", r"nag(s|ged|ging)?", r"disobey\w*")
+GATE_RUDE_PHRASE = re.compile(
+    r"\b(not|isn't|it's not) fair\b|\bleave me alone\b|\bgo away\b|\bso what\b|\bwho cares\b|"
+    r"\bmake me\b|\bdon't care\b|\bdo i have to\b|\bdon't have to\b|\bno way\b|\bwhy should i\b|"
+    r"\bmind your own business\b|\bnone of your business\b|\bdon't want to\b|\bi won't\b|"
+    r"\byou never\b|\byou always\b|\bcan't make me\b")
+
+
+def _rude(words):
+    j = " ".join(words)
+    return (any(GATE_RUDE.match(w) for w in words) or bool(GATE_RUDE_PHRASE.search(j)) or
+            bool(find_language(words, ["rude"])))
+
+
+def _defiant(words):
+    return (any(GATE_DEFIANT.match(w) for w in words) or bool(GATE_DEFIANT_PHRASE.search(" ".join(words)))
+            or disrespect_hit(words))
+
+
+GATE_INSULT = _gw(
+    r"fool(s|ish)?", r"blockheads?", r"rascals?", r"cowards?", r"cowardly", r"brats?",
+    r"scoundrels?", r"wretch(es)?", r"vermin", r"scum", r"freaks?", r"ugly", r"blackguards?",
+    r"ragamuffins?", r"goodfornothings?", r"simpletons?", r"boob(y|ies)", r"louts?", r"oafs?",
+    r"dunces?", r"weaklings?", r"crybab(y|ies)", r"sissy", r"runts?", r"mock(s|ed|ing|ery)?",
+    r"teas(e|ed|es|ing)", r"taunt\w*", r"jeer\w*", r"sneer\w*", r"ridicul\w*", r"humiliat\w*",
+    r"belittl\w*", r"insult(s|ed|ing)?", r"bull(y|ies|ied|ying)", r"torment\w*", r"shov(e|ed|es|ing)",
+    r"meanest", r"cruel(ly|ty)?", r"spiteful(ly)?", r"nasty", r"impudent", r"contempt(uous|uously)?",
+    r"scorn(ed|ful|fully)?", r"names", r"nicknames?")
+GATE_INSULT_PHRASE = re.compile(
+    r"\blaugh(s|ed|ing)? at\b|\b(made|make|makes|making) fun\b|\bpick(s|ed|ing)? on\b|"
+    r"\b(so|was|is|are|were|be|being) mean\b|\bmean to\b|"
+    r"\bcall(s|ed|ing)? (him|her|them|me|you|us) (a|an)\b")
+
+
+def bully_sign(words):
+    """A sign of mocking, insulting or picking on someone in one sentence."""
+    return (any(GATE_INSULT.match(w) for w in words) or bool(GATE_INSULT_PHRASE.search(" ".join(words)))
+            or bully_hit(words) or bool(find_language(words, ["rude"])))
+
+
+GATE_MEDICAL = _gw(
+    r"doctors?", r"docs?", r"nurs(e|es|ed|ing)", r"medics?", r"paramedics?", r"physicians?",
+    r"surg(eon|eons|ery|eries|ical)", r"operat(e|ed|ing|ion|ions)", r"hospitals?", r"clinics?",
+    r"infirmary", r"patients?", r"coroners?", r"examiner", r"autops(y|ies)", r"morgue", r"mortuary",
+    r"corpses?", r"bod(y|ies)", r"wound(s|ed)?", r"blood(y)?", r"bleed(s|ing)?", r"bled",
+    r"injur(y|ies|ed)", r"inject(s|ed|ing|ion|ions)", r"needles?", r"syringes?", r"shots?",
+    r"stitch(es|ed|ing)?", r"sutur(e|es|ed|ing)", r"bandag(e|es|ed|ing)", r"gauze", r"splints?",
+    r"medic(al|ine|ines)", r"poultices?", r"liniments?", r"lotions?", r"ointments?", r"salves?",
+    r"caustic", r"farriers?", r"horsedoctors?", r"vets?", r"veterinar(y|ian|ians)", r"dentists?",
+    r"scalpels?", r"incisions?", r"iv", r"xrays?", r"pills?", r"antiseptic", r"iodine")
+
+
+def medical_sign(words):
+    """A sign of a medical scene (a doctor, a wound, a needle, a body...) in one sentence."""
+    if any(GATE_MEDICAL.match(w) for w in words):
+        return True
+    try:
+        return medical_setting(words) or sentence_hit("medical", words)
+    except Exception:
+        return False
+
+
+def _disrespect_ok(near):
+    if any(_defiant(w) for w in near):
+        return True
+    return any(GATE_GROWNUP & set(w) for w in near) and any(_rude(w) for w in near)
+
+
+def romance_sign(words):
+    """A word of romance or of a couple (CleanRead's LOVE_NEAR, or its relationship words). CleanRead
+    itself uses romance_near on the book's own text, which also knows an older book's "gay"."""
+    try:
+        R = _read()
+        return bool(R.LOVE_NEAR.search(" ".join(words))) or bool(R.rel_hit(words, False))
+    except Exception:
+        return True
+
+
+AI_GATES = {"violence": lambda near: any(violence_sign(w) for w in near),
+            "disturbing": lambda near: any(disturbing_sign(w) for w in near),
+            "disrespect": _disrespect_ok,
+            "rebellion": _disrespect_ok,        # CleanRead's content check calls it rebellion
+            "bully": lambda near: any(bully_sign(w) for w in near),
+            "medical": lambda near: any(medical_sign(w) for w in near),
+            "relationship": lambda near: any(romance_sign(w) for w in near)}
+
+
+def ai_gate(kind, near):
+    """Keep an AI suggestion of this kind? near: the normalised words of the sentence and of the
+    one before and after it (any order; empty lists are fine). Kinds without a gate pass."""
+    test = AI_GATES.get(kind)
+    if test is None:
+        return True
+    near = [list(w) for w in near if w]
+    return bool(near) and test(near)
+
+
 def _learned_examples(title=""):
     """What they told the chat to keep in mind, and past choices (yours, then Claude's), for
     the AI on this PC to follow."""
@@ -3090,7 +3307,12 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         return res.get("confidence") if res.get("confidence") in ("high", "medium") else None
 
     found = {}
-    todo = sorted(cands)
+    # the same word gates as CleanRead (ai_gate, 2026-11-16): a find of a gated kind (violence,
+    # disrespect, same-sex...) needs a sign of it in that sentence or the one before or after, else
+    # it isn't double-checked or shown (the owner's audiobooks had 677 and 721 same-sex suggestions,
+    # "Daphne is late.", none of which she ticked)
+    todo = [(i, kind) for i, kind in sorted(cands)
+            if ai_gate(kind, [sent_norm[k] for k in (i - 1, i, i + 1) if 0 <= k < len(sents)])]
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt

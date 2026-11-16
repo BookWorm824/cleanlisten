@@ -345,6 +345,31 @@ plain words, learned from Lauren directly and from her exported reviews:
   First result (the owner's GTX 1660 Ti): "graphics card,
   about 43 sentences a minute", but CleanView was cleaning a movie at the same time (two Ollama
   models on a 6 GB card swap in and out), so it was asked to run a book with nothing else open.
+- **Word gates for the PC AI's own suggestions** (the owner, 2026-11-16: "you mentioned it over
+  flagging. i noticed that also. how can we work on it?", then "yes" to gates measured on her
+  reports first). Like the relationship gate above, an AI find of violence, disturbing, disrespect
+  (and the content check's "rebellion"), bullying or medical is kept only when that sentence or its
+  neighbour shows some sign of it (`E.ai_gate`, `AI_GATES` in cleanlisten.py; checked in `ai_find`
+  before the double-check, so dropped ones cost no time): violence needs hitting, whipping,
+  flogging, a gun, a shot (not "shot him a look", "shot up", "a shot of whiskey"), a sword, a
+  wound, blood, fighting, war...; disturbing needs cruelty, torture, death, injury or violence;
+  disrespect needs a grown-up (mother, father, sir, Mr., teacher, master...) and something rude
+  (hate, won't, angrily, sullen, "leave me alone", a rude word...) or a sign on its own ("sassed
+  back", "talked back", "crossed his arms", "rolled her eyes", the DISRESPECT list); bullying needs
+  an insult or mocking; medical a doctor, wound, needle, body, poultice, farrier... A gate never drops
+  a line with a sign, so the whippings, the war and the shooting she kept on purpose in Black Beauty
+  are still offered. The AI note says how many were left out ("It left out 97 of its own ideas
+  because nothing in the words showed them (violence 51, disrespect 46)", `gate_note`). Measured on
+  her CleanRead reports (Black Beauty, Wings of a Dream, Camp Club Girls, The Boxcar Children, each
+  line read by hand): violence 107 -> 42 (Black Beauty 88 -> 37), disrespect 80 -> 12 (55 -> 9),
+  bullying 30 -> 7, disturbing 30 -> 9, medical 8 -> 4; of the dropped ones none she ticked and none
+  fit (the 12 Wings "disturbing" lines and "Bump." as violence were the AI's own ticks from before
+  1.17.44, which she said didn't fit; two Camp Club put-downs she unticked, "Very nice, for an
+  amateur.", are the closest).
+  CleanListen's `ai_assist` uses the same gates, plus the relationship one (`romance_sign`): her
+  audiobook reports had 677 and 721 same-sex suggestions ("Daphne is late.") and she ticked none;
+  the gate keeps 71 and 87. Word-list finds aren't gated; your "kept before" marks still apply.
+  Not in CleanView (its PC AI is a separate path). Tests: `tests/test_cleanread_ai_gates.py`.
 - **CleanRead's book check** (Jason, 2026-11-03, "I can't mark anything. No where to click or
   tell Claude"): each example has a real "Not a problem" button on the left, each heading "None of
   these are a problem", the tip says where to click, and "Ask Claude…" uses `cleanread.CheckChat`
@@ -468,7 +493,8 @@ fixed (its key was cut at 200 letters, so it never matched). Not taught: what fi
 real insults and a son talking back, prayers and Jerry's Sunday preaching), any line with a listed word
 ("stupid boy", "such a fool", "jerk of his head"), lines under 5 words ("XXII", "Lame!"), and from the
 laptop's learned block its new religion, romance and "word" marks (as on 11-16). The local AI over-flags
-disrespect (55, hardly any fit) and violence (88: accidents, falls, lameness, shoeing) in old books.
+disrespect (55, hardly any fit) and violence (88: accidents, falls, lameness, shoeing) in old books:
+the word gates (§5, "Word gates for the PC AI's own suggestions") now leave out 46 and 51 of those.
 
 **The little cleaner (1.17.50):** `sweeper.py` is CleanView's `cvsweeper.py` (1.18.111, push broom) with one
 change, `tile` (where the logo's tile is; CleanRead's is 28-484 of 512). `logo.put_logo(..., sweeper=True,
