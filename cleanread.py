@@ -411,7 +411,8 @@ class Book:
         self.bad = {}
         # God's name phrases aren't matched across a full stop ("Help me, Lord. Help me to trust")
         self.breaks = frozenset(s[3] for s in self.sents)
-        self.lang_hits = E.find_language(self.wn, E.ALL_CATS, breaks=self.breaks)
+        self.lang_hits = [h for h in E.find_language(self.wn, E.ALL_CATS, breaks=self.breaks)
+                          if not self.dick_name(h[0])]
         for i, j, cat in self.lang_hits:
             q = self.words[i][0]
             self.bad.setdefault(q, []).append((self.words[i][1], self.words[j - 1][2]))
@@ -459,6 +460,21 @@ class Book:
     def has_bad(self, q, a, b):
         return any(not (y <= a or x >= b) for x, y in self.bad.get(q, []))
 
+
+    def dick_name(self, i):
+        """Is word i "Dick" the name, in an older book (the owner, 2026-11-16, of Black Beauty, where
+        Dick is the ploughboy: "leave all words except pussy")? Written "Dick" (not "dick" or
+        "DICK"), and not right after a word that makes it the insult ("you Dick!", "such a Dick";
+        "Thank you, Dick" is the name). Modern books are left to the word lists."""
+        if not self.old_style or self.wn[i] != "dick":
+            return False
+        q, a, b = self.words[i]
+        if self.paras[q].text[a:b] != "Dick":
+            return False
+        if i == self.sents[self.word_sent[i]][3] or self.words[i - 1][0] != q:
+            return True                          # "Dick ran to the gate."
+        between = self.paras[q].text[self.words[i - 1][2]:a]
+        return not (self.wn[i - 1] in DICK_INSULT_BEFORE and not re.search(r"[,;:\-–—]", between))
 
     def doubtful_word(self, i, j, cat):
         """A note when a flagged word probably has its innocent meaning, else ''."""
@@ -627,9 +643,32 @@ OLD_PREV = {"so", "very", "rather", "quite", "how", "most", "too", "a", "an", "s
             "seemed", "felt", "sounded", "mighty", "uncommonly", "awfully", "pretty"}
 
 
+# "you Dick!", "such a Dick", "what a Dick": the insult, even written with a capital (CleanView's
+# NAME_INSULT_BEFORE, 1.18.111, without "little", "that", "his", "my": "poor little Dick", "that Dick
+# Turpin" are names in an older book)
+DICK_INSULT_BEFORE = {"you", "a", "an", "such", "big", "total", "complete", "real", "absolute",
+                      "being", "what", "some", "your"}
+
+
+# Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
+# The Swiss Family Robinson weren't, and Treasure Island has 26 "Dick"s): old-fashioned words, at
+# least three different ones and 1.5 in every 10,000 words (Treasure Island has 17 in 69,000: 'tis,
+# ere, nay, hither, thither, whither); or a Project Gutenberg book (its licence, or the colophon of a
+# Standard Ebooks book made from one: "Heidi was published in 1881 by Johanna Spyri ... for Project
+# Gutenberg"). Not thee/thou/thy/hath/doth (Bible verses in a modern Christian novel), shall/shan't
+# or whilst alone (British English today).
+OLD_BOOK_WORDS = {"tis", "twas", "twill", "twould", "twere", "o'er", "ere", "e'er", "ne'er", "nay",
+                  "whilst", "betwixt", "hither", "thither", "whither", "wherefore", "methinks",
+                  "prithee", "hostler", "hostlers", "ostler", "ostlers"}
+
+
 def old_style_book(wn):
-    """True when the book uses "gay"/"queer" in the old sense (cheerful / strange)."""
+    """True when the book is an older one: it uses "gay"/"queer" in the old sense (cheerful /
+    strange), or has other clear signs of its age (OLD_BOOK_WORDS, Project Gutenberg), unless
+    "gay"/"queer" are used the modern way ("gay rights", "openly gay")."""
     old = modern = 0
+    archaic, kinds = 0, set()
+    gutenberg = False
     for i, w in enumerate(wn):
         if w in ("gay", "queer"):
             nxt = wn[i + 1] if i + 1 < len(wn) else ""
@@ -638,7 +677,16 @@ def old_style_book(wn):
                 old += 1
             elif nxt in STRONG_MODERN_NEXT or prv in ("openly", "secretly"):
                 modern += 1
-    return old >= 2 and old > modern
+        elif w in OLD_BOOK_WORDS:
+            archaic += 1
+            kinds.add(w)
+        elif w == "gutenberg" and i and wn[i - 1] == "project":
+            gutenberg = True
+    if old >= 2 and old > modern:
+        return True
+    if modern >= 2 and modern >= old:
+        return False
+    return gutenberg or len(kinds) >= 3 and archaic >= max(5, len(wn) * 1.5 / 10000)
 
 
 def modern_orientation(words, i, old_style=False):
@@ -2444,6 +2492,9 @@ def analyze(book, opts, progress=None, cancel=None):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
+        if cat != "mine" and book.dick_name(i):
+            continue    # Dick the ploughboy in an older book (the owner, 2026-11-16: "leave all words
+            #             except pussy"); "you Dick!" and a modern book's "dick" still count
         doubt = book.doubtful_word(i, j, cat)
         if doubt and cat == "orientation" and book.old_style:
             continue    # an older book's "queer"/"gay" meaning strange or cheerful: left alone, not even

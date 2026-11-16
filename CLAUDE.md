@@ -364,6 +364,29 @@ plain words, learned from Lauren directly and from her exported reviews:
   toward a sex scene (`NOT_SEX_BEFORE`; Pride and Prejudice was flagged).
 - "Suck" meaning "is bad" ("life sucks", "that sucked", "sucky") is a rude word (Lauren);
   sucking something isn't ("suck it up", "the vacuum sucks up dirt"): `suck_swear`.
+- **Old-fashioned words** (the owner, 2026-11-16, from her Black Beauty report: "leave all words
+  except pussy. take that word out", "i guess if jerk is used directed towards a person it should
+  come out", "but if its a motion should stay. like he jerked the rope", "and dumb if its
+  aninsult"): "pussy" is always marked, in every book (no "pussy cat"/"pussy willow" guard, and
+  not in `INNOCENT_WORDS`, so no AI leaves it in). "jerk" only at a person ("you jerk", "what a
+  jerk", "that jerk of a husband"); a movement isn't ("a jerk of his head", "jerk at the rein",
+  "with a jerk", "a sudden jerk", "gave the rein a jerk": `jerk_motion`, INNOCENT_PREV). "dumb"
+  only as an insult; unable to speak isn't ("dumb beasts", "a poor dumb creature", "struck/stood/
+  fell dumb", "in dumb amazement"; but "you dumb animal" is: `dumb_called`). "Dick" the name in an
+  older book stays in CleanRead (`Book.dick_name`: written "Dick", not after "you", "a", "such"...
+  without a comma; "Thank you, Dick" is the name). An older book (`old_style_book`) is told by
+  old uses of "gay"/"queer", or by old words (`OLD_BOOK_WORDS`: 'tis, ere, nay, hither,
+  hostler...; three kinds and 1.5 per 10,000 words; not thee/thou, which modern Christian novels
+  quote), or Project Gutenberg, unless "gay"/"queer" are used the modern way. All 12 classics in
+  the phone's library are old-style now (before: not Treasure Island, Heidi, Swiss Family
+  Robinson). Not in CleanView yet (its `test_cleanlisten_words` lists these as differences).
+- **CleanView's Forest Gump lessons** (1.18.111, the owner: "Add the 2 words", "any of the strip
+  club stuff needs cut for all ages if it is checked"): the slur "coon(s)" (STRONG; not "a coon
+  dog", "coon hunting", "a coon's age", "a Maine Coon"), "faggotty" with the same-sex words, and
+  strip clubs as sexual words ("strip club/joint/show/bar/tease", "striptease", "lap dance",
+  "pole dancing", "exotic dancer"; not "a comic strip", "strip the bed", "the Vegas strip", "a pole
+  vault"), so with sexual references ticked CleanRead cuts the line (`_ref_hit`) and CleanListen
+  mutes the words. Tests: `tests/test_old_words_and_gump.py`.
 - She does **not** want things split per Yoto card — all chapter files in one folder.
 
 ## 6. Releasing (users update automatically)

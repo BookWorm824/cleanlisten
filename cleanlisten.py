@@ -322,11 +322,16 @@ def probe_duration(path):
 # film dialogue; guards for everyday uses are in INNOCENT_NEXT / INNOCENT_PREV below)
 STRONG = [r".*fuck.*", r"cunts?", r"motherf.*", r"fk", r"effing", r"effin", r"f'?ing",
           r"mofos?", r"wtf", r"stfu", r"omfg",
-          # racial slurs (the unmistakable ones; "cracker", "coon", "chink" etc. have
-          # everyday meanings too, so they're left to the AI and Claude)
+          # racial slurs (the unmistakable ones; "cracker", "chink" etc. have everyday
+          # meanings too, so they're left to the AI and Claude)
           # (and their possessives: "even a greaseball's got feelings", CleanView 1.18.30)
           r"nigg(a|as|ah|az|er|ers)", r"kike(s|'s|s')?", r"wetback(s|'s|s')?", r"gook(s|'s|s')?",
           r"towelhead(s|'s|s')?", r"raghead(s|'s|s')?", r"beaner(s|'s|s')?",
+          # Forest Gump (CleanView 1.18.111; the owner, 2026-11-16, "Add the 2 words"): "Coons are
+          # trying to get into school." went through. Not the raccoon: "a coon dog", "coon
+          # hunting", "in a coon's age", "a Maine Coon" (INNOCENT_NEXT / INNOCENT_PREV);
+          # "coonskin" and "raccoons" are other words
+          r"coon(s|'s|s')?",
           # West Side Story (CleanView 1.18.30); never fine (not in INNOCENT_WORDS). Guards for
           # "spic and span" and "doo wop" are in INNOCENT_NEXT / INNOCENT_PREV
           r"spic(s|'s|s')?", r"spick(s|'s|s')?", r"polack(s|'s|s')?", r"greaseball(s|'s|s')?",
@@ -505,7 +510,9 @@ SEXUAL_WORDS = [
     r"hookers?", r"blowjobs?", r"threesomes?", r"lingerie", r"panties",
     # a person who strips, not the tool or the chemical (stripper_tool() below)
     r"stripper('s|s)?",
-    # crude words for body parts and sex (from CleanView's TV and film list)
+    # crude words for body parts and sex (from CleanView's TV and film list). "pussy" is marked
+    # out every time, in every book, "pussy cat" and "pussy willow" too (the owner, 2026-11-16,
+    # of Black Beauty's old-fashioned words: "leave all words except pussy. take that word out")
     r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
     r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
     r"cockblock(s|ed|er|ing)?", r"schlongs?", r"todgers?", r"dildos?",
@@ -517,6 +524,10 @@ SEXUAL_WORDS = [
     # explicit findings in coroner and doctor talk (the owner, 2026-11-13; see EXPLICIT_FINDING)
     r"vaginal(ly)?", r"anal", r"anally", r"penile", r"hymen", r"labia", r"vulva",
     r"sodom(y|ize|ized|ise|ised|izing|ising)",
+    # strip clubs (CleanView 1.18.111; the owner, 2026-11-16, after Forest Gump's club: "any of
+    # the strip club stuff needs cut for all ages if it is checked"); "strip-tease" and
+    # "lap-dance" lose the hyphen. Two-word ones are in SEXUAL_PHRASES
+    r"stripteas(e|es|er|ers|ing)", r"lapdanc(e|es|er|ers|ing)",
 ]
 SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
@@ -543,7 +554,15 @@ SEXUAL_PHRASES = [
     ("stripper", "pole"), ("stripper", "poles"), ("strippers", "pole"), ("strippers", "poles"),
     ("stripper's", "pole"), ("stripper's", "poles"),
     ("forced", "penetration"), ("signs", "of", "penetration"), ("evidence", "of", "penetration"),
-] + [("naked", w) for w in ("photo", "photos", "picture", "pictures", "pic", "pics", "selfie", "selfies")
+    # strip clubs (CleanView 1.18.111, LINE_WORDS["sexref"]; the owner, 2026-11-16: "any of the
+    # strip club stuff needs cut for all ages if it is checked"). With sexual references ticked
+    # CleanRead cuts the line (_ref_hit). Not "a comic strip", "strip the bed", "the Vegas strip",
+    # "a strip of land" or "a pole vault"
+] + [("strip", w) for w in ("club", "clubs", "joint", "joints", "show", "shows", "bar", "bars",
+                            "tease", "teases")
+     ] + [(a, w) for a in ("lap", "pole") for w in ("dance", "dances", "dancer", "dancers", "dancing")
+          ] + [("exotic", "dancer"), ("exotic", "dancers")
+               ] + [("naked", w) for w in ("photo", "photos", "picture", "pictures", "pic", "pics", "selfie", "selfies")
      ] + [(v, "off") for v in ("jerk", "jerks", "jerked", "jerking", "jerkin", "jack", "jacks", "jacked",
                           "jacking", "jackin")] + [(v, "with", o) for v in ("sleep", "sleeps", "slept", "sleeping")
      for o in ("him", "her", "me", "you", "them", "someone", "somebody", "anyone",
@@ -890,7 +909,7 @@ def squat_swear(words, i):
 
 PHRASES = {"deity": None, "sexual": SEXUAL_PHRASES, "mild": SCREW_PHRASES,  # deity filled in below
            "moderate": MODERATE_PHRASES, "minced": MINCED_PHRASES}
-# Words that are innocent next to these: "pussy cat", "Moby Dick", "summa cum laude",
+# Words that are innocent next to these: "Moby Dick", "summa cum laude", "a coon dog",
 # "General Hooker", "door knockers". (The word after, or before.)
 GAY_HAPPY_NEXT = {"refrain", "apparel", "abandon", "laughter", "nineties", "paree",
                   # "one gay round of nightclubs" (I Love Lucy; the owner, 2026-11-14: "this is an old
@@ -946,8 +965,13 @@ def stripper_tool(words, i):
     return any(w in STRIPPER_THINGS for w in words[max(0, i - 3):i] + words[i + 1:i + 6])
 
 
-INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"},
-                 **{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
+# (No "pussy cat" / "pussy willow" any more: the owner, 2026-11-16, "take that word out".)
+INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
+                 # the raccoon (CleanView 1.18.111): "a coon dog", "coon hunting", "a coon's age"
+                 "coon": {"dog", "dogs", "hound", "hounds", "hunt", "hunts", "hunting", "hunter",
+                          "hunters", "skin", "skins", "cat", "cats", "tail", "tails", "age", "ages",
+                          "trap", "traps"},
+                 "coons": {"age", "ages"}, "coon's": {"age", "ages"},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
                  # turf: "sod houses", "a sod roof" (CleanView 1.18.11, from CleanRead)
@@ -964,7 +988,18 @@ INNOCENT_NEXT = {"pussy": {"cat", "cats", "willow", "willows", "footing", "foot"
                           "us", "anyone", "anybody", "everyone", "everybody", "nobody", "people", "of"},
                  "fools": {"gold", "around", "rush"},
                  "butt": {"in", "heads"}, "butts": {"in", "heads"},
-                 "dumb": {"waiter", "waiters", "luck", "founded", "show"},
+                 "dumb": {"waiter", "waiters", "luck", "founded", "show",
+                          # unable to speak (the owner, 2026-11-16, of Black Beauty: "and dumb if
+                          # its aninsult"): "our dumb beasts", "a poor dumb creature" (but "you
+                          # dumb animal" still counts: dumb_called())
+                          "beast", "beasts", "animal", "animals", "creature", "creatures", "brute",
+                          "brutes",
+                          # speechless with a feeling, in the classics: "in dumb amazement",
+                          # "a kind of dumb stupor", "dumb patience", "dumb Crambo" (a game)
+                          "amazement", "astonishment", "wonder", "surprise", "stupor", "patience",
+                          "terror", "fright", "horror", "grief", "despair", "misery", "sorrow",
+                          "agony", "anguish", "silence", "endurance", "suffering", "appeal",
+                          "entreaty", "crambo", "servitor", "servitors"},
                  # "gee up" to a horse; the letter G ("a gee string", "gee major")
                  "gee": {"up", "string", "strings", "major", "minor", "sharp", "flat", "clef"},
                  "dumdum": {"bullet", "bullets"}, "dumdums": {"bullet", "bullets"},
@@ -995,6 +1030,50 @@ def fool_called(w, prev, nxt):
     return w == "fool" and prev in FOOL_NOUN_PREV and nxt != "of"
 
 
+# ... and "you dumb animal!", "you dumb brute" call someone dumb, though "dumb beasts" can't speak
+DUMB_CALLED_PREV = {"you", "ya", "yer"}
+
+
+def dumb_called(w, prev):
+    """Is "dumb" here an insult, though a word of "unable to speak" follows ("you dumb animal")?"""
+    return w == "dumb" and prev in DUMB_CALLED_PREV
+
+
+# "jerk" aimed at a person is a rude word; a movement isn't (the owner, 2026-11-16, of Black
+# Beauty: "i guess if jerk is used directed towards a person it should come out", "but if its a
+# motion should stay. like he jerked the rope"). "He jerked the rope" was never matched (only
+# "jerk"/"jerks" are listed) and "jerk the rope", "jerks her up" are in INNOCENT_NEXT; the noun of
+# motion is here: "a jerk of his head", "a jerk at the reins", "a jerk on the line", "with a jerk",
+# "with a sudden jerk", "gave the rein a jerk" (and "a sudden jerk" etc. in INNOCENT_PREV). Not "a
+# jerk of a husband", "a jerk at times", "out with a jerk like him".
+JERK_MOTION_NEXT = {"of", "at", "on", "upon"}
+JERK_PERSON_NEXT = {"like", "who", "whom", "that", "named", "called"}
+JERK_GIVE = {"give", "gives", "gave", "giving", "given"}
+# "don't be a jerk at the party", "he's such a jerk on the phone": a person whatever follows
+JERK_CALLED_BEFORE = {"be", "being", "you're", "youre", "he's", "she's", "i'm", "they're", "such",
+                      "what", "total", "real", "complete", "big"}
+
+
+def jerk_motion(words, i):
+    """Is "jerk"/"jerks" at words[i] a movement ("a jerk of his head", "with a jerk")?"""
+    if words[i] not in ("jerk", "jerks"):
+        return False
+    if i >= 2 and words[i - 1] in ("a", "an") and words[i - 2] in JERK_CALLED_BEFORE:
+        return False
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    nxt2 = words[i + 2] if i + 2 < len(words) else ""
+    if nxt in JERK_MOTION_NEXT:
+        return not (nxt == "of" and nxt2 in ("a", "an") or nxt == "at" and nxt2 == "times")
+    if nxt in JERK_PERSON_NEXT:
+        return False
+    # "with a jerk", "with one jerk", "with a little jerk", "gave it a jerk", "gave a quick jerk"
+    a = i - 1 if i >= 1 and words[i - 1] in ("a", "one") else \
+        i - 2 if i >= 2 and words[i - 2] in ("a", "one") else -1
+    if a < 0:
+        return False
+    return a >= 1 and words[a - 1] == "with" or any(w in JERK_GIVE for w in words[max(0, a - 3):a])
+
+
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WWI army camp
                  # "the rocket was blasted", "he got blasted", "the guns blasted" (CleanView
                  # 1.18.93); "you blasted fool" still counts, so not "you"
@@ -1006,6 +1085,8 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                              "cannon", "cannons", "wind", "winds", "lightning", "bombs", "shells",
                              "music", "speakers", "radio", "horn", "horns", "trumpets", "trumpet"},
                  "cum": {"summa", "magna"},
+                 # the cat: "a Maine Coon" (CleanView 1.18.111)
+                 "coon": {"maine"}, "coons": {"maine"}, "coon's": {"maine"},
                  # a small sting: "a tiny prick of black", "a jealous prick at my heart",
                  # "you can prick them" (never "you little prick", "that prick")
                  "prick": {"tiny", "jealous", "sharp", "slight", "faint", "sudden", "pin",
@@ -1017,8 +1098,21 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
                  "butt": {"cigarette", "cigar", "rifle", "gun"},
                  "butts": {"cigarette", "cigar", "rifle", "gun"},
-                 # "play dumb", "he played dumb when they asked" (Camp Club Girls)
-                 "dumb": {"deaf", "struck", "play", "played", "playing", "plays"}, "dummy": {"test", "ventriloquist", "ventriloquist's"},
+                 # a movement (jerk_motion() above): "a sudden jerk", "with a decided jerk",
+                 # "moved in short jerks" (not "little": "you little jerk")
+                 **{w: {"sudden", "quick", "sharp", "slight", "violent", "decided", "impatient",
+                        "short", "convulsive", "spasmodic", "nervous", "hasty", "abrupt", "rough",
+                        "hard", "strong", "powerful", "vigorous", "smart", "gentle", "light",
+                        "feeble", "involuntary", "backward", "upward", "forward", "downward",
+                        "single", "final", "savage", "fierce"}
+                    for w in ("jerk", "jerks")},
+                 # "play dumb", "he played dumb when they asked" (Camp Club Girls); unable to speak
+                 # (the owner, 2026-11-16: "dumb if its aninsult"): "struck dumb", "she stood dumb"
+                 "dumb": {"deaf", "struck", "stricken", "play", "played", "playing", "plays",
+                          "stood", "stand", "stands", "standing", "sat", "sit", "sits", "sitting",
+                          "remained", "remain", "remains", "remaining", "fell", "fall", "falls",
+                          "falling", "grew", "became", "become", "becomes", "gone", "went"},
+                 "dummy": {"test", "ventriloquist", "ventriloquist's"},
                  "dummies": {"test", "crash"}, "brat": {"army", "navy", "military"},
                  "brats": {"army", "navy", "military"}, "twits": {"the"},   # Roald Dahl's book
                  "craps": {"two", "play", "playing", "played", "shoot", "shooting", "rolled",
@@ -1239,6 +1333,9 @@ ORIENTATION_WORDS = [
     r"homos?", r"pansexual(s)?", r"lgbt", r"lgbtq", r"lgbtqia", r"lgbtq\+?", r"throuples?",
     r"polyamor.*", r"dykes?", r"fags?", r"faggots?", r"lesbos?", r"lez(z?ie|z?ies|bos?)",
     r"marico?n(es)?",       # the Spanish slur, as "faggot" is here (CleanView 1.18.86)
+    # Forest Gump (CleanView 1.18.111; the owner, 2026-11-16, "Add the 2 words"): "Get your
+    # faggotty ass on the bus" went through
+    r"fagg?ott?(y|ie|ies)",
 ]
 EXTRA_CATS = {"orientation": _c(ORIENTATION_WORDS)}
 GROUPS["orientation"] = ["orientation"]
@@ -1406,16 +1503,18 @@ def _find_language(words, cats, breaks=()):
                 if w in FREAK_WORDS and "out" in words[i + 1:i + 3]:
                     break     # "you're freaking me out", "she's freaking out"
                 if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) and
-                        not fool_called(w, words[i - 1] if i else "", words[i + 1] if i + 1 < n else "") or
+                        not fool_called(w, words[i - 1] if i else "", words[i + 1] if i + 1 < n else "") and
+                        not dumb_called(w, words[i - 1] if i else "") or
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
+                        w in ("jerk", "jerks") and jerk_motion(words, i) or
                         w == "gay" and gay_happy(words, i) or
                         w in ("sex", "sexes") and sex_means_gender(words, i) or
                         w == "bondage" and bondage_slavery(words, i) or
                         w.startswith("stripper") and stripper_tool(words, i) or
                         w.startswith("safeword") and (words[i + 1] if i + 1 < n else "") in SAFE_WORD_NOT_NEXT or
                         w in ("jesus", "christ") and reverent(words, i)):
-                    break     # "pussy cat", "Moby Dick", "summa cum laude", "the love of Christ"
+                    break     # "a coon dog", "Moby Dick", "summa cum laude", "the love of Christ"
                 hits.append((i, i + 1, cat))
                 break
         else:
@@ -2677,11 +2776,12 @@ def _masked_text(words):
 INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick", "pricks",
                   "bugger", "climaxed", "homo", "homos", "queer", "queers", "gay", "gays", "pee",
                   "peed", "peeing", "screw", "craps", "stones", "balls", "nuts", "pair", "set",
-                  "jewels", "pussy", "pussies", "cum", "knockers", "pecker", "peckers", "hooker",
+                  "jewels", "cum", "knockers", "pecker", "peckers", "hooker",
                   "hookers", "tosser", "tossers", "shat", "boner", "boners", "bull", "squat", "gee",
                   "crud", "cruddy", "sod", *SUCK_WORDS, *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
-# verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT).
+# verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT). Not "pussy" /
+# "pussies" any more, not even the cat (the owner, 2026-11-16: "take that word out").
 
 
 def may_untick_word(m, words=None):
