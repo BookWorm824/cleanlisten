@@ -144,8 +144,28 @@ def hours_text(h):
     return f"{hh} hour{'s' if hh > 1 else ''}" + (f" {mm} minutes" if mm else "")
 
 
+TASKBAR_ID = "BookWorm824.ReadAloud"     # ReadAloud's own name to the taskbar (own_taskbar_id)
+
+
+def own_taskbar_id():
+    """Give ReadAloud's windows their own name to the taskbar, so it shows the logo they carry, as
+    CleanView 1.18.111 (the owner, 2026-11-16, on another computer: "the logo on the windows bar
+    when it is open was a pic of a random file symbol thing"). Without one, Windows 11 shows the
+    icon of the program the window runs under (ReadAloud.exe, or Python's pythonw.exe), and may
+    find none; with one, it uses the window's own icon (readaloud.ico). Must come before the
+    first window. True when it was set."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        return ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(TASKBAR_ID) == 0
+    except Exception:
+        return False
+
+
 class App(tk.Tk):
     def __init__(self):
+        own_taskbar_id()                    # before the window: its logo in the taskbar
         super().__init__()
         self.title(APP)
         # Text size, as CleanView's (the owner, 2026-11-14: "you need the text menu like clean
@@ -253,10 +273,13 @@ class App(tk.Tk):
                      wraplength=X(740), justify="left").pack(anchor="w", pady=(X(4), X(14)))
         return self.page
 
-    def _logo(self, parent):
+    def _logo(self, parent, sweeper=False):
         """The logo in the middle of the empty space below (Jason: "a lot of dead space"), 50% bigger
-        (the owner, 2026-11-15: 192 px, shrunk smoothly; logo.py, as CleanListen's and CleanRead's)."""
-        return LOGO.put_logo(parent, "readaloud.ico", BG, px=LOGO.WORKING_LOGO)
+        (the owner, 2026-11-15: 192 px, shrunk smoothly; logo.py, as CleanListen's and CleanRead's).
+        sweeper: CleanView's little cleaner sweeps it while the book is read (the owner, 2026-11-15:
+        "Yes, all apps"), leaning on his broom while it's paused."""
+        return LOGO.put_logo(parent, "readaloud.ico", BG, px=LOGO.WORKING_LOGO, sweeper=sweeper,
+                             paused=lambda: bool(self.maker and self.maker.paused))
 
     def _scroll_area(self, parent):
         wrap = tk.Frame(parent, bg=BG)
@@ -1090,7 +1113,7 @@ class App(tk.Tk):
                f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
         tk.Label(p, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=X(740),     # Jason: "bigger"
                  justify="left").pack(anchor="w", pady=(X(16), 0))
-        self._logo(p)
+        self._logo(p, sweeper=True)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
         # Pause beside it (the owner, 2026-11-12): the reading freezes where it is until Resume

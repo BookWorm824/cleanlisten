@@ -28,7 +28,41 @@ def test_the_working_and_done_pages_show_it_bigger(window):
     assert lbl.winfo_reqwidth() < 300               # smaller, not cut off, when there isn't
     room.destroy()
     src = (REPO / "ReadAloud.pyw").read_text("utf8")
-    assert src.count("self._logo(p)") == 2          # the reading page and the done page
+    assert src.count("self._logo(p, sweeper=True)") == 1     # the reading page, with the cleaner
+    assert src.count("self._logo(p)") == 1                   # the done page, without
+
+
+def test_the_little_cleaner_sweeps_it_while_reading_and_leans_while_paused(window):
+    # CleanView's little cleaner (the owner, 2026-11-15: "Yes, all apps"), through logo.py
+    win, app = window
+    big = win.LOGO.WORKING_LOGO
+    room = tk.Toplevel(app)
+    room.attributes("-alpha", 0.0)                  # see-through, as the window
+    room.geometry(f"{big + 120}x{big + 120}+-3000+-3000")
+    cv = app._logo(room, sweeper=True)
+    _pump(app, 0.6)
+    assert isinstance(cv, tk.Canvas) and cv.sweeper.running
+    assert big <= cv.winfo_reqwidth() < big + 8
+
+    class FakeMaker:
+        paused = False
+    app.maker = FakeMaker()
+    assert cv.sweeper.paused() is False
+    app.maker.paused = True
+    assert cv.sweeper.paused() is True              # he leans on his broom
+    app.maker = None
+    assert cv.sweeper.paused() is False
+    room.geometry("300x300")
+    _pump(app, 0.4)
+    assert cv.winfo_reqwidth() < 300                # smaller with the room, he with it
+    room.destroy()
+    _pump(app, 0.2)
+    assert not cv.sweeper.running                   # stops by himself when the page goes
+    plain = tk.Toplevel(app)
+    plain.attributes("-alpha", 0.0)
+    plain.geometry(f"{big + 120}x{big + 120}+-3000+-3000")
+    assert isinstance(app._logo(plain), tk.Label)    # the done page: just the logo
+    plain.destroy()
 
 
 def _pic(ico, size=256):
