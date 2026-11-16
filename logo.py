@@ -227,10 +227,11 @@ def _photo(master, rgba, into=None):
     return tk.PhotoImage(master=master, data=data, format="png")
 
 
-def _sweeping_logo(parent, ico, bg, px):
+def _sweeping_logo(parent, ico, bg, px, paused=None):
     """The logo on a canvas with the little cleaner sweeping it (sweeper.py, as CleanView 1.18.109;
     the owner, 2026-11-15: "Yes, all apps"). Shrinks with the room like the plain one, and he with
-    it; he stops by himself when the page changes. None if it can't be made (then the plain logo)."""
+    it; he stops by himself when the page changes; paused() (if given): the work is paused, and he
+    leans on his broom meanwhile (CleanView 1.18.110). None if it can't be made (then the plain logo)."""
     try:
         import sweeper as SW
         pic = logo_rgba(ico, px)
@@ -247,7 +248,7 @@ def _sweeping_logo(parent, ico, bg, px):
     cv.item = cv.create_image(0, 0, image=cv.image, anchor="nw")
     cv.size = px
     cv.place(relx=0.5, rely=0.45, anchor="center")
-    cv.sweeper = SW.Sweeper(cv, back, lambda rgba, into: _photo(cv, rgba, into), tile=tile)
+    cv.sweeper = SW.Sweeper(cv, back, lambda rgba, into: _photo(cv, rgba, into), paused=paused, tile=tile)
     cv.sweeper.start()
 
     def fit(event):
@@ -267,12 +268,13 @@ def _sweeping_logo(parent, ico, bg, px):
     return cv
 
 
-def put_logo(parent, ico, bg, px=128, sweeper=False):
+def put_logo(parent, ico, bg, px=128, sweeper=False, paused=None):
     """The logo in the middle of the room left in `parent` (packed last, filling what's left).
     Returns the label (a canvas with sweeper=True: the little cleaner sweeps it, for the working
-    page), or None if there's no picture."""
+    page; paused: a function saying whether the work is paused, so he leans on his broom), or None
+    if there's no picture."""
     if sweeper and px > 128:
-        cv = _sweeping_logo(parent, ico, bg, px)
+        cv = _sweeping_logo(parent, ico, bg, px, paused)
         if cv is not None:
             return cv
     img = logo_image(ico, px)

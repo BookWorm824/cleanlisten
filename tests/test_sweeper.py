@@ -1,4 +1,4 @@
-"""CleanView's little cleaner on CleanListen's and CleanRead's working logo (1.17.49; the owner,
+"""CleanView's little cleaner on CleanListen's and CleanRead's working logo (1.17.49, with CleanView 1.18.110's walk and pause; the owner,
 2026-11-15, asked whether the other apps should get CleanView's little cleaner: "Yes, all apps").
 A tenth of the logo's height, wandering over the logo's tile and sweeping with puffs of dust."""
 import json
@@ -106,6 +106,20 @@ class OnTheWorkingPage(unittest.TestCase):
             self.assertIsNone(sweep.next)          # nothing left waiting (it upset others in CleanView)
             pump(0.3)
             self.assertFalse(sweep.running)
+            # paused: he stands leaning on his broom (CleanView 1.18.110), and walks on when let go
+            held = [True]
+            page2 = tk.Frame(root, bg="#F6F3EE")
+            page2.pack(fill="both", expand=True)
+            cv2 = logo.put_logo(page2, "icon.ico", "#F6F3EE", logo.WORKING_LOGO, sweeper=True, paused=lambda: held[0])
+            pump(0.6)
+            self.assertTrue(cv2.sweeper.walker.paused)
+            spot = (cv2.sweeper.walker.x, cv2.sweeper.walker.y)
+            pump(0.6)
+            self.assertEqual((cv2.sweeper.walker.x, cv2.sweeper.walker.y), spot)
+            held[0] = False
+            pump(0.4)
+            self.assertFalse(cv2.sweeper.walker.paused)
+            page2.destroy()
             # the small logo elsewhere stays a plain picture
             lbl = logo.put_logo(tk.Frame(root), "cleanread.ico", "#F6F3EE", 128, sweeper=True)
             self.assertIsInstance(lbl, tk.Label)
@@ -115,7 +129,7 @@ class OnTheWorkingPage(unittest.TestCase):
     def test_both_working_pages_ask_for_him_and_he_ships(self):
         for name in ("CleanListen.pyw", "CleanRead.pyw"):
             text = (REPO / name).read_text(encoding="utf8")
-            self.assertIn("LOGO.WORKING_LOGO, sweeper=True)", text, name)
+            self.assertIn("LOGO.WORKING_LOGO, sweeper=True", text, name)
         self.assertIn("sweeper.py", json.loads((REPO / "version.json").read_text())["files"])
 
 
