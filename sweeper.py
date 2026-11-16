@@ -1,4 +1,4 @@
-"""The little cleaner on the cleaning screen's logo: CleanView's cvsweeper.py (CleanView 1.18.110),
+"""The little cleaner on the cleaning screen's logo: CleanView's cvsweeper.py (CleanView 1.18.111),
 shared by CleanListen, CleanRead and ReadAloud through logo.put_logo(..., sweeper=True) (the owner,
 2026-11-15, asked whether the other apps should get him too: "Yes, all apps"). Only change from
 CleanView's: `tile`, where the logo's tile is (CleanRead's is a little smaller).
@@ -10,7 +10,11 @@ wandering over the logo, stopping now and then to sweep with a puff of dust. 1.1
 we make the cleaner walk a little more realistic. and make him pause with the cleaninig", "When
 I press Pause"): knees that bend, feet that stay put on the ground while the body goes over
 them, a bob in each step, a lean into each sweep, and while cleaning is paused he stands
-leaning on his broom.
+leaning on his broom. 1.18.111 ("can he have a push broom style. and can you make him a little
+more hd?"): a push broom held in both hands and pushed along in front of him, and more detail:
+shaded from above (`LIGHT`) so arms, legs and cap look round, a crisp outline, two arms with
+hands, an ear, nose, eye and mouth, hair under the cap, overall straps with brass buttons and a
+pocket, shoe soles, and bristles with a grain.
 
 numpy draws him (smooth edges at any size, the way cvlook draws); `Walker` decides where he
 goes (no Tk, so tests can run it); `Sweeper` shows him on a Tk canvas over the logo. The canvas
@@ -24,15 +28,26 @@ import numpy as np
 
 SIZE = 0.1          # his height, as a share of the logo's ("B · bigger": 1/10)
 SPEED = 0.85        # how fast he walks, his heights a second
-FPS = 20
+FPS = 15          # frames a second (1.18.111: 15, so his extra detail costs the window little)
 PUFF_LIFE = 0.8     # seconds a puff of dust lasts
-BOX = (-0.8, 0.8, -1.15, 0.25)   # the picture around him, in his heights from his feet
+BOX = (-0.45, 1.25, -1.15, 0.25)  # the picture around him, in his heights from his feet,
 TILE = (20 / 512, 492 / 512)     # where the logo's tile is, as shares of its width (CleanView's)
+                                  # facing right (the broom's side is the long one)
 
-TROUSERS, SHOES, OVERALLS, COLLAR = (46, 74, 122), (58, 42, 32), (59, 110, 168), (242, 209, 107)
-SKIN, CAP, EYE, HANDLE, BRISTLES = (241, 194, 125), (200, 69, 58), (35, 33, 31), (139, 90, 43), (217, 164, 65)
-ARM, DUST = (47, 92, 143), (150, 140, 128)
-FAR_TROUSERS, FAR_SHOES = (34, 56, 96), (44, 32, 24)     # the leg further away, in shadow
+# his colours; FAR_ ones for the arm and leg further away, in shadow
+SHIRT, FAR_SHIRT = (240, 238, 230), (196, 194, 186)
+OVERALLS, POCKET, BRASS = (59, 110, 168), (44, 86, 138), (236, 200, 96)
+TROUSERS, FAR_TROUSERS = (54, 100, 156), (38, 72, 118)
+SHOES, FAR_SHOES, SOLE = (64, 46, 34), (46, 34, 26), (28, 22, 18)
+SKIN, FAR_SKIN, HAIR = (241, 194, 125), (212, 164, 104), (96, 64, 40)
+CAP, CAP_DARK = (204, 70, 58), (164, 50, 42)
+EYE_WHITE, EYE, MOUTH = (250, 248, 242), (35, 33, 31), (156, 74, 62)
+HANDLE, BLOCK, BRISTLES = (186, 132, 74), (116, 74, 42), (74, 64, 56)
+DUST, OUTLINE = (150, 140, 128), (30, 30, 38)
+LIGHT = (-0.45, -0.89)  # towards the light: above, a little to the left
+SHADE = 0.24            # how much lighter/darker a part is towards/away from the light
+STROKE = 7.0            # the push strokes while sweeping (radians a second)
+ARM = 0.175             # upper arm and forearm, each
 
 # his walk, in his heights: legs from the hip, each half, and the hip's height standing
 HIP, LEG = 0.425, 0.228
@@ -43,8 +58,10 @@ BOB = 0.015         # the body's rise and fall in a step
 BLEND = 0.25        # seconds to change from walking to sweeping or standing, and back
 
 # a pose: each foot (from under the hip, up is minus), the body lowered (dy), leaned forward
-# (lean, radians) and the broom's angle from straight down (forward is plus)
-STANDING = {"near": (0.06, 0.0), "far": (-0.05, 0.0), "dy": 0.0, "lean": 0.0, "broom": 0.6}
+# (lean, radians), the push broom's head on the ground (head: how far in front) and the near
+# hand on its handle (grip; lowered with the body)
+STANDING = {"near": (0.06, 0.0), "far": (-0.05, 0.0), "dy": 0.0, "lean": 0.0, "head": 0.62,
+            "grip": (0.28, -0.52)}
 
 
 def backdrop(logo, bg):
@@ -117,19 +134,39 @@ def _upper(x, y, pose, h):
     return c * x + s * y, -s * x + c * y + pivot
 
 
-def broom_tip(h, pose):
-    """Where the broom's bristles end, from his feet, facing right."""
-    ang, lean, pivot = pose["broom"], pose["lean"], -HIP * h
-    ux, uy = 0.1 * h + math.sin(ang) * 0.73 * h, -0.6 * h + math.cos(ang) * 0.73 * h - pivot
+def _from_upper(ux, uy, pose, h):
+    """A point of the upper body (pixels) in the body's own directions."""
+    lean, pivot = pose["lean"], -HIP * h
     c, s = math.cos(lean), math.sin(lean)
+    uy = uy - pivot
     return c * ux - s * uy, s * ux + c * uy + pivot + pose["dy"] * h
 
 
-def _knee(hx, hy, fx, fy, leg):
-    """Where the knee is, bending forward, for a hip and a foot."""
+def broom_tip(h, pose):
+    """The front of the broom's bristles on the ground, from his feet, facing right (where the
+    dust comes out)."""
+    return (pose["head"] + 0.18) * h, -0.02 * h
+
+
+def _knee(hx, hy, fx, fy, leg, down=False):
+    """The middle joint between two ends, bending forward (a knee) or, down, under (an elbow)."""
     d = min(math.hypot(fx - hx, fy - hy), 2 * leg - 1e-6)
     th, a = math.atan2(fy - hy, fx - hx), math.acos(d / (2 * leg))
+    a = -a if down else a
     return hx + leg * math.cos(th - a), hy + leg * math.sin(th - a)
+
+
+def _broom(pose, h):
+    """The broom: its head's middle (on the ground), the handle's two ends, and the hands."""
+    hx = pose["head"] * h
+    bottom = (hx, -0.075 * h)
+    gx, gy = pose["grip"][0] * h, (pose["grip"][1] + pose["dy"]) * h
+    dx, dy = gx - bottom[0], gy - bottom[1]
+    ln = math.hypot(dx, dy) or 1.0
+    dx, dy = dx / ln, dy / ln
+    top = (bottom[0] + dx * 0.8 * h, bottom[1] + dy * 0.8 * h)
+    far = (gx + dx * 0.16 * h, gy + dy * 0.16 * h)
+    return hx, bottom, top, (gx, gy), far
 
 
 def draw(picture, fx, fy, h, pose=None, face=1, shadow=True):
@@ -140,47 +177,88 @@ def draw(picture, fx, fy, h, pose=None, face=1, shadow=True):
     y, x = np.mgrid[0:H, 0:W].astype(float) + 0.5
     x, y = (x - fx) * face, y - fy                     # his own directions, feet at 0, 0
     ux, uy = _upper(x, y, pose, h)                     # the upper body's
-    lw = max(1.3, 0.075 * h)
+    lw = max(1.2, 0.07 * h)
     hip = -HIP * h + pose["dy"] * h
-    ang = pose["broom"]
-    hx, hy = 0.1 * h, -0.6 * h
-    sa, ca = math.sin(ang), math.cos(ang)
-    ex, ey = hx + sa * 0.58 * h, hy + ca * 0.58 * h
+    head_x, bottom, top, grip, far_grip = _broom(pose, h)
 
-    def turned(u, v):                                  # the bristles, along the handle
-        return ex + u * ca + v * sa, ey - u * sa + v * ca
-    parts = []
-    for leg, trousers, shoes in (("far", FAR_TROUSERS, FAR_SHOES), ("near", TROUSERS, SHOES)):
-        footx, footy = pose[leg][0] * h, pose[leg][1] * h
+    def up(px, py):                                    # an upper-body point, in his heights
+        return _from_upper(px * h, py * h, pose, h)
+
+    def arm(shoulder, hand, sleeve, skin):
+        ex, ey = _knee(shoulder[0], shoulder[1], hand[0], hand[1], ARM * h, down=True)
+        return [(_capsule(x, y, shoulder[0], shoulder[1], ex, ey, lw * 0.62), sleeve, SHADE),
+                (_capsule(x, y, ex, ey, hand[0], hand[1], lw * 0.5), skin, SHADE),
+                (_circle(x, y, hand[0], hand[1], 0.042 * h), skin, SHADE)]
+
+    def leg(foot, trousers, shoes):
+        footx, footy = foot[0] * h, foot[1] * h
         kx, ky = _knee(0, hip, footx, footy, LEG * h)
-        parts.append((np.minimum(_capsule(x, y, 0, hip, kx, ky, lw * 0.75),
-                                 _capsule(x, y, kx, ky, footx, footy, lw * 0.7)), trousers))
-        parts.append((_capsule(x, y, footx - 0.02 * h, footy, footx + 0.07 * h, footy, lw * 0.65),
-                      shoes))
+        return [(np.minimum(_capsule(x, y, 0, hip, kx, ky, lw * 0.75),
+                            _capsule(x, y, kx, ky, footx, footy, lw * 0.68)), trousers, SHADE),
+                (_capsule(x, y, footx - 0.025 * h, footy - 0.005 * h, footx + 0.075 * h,
+                          footy - 0.005 * h, lw * 0.62), shoes, SHADE),
+                (_box(x, y, footx - 0.06 * h, footx + 0.115 * h, footy + 0.005 * h,
+                      footy + 0.03 * h, 0.012 * h), SOLE, 0.0)]
+
+    grain = 1 + 0.16 * np.sin((x - head_x) * 2 * math.pi / max(1.6, 0.035 * h))
+    parts = arm(up(-0.04, -0.72), far_grip, FAR_SHIRT, FAR_SKIN)
+    parts += leg(pose["far"], FAR_TROUSERS, FAR_SHOES)
+    parts += leg(pose["near"], TROUSERS, SHOES)
     parts += [
-        (_box(ux, uy, -0.14 * h, 0.14 * h, -0.78 * h, -0.38 * h, 0.07 * h), OVERALLS),
-        (_box(ux, uy, -0.09 * h, 0.09 * h, -0.78 * h, -0.72 * h), COLLAR),
-        (_circle(ux, uy, 0, -0.88 * h, 0.12 * h), SKIN),
-        (np.maximum(_circle(ux, uy, 0, -0.9 * h, 0.128 * h), uy + 0.9 * h), CAP),
-        (_box(ux, uy, 0, 0.21 * h, -0.915 * h, -0.875 * h), CAP),
-        (_circle(ux, uy, 0.06 * h, -0.87 * h, max(0.4, 0.018 * h)), EYE),
-        (_capsule(ux, uy, hx - sa * 0.12 * h, hy - ca * 0.12 * h, ex, ey, lw / 2), HANDLE),
-        (_polygon(ux, uy, [turned(-0.05 * h, -0.01 * h), turned(0.05 * h, -0.01 * h),
-                           turned(0.11 * h, 0.15 * h), turned(-0.11 * h, 0.15 * h)]), BRISTLES),
-        (_capsule(ux, uy, 0, -0.72 * h, hx, hy, lw * 0.6), ARM),
+        (_box(ux, uy, -0.13 * h, 0.13 * h, -0.79 * h, -0.42 * h, 0.065 * h), SHIRT, SHADE),
+        (_box(ux, uy, -0.145 * h, 0.145 * h, -0.53 * h, -0.36 * h, 0.05 * h), OVERALLS, SHADE),
+        (_box(ux, uy, -0.1 * h, 0.115 * h, -0.705 * h, -0.47 * h, 0.025 * h), OVERALLS, SHADE),
+        (_capsule(ux, uy, 0.085 * h, -0.7 * h, 0.06 * h, -0.79 * h, lw * 0.32), OVERALLS, 0.1),
+        (_capsule(ux, uy, -0.075 * h, -0.7 * h, -0.095 * h, -0.78 * h, lw * 0.32), OVERALLS, 0.1),
+        (_box(ux, uy, -0.035 * h, 0.07 * h, -0.645 * h, -0.555 * h, 0.012 * h), POCKET, 0.1),
+        (_circle(ux, uy, 0.085 * h, -0.69 * h, 0.024 * h), BRASS, 0.3),
+        (_circle(ux, uy, -0.075 * h, -0.69 * h, 0.024 * h), BRASS, 0.3),
+        (_box(ux, uy, -0.125 * h, -0.04 * h, -0.93 * h, -0.85 * h, 0.035 * h), HAIR, SHADE),
+        (_circle(ux, uy, 0.01 * h, -0.88 * h, 0.12 * h), SKIN, SHADE),
+        (_circle(ux, uy, -0.015 * h, -0.865 * h, 0.032 * h), FAR_SKIN, 0.15),
+        (_circle(ux, uy, 0.13 * h, -0.86 * h, 0.03 * h), SKIN, 0.2),
+        (_circle(ux, uy, 0.072 * h, -0.885 * h, max(0.55, 0.028 * h)), EYE_WHITE, 0.0),
+        (_circle(ux, uy, 0.082 * h, -0.885 * h, max(0.4, 0.017 * h)), EYE, 0.0),
+        (_capsule(ux, uy, 0.07 * h, -0.818 * h, 0.105 * h, -0.825 * h, max(0.3, 0.008 * h)), MOUTH, 0.0),
+        (np.maximum(_circle(ux, uy, 0.01 * h, -0.905 * h, 0.132 * h), uy + 0.905 * h), CAP, SHADE),
+        (_box(ux, uy, -0.12 * h, 0.142 * h, -0.925 * h, -0.893 * h, 0.01 * h), CAP_DARK, 0.1),
+        (_box(ux, uy, 0.06 * h, 0.25 * h, -0.92 * h, -0.888 * h, 0.016 * h), CAP_DARK, SHADE),
+        (_circle(ux, uy, 0.01 * h, -1.037 * h, 0.022 * h), CAP_DARK, 0.2),
+        (_capsule(x, y, bottom[0], bottom[1], top[0], top[1], lw * 0.42), HANDLE, SHADE),
+        (_box(x, y, head_x - 0.18 * h, head_x + 0.18 * h, -0.085 * h, -0.045 * h, 0.012 * h), BLOCK, SHADE),
+        (_box(x, y, head_x - 0.17 * h, head_x + 0.17 * h, -0.05 * h, 0.0, 0.006 * h),
+         np.array(BRISTLES, float) * grain[..., None], 0.1),
     ]
+    parts += arm(up(0.03, -0.71), grip, SHIRT, SKIN)
     out = picture.astype(float)
+    whole = np.full((H, W), np.inf)
+    for d, _, _ in parts:
+        whole = np.minimum(whole, d)
     if shadow:
-        ground = _cover((np.hypot(x / (0.22 * h), y / (0.06 * h)) - 1) * 0.06 * h)
+        ground = np.maximum(_cover((np.hypot(x / (0.22 * h), y / (0.06 * h)) - 1) * 0.06 * h),
+                            _cover((np.hypot((x - head_x) / (0.22 * h), y / (0.05 * h)) - 1) * 0.05 * h))
         out *= 1 - 0.18 * ground[..., None]
-        whole = np.zeros((H, W))
-        for d, _ in parts:
-            whole = np.maximum(whole, _cover(d))
-        halo = _blur(whole, max(1.0, 0.04 * h))         # a soft dark edge, to stand out
-        out *= 1 - 0.28 * np.clip(halo * 1.6, 0, 1)[..., None]
-    for d, colour in parts:
-        c = _cover(d)[..., None]
-        out = out * (1 - c) + np.array(colour, float) * c
+        halo = _blur(_cover(whole), max(1.0, 0.04 * h))   # a soft dark edge, to stand out
+        out *= 1 - 0.22 * np.clip(halo * 1.6, 0, 1)[..., None]
+    c = _cover(whole - 0.7)[..., None] * 0.85              # a crisp outline
+    out = out * (1 - c) + np.array(OUTLINE, float) * c
+    for d, colour, shade in parts:                     # each only where it is (quicker)
+        c = _cover(d)
+        rows = np.nonzero(c.any(axis=1))[0]
+        if not len(rows):
+            continue
+        cols = np.nonzero(c.any(axis=0))[0]
+        r0, r1 = max(0, rows[0] - 1), rows[-1] + 2
+        c0, c1 = max(0, cols[0] - 1), cols[-1] + 2
+        c, d = c[r0:r1, c0:c1, None], d[r0:r1, c0:c1]
+        col = np.array(colour, float)
+        if col.ndim == 3:
+            col = col[r0:r1, c0:c1]
+        if shade and min(d.shape) > 1:
+            gy, gx = np.gradient(d)
+            lit = np.clip(gx * LIGHT[0] * face + gy * LIGHT[1], -1, 1)
+            col = col * (1 + shade * lit)[..., None]
+        out[r0:r1, c0:c1] = out[r0:r1, c0:c1] * (1 - c) + col * c
     picture[:] = np.clip(out + 0.5, 0, 255).astype(np.uint8)
     return picture
 
@@ -221,28 +299,30 @@ def _mix(a, b, k):
 
 def walking(p):
     """The pose p of the way through a step (0-1): each foot on the ground going back under
-    him for ON_GROUND of it, then lifted and swung forward; the other foot half a step on."""
+    him for ON_GROUND of it, then lifted and swung forward; the other foot half a step on. He
+    pushes the broom along in front of him."""
     def foot(q):
         if q < ON_GROUND:
             return STRIDE / 2 - STRIDE * q / ON_GROUND, 0.0
         u = (q - ON_GROUND) / (1 - ON_GROUND)
         return -STRIDE / 2 + STRIDE * _ease(u), -LIFT * math.sin(math.pi * u)
     up = BOB * math.cos(4 * math.pi * (p - ON_GROUND / 2))     # highest over each foot
-    return {"near": foot(p), "far": foot((p + 0.5) % 1), "dy": -up, "lean": 0.06,
-            "broom": 0.75 + 0.08 * math.sin(4 * math.pi * p)}
+    return {"near": foot(p), "far": foot((p + 0.5) % 1), "dy": -up, "lean": 0.09,
+            "head": 0.7 + 0.012 * math.sin(4 * math.pi * p), "grip": (0.32, -0.5)}
 
 
 def sweeping(t):
-    """Feet apart, knees bent a little, leaning into each stroke of the broom."""
-    s = math.sin(t * 13)
-    return {"near": (0.1, 0.0), "far": (-0.08, 0.0), "dy": 0.025 + 0.012 * s,
-            "lean": 0.1 + 0.06 * s, "broom": 0.6 + 0.32 * s}
+    """Feet apart, knees bent a little, pushing the broom out and drawing it back, leaning
+    into each push."""
+    s = math.sin(t * STROKE)
+    return {"near": (0.11, 0.0), "far": (-0.1, 0.0), "dy": 0.025 + 0.01 * s,
+            "lean": 0.09 + 0.07 * s, "head": 0.6 + 0.14 * s, "grip": (0.26 + 0.1 * s, -0.5)}
 
 
 def leaning(t):
-    """Paused: standing, the broom upright beside him, breathing."""
+    """Paused: standing, the broom upright in front of him, both hands on top, breathing."""
     return {"near": (0.05, 0.0), "far": (-0.04, 0.0), "dy": 0.004 * math.sin(t * 2.2),
-            "lean": -0.02, "broom": 0.12}
+            "lean": -0.02, "head": 0.43, "grip": (0.34, -0.6)}
 
 
 class Walker:
@@ -323,7 +403,7 @@ class Walker:
             self.timer -= dt
             # a puff at the end of a stroke, none in the last moments (they'd be left behind)
             if (self._blend >= 1 and self.timer > PUFF_LIFE * 0.6
-                    and math.sin(self.t * 13) > 0.95 and self.t - self.last_puff > 0.3):
+                    and math.sin(self.t * STROKE) > 0.95 and self.t - self.last_puff > 0.5):
                 self.last_puff = self.t
                 bx, by = broom_tip(self.h, sweeping(self.t))
                 self.puffs.append((self.x + bx * self.face, self.y + by, 0.0))
@@ -336,6 +416,8 @@ class Walker:
     def box(self):
         """The picture around him (x0, y0, x1, y1), whole pixels, inside the logo."""
         h, (a, b, c, d) = self.h, BOX
+        if self.face < 0:
+            a, b = -b, -a
         x0, y0 = max(0, int(self.x + a * h)), max(0, int(self.y + c * h))
         return x0, y0, min(self.n, int(math.ceil(self.x + b * h))), min(self.n, int(math.ceil(self.y + d * h)))
 

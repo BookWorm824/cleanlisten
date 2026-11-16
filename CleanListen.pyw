@@ -271,8 +271,28 @@ def open_path(p):
         subprocess.Popen(["xdg-open", p])
 
 
+
+TASKBAR_ID = "BookWorm824.CleanListen"
+
+
+def own_taskbar_id():
+    """Give this program's windows their own name to the taskbar, so it shows the logo they carry
+    (as CleanView 1.18.111; the owner, 2026-11-16, of CleanView on another computer: "the logo on
+    the windows bar when it is open was a pic of a random file symbol thing"). Without one, Windows
+    11 shows the icon of the program the window runs under (its own .exe, or Python's pythonw.exe
+    where that can't be made), which may have none. Must come before the first window."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+        return ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(TASKBAR_ID) == 0
+    except Exception:
+        return False
+
+
 class App(tk.Tk):
     def __init__(self):
+        own_taskbar_id()        # before the first window (CleanView 1.18.111)
         super().__init__()
         self.title("CleanListen")
         # the text size chosen (CleanView's "Text size"): Tk sizes text as each part of the window
