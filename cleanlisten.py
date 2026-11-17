@@ -515,7 +515,9 @@ SEXUAL_WORDS = [
     r"sex", r"sexes", r"sexy", r"sexier", r"sexiest", r"sexual", r"sexually", r"sexuality",
     r"sexed", r"sexting", r"horny", r"orgasm.*", r"erections?", r"arous(ed|al)",
     r"condoms?", r"boobs?", r"boobies", r"penis(es)?", r"vaginas?", r"genital.*",
-    r"nipples?", r"porn.*", r"foreplay", r"intercourse", r"masturbat.*", r"climaxed",
+    r"nipples?", r"porn.*", r"foreplay", r"intercourse", r"masturbat.*",
+    r"masterbat(e|es|ed|ing|ion|ions|or|ors|ory)",    # the common misspelling (CleanView 1.18.126)
+    r"climaxed",
     r"hookers?", r"blowjobs?", r"threesomes?", r"lingerie", r"panties",
     # a person who strips, not the tool or the chemical (stripper_tool() below)
     r"stripper('s|s)?",
