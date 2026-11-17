@@ -991,7 +991,12 @@ def stripper_tool(words, i):
 # an insult: Book.dick_name.)
 # a feeling stirred up: "aroused his curiosity", "aroused their suspicions" (INNOCENT_NEXT has the rest)
 AROUSED_FEELINGS = {"suspicion", "suspicions", "curiosity", "interest", "anger", "fear", "fears", "pity",
-                    "attention", "jealousy", "envy", "concern", "alarm", "indignation", "sympathy", "hopes"}
+                    "attention", "jealousy", "envy", "concern", "alarm", "indignation", "sympathy", "hopes",
+                    # woken or alerted: "This second trip fairly aroused the watchers along shore" (Treasure
+                    # Island, the night run's report, 2026-11-17)
+                    "watchers", "household", "house", "camp", "guards", "guard", "sentries", "sentry",
+                    "town", "village", "neighbours", "neighbors", "crew", "sleepers", "whole", "dogs",
+                    "enemy", "garrison", "ship", "everyone", "everybody"}
 PUSSY_WORDS = {"pussy", "pussies"}
 PUSSY_CAT_NEXT = {"cat", "cats", "kitten", "kittens"}
 CAT_WORDS = {"cat", "cats", "cat's", "kitten", "kittens", "kitten's", "kitty", "kitties", "kittie",
@@ -1046,7 +1051,10 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                           "us", "anyone", "anybody", "everyone", "everybody", "nobody", "people", "of"},
                  "fools": {"gold", "around", "rush"},
                  # "nuzzle into its folds and butt its tight-curled head" (a lamb: The Secret Garden)
-                 "butt": {"in", "heads", "its", "his", "their", "against"}, "butts": {"in", "heads", "its", "against"},
+                 # ... and "something of a butt with the country boys", "the butt of the joke", "the
+                 # butt of his pistol" (Treasure Island)
+                 "butt": {"in", "heads", "its", "his", "their", "against", "of", "with", "end", "ends"},
+                 "butts": {"in", "heads", "its", "against", "of", "with"},
                  "dumb": {"waiter", "waiters", "luck", "founded", "show",
                           # unable to speak (the owner, 2026-11-16, of Black Beauty: "and dumb if
                           # its aninsult"): "our dumb beasts", "a poor dumb creature" (but "you
@@ -1170,7 +1178,11 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                  "dumb": {"deaf", "struck", "stricken", "play", "played", "playing", "plays",
                           "stood", "stand", "stands", "standing", "sat", "sit", "sits", "sitting",
                           "remained", "remain", "remains", "remaining", "fell", "fall", "falls",
-                          "falling", "grew", "became", "become", "becomes", "gone", "went"},
+                          "falling", "grew", "became", "become", "becomes", "gone", "went",
+                          # not calling anyone dumb: "you ain't dumb, I reckon" (able to speak: Treasure
+                          # Island, the night run's report, 2026-11-17), "he's not dumb"
+                          "ain't", "aint", "not", "isn't", "isnt", "wasn't", "wasnt", "aren't", "arent",
+                          "never", "weren't", "werent"},
                  "dummy": {"test", "ventriloquist", "ventriloquist's"},
                  "dummies": {"test", "crash"}, "brat": {"army", "navy", "military"},
                  "brats": {"army", "navy", "military"}, "twits": {"the"},   # Roald Dahl's book

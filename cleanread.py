@@ -675,7 +675,9 @@ OLD_NAMES = {"dick": "Dick", "sissy": "Sissy"}
 OLD_BOOK_LEFT = {"boner", "boners",
                  # a sweetheart in 1913 English ("the trouble with her lover", "who was her lover?":
                  # Pollyanna, the night run's report, 2026-11-17)
-                 "lover", "lovers"}
+                 "lover", "lovers",
+                 # "now, my cock, you've got to" (old slang for "my fellow": Treasure Island)
+                 "cock", "cocks"}
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -962,6 +964,17 @@ BEDTIME = {"bed", "beds", "bedtime", "nightgown", "nightdress", "nightie", "paja
 BED_COMPANY = {"him", "his", "he", "man", "husband", "lover", "lovers", "together", "boyfriend", "beside"}
 
 
+PAIN_WORDS = {"pain", "pains", "wound", "wounds", "wounded", "weakness", "dying", "agony", "injured", "injury",
+              "hurt", "bleeding", "blood", "dirk", "shot", "fever", "groaned", "groan", "groans", "suffering"}
+SEX_SCENE = {"kissed", "kiss", "kisses", "kissing", "naked", "nude", "breasts", "breast", "bed", "lips", "caressed",
+             "caress", "undressed", "thighs", "lover", "lovers", "desire", "pleasure", "embrace", "embraced"}
+
+
+def in_pain(words, around):
+    """Is this "moan ... writhed" someone in pain, with nothing of a sex scene in it?"""
+    return bool(PAIN_WORDS & (set(words) | set(around))) and not SEX_SCENE & set(words)
+
+
 def undressed_for_bed(words, around):
     return bool(BEDTIME & (set(words) | set(around))) and not BED_COMPANY & set(words)
 
@@ -1037,8 +1050,8 @@ SUBSTANCES = NotSoftDrink(SUBSTANCES)
 # The word lists catch the plain cases; the AI helper and Claude read for the rest.
 # Not food or fire (the training run, 2026-11-15): "smoked turkey, baked ham", "the smoking ruins",
 # "a smoking gun"
-SMOKED_NOT = "turkey|ham|hams|salmon|trout|haddock|mackerel|herring|herrings|kipper|kippers|fish|meat|meats|sausage|sausages|bacon|cheese|cheeses|oysters|brisket|pork|beef|chicken|duck|eel|paprika|glass|glasses|almonds|venison|tongue|sturgeon|whitefish|cod|ribs"
-SMOKING_NOT = ("gun|guns|ruin|ruins|wreck|wreckage|crater|craters|embers|remains|rubble|chimney|chimneys|volcano|barrel|barrels|hole|holes|debris|ashes|cinders|logs|fire|fires|wick|candle|candles|lamp|lamps|stove|torch|torches|pan|grease|oil|engine|engines|exhaust|tires|brakes|fuse|crack|cracks|hot")
+SMOKED_NOT = "out|turkey|ham|hams|salmon|trout|haddock|mackerel|herring|herrings|kipper|kippers|fish|meat|meats|sausage|sausages|bacon|cheese|cheeses|oysters|brisket|pork|beef|chicken|duck|eel|paprika|glass|glasses|almonds|venison|tongue|sturgeon|whitefish|cod|ribs"
+SMOKING_NOT = ("musket|muskets|pistol|pistols|rifle|rifles|cannon|cannons|gun|guns|ruin|ruins|wreck|wreckage|crater|craters|embers|remains|rubble|chimney|chimneys|volcano|barrel|barrels|hole|holes|debris|ashes|cinders|logs|fire|fires|wick|candle|candles|lamp|lamps|stove|torch|torches|pan|grease|oil|engine|engines|exhaust|tires|brakes|fuse|crack|cracks|hot")
 SMOKING = Matcher(
     words=[r"cigarettes?", r"cigars?", r"cigarillos?", r"tobacco", r"vap(e|es|ing|ed)",
            r"smokes", r"nicotine"],
@@ -1069,7 +1082,9 @@ RUM_ODD_NEXT = {"go", "start", "thing", "things", "one", "ones", "lot", "sort", 
                 "beggars", "card", "cove", "coves", "story", "stories", "notion", "notions", "game",
                 "person", "people", "feeling", "look", "looks", "set", "crew", "dodge", "time",
                 "times", "country", "house", "shop", "face", "voice", "noise", "noises", "state",
-                "lot", "go's", "goings", "doings", "habit", "habits", "trick", "tricks", "fish"}
+                "lot", "go's", "goings", "doings", "habit", "habits", "trick", "tricks", "fish",
+                # a barrel, not a drink: "stove in your old blockhouse like a rum puncheon" (Treasure Island)
+                "puncheon", "puncheons", "cask", "casks", "barrel", "barrels", "keg", "kegs"}
 
 
 def rum_odd(words, i):
@@ -1372,7 +1387,9 @@ ANIMALS = {"bear", "bears", "pig", "pigs", "rat", "rats", "snake", "snakes", "wo
            "calf", "beetle", "beetles", "moth", "moths", "mosquito", "mosquitoes", "slug", "slugs",
            "worm", "worms", "pheasant", "pheasants", "partridge", "grouse", "boar", "buffalo", "elk",
            "moose", "bull", "cow", "turkey", "game", "wildcat", "wildcats", "cub", "cubs", "vixen",
-           "crow", "crows", "kitten", "kittens", "monkey", "monkeys", "toad", "toads", "frog", "frogs"}
+           "crow", "crows", "kitten", "kittens", "monkey", "monkeys", "toad", "toads", "frog", "frogs",
+           # "There's where I killed my first goat.", "Care killed a cat." (Treasure Island)
+           "goat", "goats", "cat", "cats", "dog", "dogs", "horse", "horses", "seal", "seals"}
 # nobody killed: "I have not killed anything", "she had never killed anything in all her life"
 KILL_NOT = {"not", "never", "nothing", "didnt", "didn't", "hasnt", "hasn't", "havent", "haven't", "hadnt",
             "hadn't", "wont", "won't", "cant", "can't", "cannot", "dont", "don't", "doesnt", "doesn't",
@@ -1389,6 +1406,9 @@ KILL_FIGHT = {"fought", "fight", "fighting", "axe", "ax", "sword", "gun", "rifle
               "stabbed", "shot", "chopped", "slashed", "battle", "attacked", "attack"}
 
 
+SLAP_FRIENDLY = {"thigh", "thighs", "knee", "knees", "leg", "legs", "forehead", "brow", "table", "tables",
+                 "desk", "counter", "pocket", "pockets", "side", "sides", "hands", "palms", "palm", "bar",
+                 "steering", "wheel", "mosquito", "mosquitoes", "fly", "flies", "water", "mud", "paint"}
 SLAP_THING_HOW = {"open", "shut", "closed", "down", "onto", "on", "aside", "away", "together", "into",
                   "flat", "back", "off"}
 
@@ -1401,6 +1421,12 @@ def kill_not_violence(words, i):
     nearby" (a fox cub's).)"""
     if words[i].startswith("slap"):
         if words[i + 1:i + 2] in (["it"], ["them"]) and SLAP_THING_HOW & set(words[i + 2:i + 4]):
+            return True
+        # "Doctor Livesey fairly slapped his thigh", "slapping tables with his hand", "and slapped him on
+        # the back" (Treasure Island, the night run's report, 2026-11-17)
+        if SLAP_FRIENDLY & set(words[i + 1:i + 4]) or \
+                any(words[k:k + 3] in (["on", "the", "back"], ["on", "the", "shoulder"], ["on", "the", "knee"])
+                    for k in range(i + 1, min(len(words), i + 5))):
             return True
         return bool(KILL_IF & set(words[:i]))     # "If you had been his own boy and he had been a slapping sort of man"
     if not words[i].startswith("kill"):
@@ -1421,7 +1447,8 @@ def kill_not_violence(words, i):
     if KILL_BY_SMELL & set(words[max(0, i - 6):i]):
         return True
     after = [w for w in words[i + 1:i + 4] if w not in ("a", "an", "the", "his", "her", "their", "that",
-                                                       "this", "some", "two", "three", "every")]
+                                                       "this", "some", "two", "three", "every", "my", "your",
+                                                       "our", "first", "last", "own", "big", "little", "old")]
     if after and after[0] in ANIMALS:
         return True
     if any(w in ANIMALS for w in words[max(0, i - 12):i]) and KILL_THE_CREATURE & set(words[i + 1:i + 5]) \
@@ -1496,10 +1523,22 @@ VIOLENCE = ViolenceMatcher(
              "shot him|her|them|me|you|us !a|an|another|one|that|this|daggers|looks|glances",
              "shot at !" + SHOT_AT_NOT, "shot dead", "slit his|her|their throat",
              "kicked|kicks|kicking him|her|them|me in", "hit|punched him|her|them in the"])
+TORTURED_BY = {"thirst", "hunger", "doubt", "doubts", "fear", "fears", "anxiety", "jealousy", "remorse",
+               "curiosity", "guilt", "heat", "cold", "toothache", "pain", "regret", "shame", "suspense",
+               "worry", "memories", "longing", "uncertainty", "hope", "conscience"}
+
+
 def pain_of(words, i):
     """"on pain of torture", "under pain of death": a warning said in fun, not torture (The Railway
-    Children, the owner, 2026-11-16: "don't you let the word pass your lips on pain of torture")."""
-    return words[i - 3:i] in (["on", "pain", "of"], ["under", "pain", "of"])
+    Children, the owner, 2026-11-16: "don't you let the word pass your lips on pain of torture"). And
+    from Treasure Island (the night run's report, 2026-11-17): "I now began to be tortured with
+    thirst" (a feeling) and "I'll be hanged if I'll be hazed by you" (a saying)."""
+    if words[i - 3:i] in (["on", "pain", "of"], ["under", "pain", "of"]):
+        return True
+    if words[i].startswith("tortur") and words[i + 1:i + 2] in (["with"], ["by"]) and \
+            TORTURED_BY & set(words[i + 2:i + 4]):
+        return True
+    return words[i] == "hanged" and words[i + 1:i + 2] == ["if"]
 
 
 DISTURBING = Matcher(
@@ -2979,6 +3018,16 @@ def analyze(book, opts, progress=None, cancel=None):
         return [w for k in (c.get("sents") or []) for w in book.sent_words(k)]
     cuts = [c for c in cuts if not (c["kind"] == "violence" and kill_told_before(_words(c), _before(c)))]
     cuts = [c for c in cuts if not (c["kind"] == "ref" and pet_in_bed(_words(c), _around(c)))]
+    # a wounded man moaning isn't a sex scene: "with a low moan, writhed himself back ... The moan, which
+    # told of pain and deadly weakness" (Treasure Island, the night run's report, 2026-11-17)
+    def _passage(c):        # a whole passage: its words, and the paragraphs on either side
+        ps = c.get("paras") or []
+        ws = [w for w in (nrm(t) for t in c.get("raw", "").split()) if w]
+        near = [w for q in range(max(0, min(ps) - 1), min(len(book.paras), max(ps) + 2)) for w in
+                (nrm(t) for t in book.paras[q].text.split()) if w] if ps else []
+        return ws, near
+    cuts = [c for c in cuts if not (c["kind"] == "sex" and (
+        in_pain(_words(c), _around(c)) if c.get("sents") else in_pain(*_passage(c))))]
     if book.old_style:      # a child undressing for bed (Pollyanna)
         def _cut_words(c):      # just the part cut, when only part of the sentence goes
             return [w for w in (nrm(t) for t in c["raw"].split()) if w] if c.get("part") else _words(c)
