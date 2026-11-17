@@ -5175,6 +5175,91 @@ def find_cover_online(title, author, folder, log=print):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Look up the book (the owner, 2026-11-17: "add a button that will do a search on the book title to auto
+# fill series name and number, cover photo, author name etc (you can give options on author name to help
+# whittle it down)"). Audible first (it knows each book's series and its number in it, and has square
+# audiobook covers), Open Library when Audible has nothing. Only the title (and an author, if given) is
+# sent.
+# ---------------------------------------------------------------------------
+def find_book_info(title, author="", limit=20):
+    """Books that may be this one: [{"title", "authors", "narrators", "series", "series_no", "cover_url",
+    "year", "source"}], best first. Empty with no internet or nothing found."""
+    from urllib.parse import urlencode
+    title, author = " ".join(str(title or "").split()), " ".join(str(author or "").split())
+    if not title:
+        return []
+    out, seen = [], set()
+
+    def audible(params):
+        q = urlencode({**params, "num_results": limit, "products_sort_by": "Relevance",
+                       "response_groups": "media,contributors,series,product_attrs", "image_sizes": "500,1215"})
+        for prod in _get_json("https://api.audible.com/1.0/catalog/products?" + q).get("products") or []:
+            series = (prod.get("series") or [{}])[0]
+            imgs = prod.get("product_images") or {}
+            yield {"title": prod.get("title") or "", "authors": [a.get("name", "") for a in prod.get("authors") or []],
+                   "narrators": [n.get("name", "") for n in prod.get("narrators") or []],
+                   "series": series.get("title") or "", "series_no": _number(series.get("sequence") or ""),
+                   "cover_url": imgs.get("1215") or imgs.get("500") or "",
+                   "thumb_url": imgs.get("500") or imgs.get("1215") or "",
+                   "year": (prod.get("release_date") or "")[:4], "source": "Audible"}
+
+    tries = [{"title": title, **({"author": author} if author else {})},
+             {"keywords": f"{title} {author}".strip()}]
+    for params in tries:
+        try:
+            for b in audible(params):
+                key = (b["title"].lower(), tuple(a.lower() for a in b["authors"]), b["series"].lower())
+                if b["title"] and key not in seen:
+                    seen.add(key)
+                    out.append(b)
+        except Exception:
+            pass
+        if out:
+            break
+    if not out:
+        try:
+            q = urlencode({"title": title, **({"author": author} if author else {}), "limit": limit,
+                           "fields": "title,author_name,cover_i,first_publish_year"})
+            for d in _get_json("https://openlibrary.org/search.json?" + q).get("docs") or []:
+                url = f"https://covers.openlibrary.org/b/id/{d['cover_i']}-L.jpg" if d.get("cover_i") else ""
+                out.append({"title": d.get("title") or "", "authors": d.get("author_name") or [],
+                            "narrators": [], "series": "", "series_no": "", "cover_url": url,
+                            "thumb_url": url.replace("-L.jpg", "-M.jpg"),
+                            "year": str(d.get("first_publish_year") or ""), "source": "Open Library"})
+        except Exception:
+            pass
+    # the same title first, then by how close it is
+    want = _title_key(title)
+    out.sort(key=lambda b: (_title_key(b["title"]) != want, not b["cover_url"]))
+    return out
+
+
+def fetch_picture(url, folder, name):
+    """Download a cover picture into `folder` as name.jpg/.png; its path, or None."""
+    import hashlib
+    import urllib.request
+    if not url:
+        return None
+    folder = Path(folder)
+    key = hashlib.sha1(url.encode()).hexdigest()[:16]
+    for ext in (".jpg", ".png"):
+        if (folder / f"{name} {key}{ext}").is_file():
+            return str(folder / f"{name} {key}{ext}")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=COVER_AGENT), timeout=20) as r:
+            data = r.read(8_000_000)
+    except Exception:
+        return None
+    ext = _picture_kind(data)
+    if not ext or len(data) < 1000:
+        return None
+    folder.mkdir(parents=True, exist_ok=True)
+    pic = folder / f"{name} {key}{ext}"
+    pic.write_bytes(data)
+    return str(pic)
+
+
 def _meta_escape(v):
     return re.sub(r"([=;#\\\n])", r"\\\1", str(v))
 
@@ -5659,9 +5744,58 @@ def book_title_guess(parts):
     return p.stem if len(parts) == 1 else p.parent.name
 
 
+# What the report counts, by kind, for a content warning (the owner, 2026-11-17: "I also want the reports
+# laid out for easy view of how many profanity words removed, crude words etc, so that when I post content
+# warning I have exact amounts")
+WORD_KIND_LABELS = [("strong", "Strong swearing (the f-word and the like)"), ("moderate", "Swearing"),
+                    ("mild", "Mild swearing"), ("deity", "God's name used as a swear"),
+                    ("minced", "Minced oaths (gosh, darn, heck...)"), ("sexual", "Sexual words"),
+                    ("crude", "Crude words"), ("rude", "Rude words kids copy (stupid, shut up...)"),
+                    ("orientation", "Same-sex words"), ("mine", "Your own words"),
+                    ("ai", "Other words the AI found")]
+
+
+def report_counts(mutes, cuts):
+    """The report's top: how many words of each kind were muted (with each word and how often) and how
+    many passages of each kind were cut, ready to copy into a content warning."""
+    lines = ["Content removed (for a content warning)", "---------------------------------------"]
+    labels = dict(WORD_KIND_LABELS)
+    by = {}
+    for m in mutes:
+        cat = m.get("cat") or "ai"
+        by.setdefault(cat if cat in labels else "ai", []).append((m.get("word") or "").strip().lower())
+    lines.append(f"Words muted: {len(mutes)}")
+    for cat, label in WORD_KIND_LABELS:
+        got = by.get(cat)
+        if not got:
+            continue
+        each = {}
+        for w in got:
+            each[w] = each.get(w, 0) + 1
+        top = ", ".join(f"{w} \u00d7{n}" if n > 1 else w
+                        for w, n in sorted(each.items(), key=lambda x: (-x[1], x[0]))[:12] if w)
+        more = "" if len(each) <= 12 else f", and {len(each) - 12} more"
+        lines.append(f"  {label}: {len(got)}" + (f"   ({top}{more})" if top else ""))
+    kinds = {"sex": "Explicit scenes", "gore": "Gory descriptions", "ref": "Sexual references",
+             "religion": "Religious content", "relationship": "Same-sex relationship content",
+             "crude": "Crude humor", "bully": "Bullying", "disrespect": "Disrespect", "kiss": "Kissing",
+             "flirt": "Flirting", **{k: v[:1].upper() + v[1:] for k, v in MORE_LABELS.items()},
+             **{tp: TOPIC_LABELS[tp] for tp in TOPICS}}
+    secs = sum(c["e"] - c["s"] for c in cuts)
+    lines.append(f"Passages cut: {len(cuts)} ({secs / 60:.1f} minutes)")
+    count = {}
+    for c in cuts:
+        k = kinds.get(c.get("kind"), "Other scenes")
+        n, s = count.get(k, (0, 0.0))
+        count[k] = (n + 1, s + c["e"] - c["s"])
+    for k, (n, s) in sorted(count.items(), key=lambda x: (-x[1][0], x[0])):
+        lines.append(f"  {k}: {n}   ({s / 60:.1f} minutes)")
+    return lines
+
+
 def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False, mutes=None,
            m4b=False, cover=None, author=None, chapters_dir=None, m4b_dir=None, abs_layout=False,
-           series="", series_no="", cover_online=False):
+           series="", series_no="", cover_online=False, book_name=""):
     """Write clean audio. cuts: list of {"part","s","e","note"}; defaults to
     the scenes marked cut=True in the analysis. chapters=True also writes one
     file per chapter (Yoto-friendly). m4b=True also makes one M4B with chapters and a cover
@@ -5670,7 +5804,9 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     Where they go (Lauren, 2026-11-04: "allow me to choose where to save the files"): the chapter
     files in outdir/Chapters, or chapters_dir/<book>; the M4B in outdir, or m4b_dir, and with
     abs_layout in m4b_dir/Author/Series/Book 2 - Title, the way Audiobookshelf reads a library.
-    cover_online: no cover chosen and none in the book or its folder -> look one up online."""
+    cover_online: no cover chosen and none in the book or its folder -> look one up online.
+    book_name: the book's name as they set it (the look-up fills it in; the owner, 2026-11-17: "I want to
+    be able to change if it got it wrong"), else from its files."""
     work = Path(workdir)
     st = json.loads((work / "analysis.json").read_text())
     lang = use_language(st.get("language"))
@@ -5680,7 +5816,14 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
         st["mutes"] = sorted(mutes, key=lambda m: (m["part"], m["s"]))
     else:  # no review screen: leave out what the AI unticked
         st["mutes"] = [m for m in st["mutes"] if m.get("on", True)]
+    # every copy asked for has a place of its own (the Yoto files, the M4B): no plain clean copy in the
+    # clean folder as well (the owner, 2026-11-17: "there is also no reason to save in the original
+    # folder if I request another location", "saving 3 copies"); the pieces are made aside and removed
+    elsewhere = bool((chapters or m4b) and (not chapters or chapters_dir) and (not m4b or m4b_dir))
     out = Path(outdir)
+    if elsewhere:
+        out = work / "clean_parts"
+        shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True, exist_ok=True)
     say = progress or (lambda f, m: None)
     total_cut_sec = 0.0
@@ -5809,7 +5952,16 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                  if all(own) else None)
         tracks = plan_tracks(asr, clean_durs, cuts_by_part, marks)
         tags = book_tags(st["parts"][0])
-        title = m4b_title(st["parts"])
+        title = " ".join(str(book_name or "").split()) or m4b_title(st["parts"])
+        author = (author or "").strip() or book_author(st["parts"])
+        # the cover, for the M4B and the Yoto folder alike
+        pic = cover_file(cover or find_cover(st["parts"]), work)
+        online = None
+        if not pic and cover_online:
+            say(0.955, "Looking for the cover online…")
+            online = find_cover_online(strip_number(title, series_no),
+                                       author or tags.get("artist", ""), work, log=log)
+            pic = online and cover_file(online["file"], work)
         if chapters or not one_m4b:
             # the Yoto files (or, for the M4B alone, the same pieces in a folder that's removed);
             # in a folder they chose, inside one named for the book (never loose among others:
@@ -5817,23 +5969,26 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
             if not chapters:
                 folder = work / "m4b_pieces"
             elif chapters_dir:
-                folder = Path(chapters_dir) / safe_name(strip_number(title, series_no))
+                # Author\Series\Book 2 - Title, as the M4B (the owner, 2026-11-17: "the yoto chapters
+                # needs organized the same way (audiobookshelf format)")
+                folder = abs_folder(chapters_dir, title, author or tags.get("artist", ""), series,
+                                    series_no)
             else:
                 folder = None
             chap = split_tracks(clean_files, clean_durs, tracks, out, title, log, folder=folder)
+            # the cover beside the Yoto files, as cover.jpg (Audiobookshelf reads it; the owner,
+            # 2026-11-17: "need to also save the cover in the yoto copies folder")
+            if chapters and pic and chap.get("folders"):
+                try:
+                    shutil.copyfile(pic, Path(chap["folders"][0]) / "cover.jpg")
+                    chap["cover"] = True
+                except OSError:
+                    pass
         if chapters:
             report.append(f"\nChapter files (in {os.path.normpath(chap['folders'][0])})"
                           "\n-------------")
             report.extend(f"  {i:02d}  {t}" for i, t in enumerate(chap["titles"], 1))
         if m4b:
-            author = (author or "").strip() or book_author(st["parts"])
-            pic = cover_file(cover or find_cover(st["parts"]), work)
-            online = None
-            if not pic and cover_online:
-                say(0.955, "Looking for the cover online…")
-                online = find_cover_online(strip_number(title, series_no),
-                                           author or tags.get("artist", ""), work, log=log)
-                pic = online and cover_file(online["file"], work)
             home = out
             if m4b_dir:
                 home = (abs_folder(m4b_dir, title, author or tags.get("artist", ""), series,
@@ -5850,7 +6005,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
                         pic, work)
                 book = {"file": clean_files[0], "chapters": len(own[0]) or len(tracks),
                         "cover": bool(pic or _cover_stream(clean_files[0]))}
-                if m4b_dir:      # a copy where they want the M4B (the clean copy stays too)
+                if m4b_dir:      # where they want the M4B (the clean copy made aside goes)
                     tmp = home / ("~saving~ " + name)
                     shutil.copyfile(clean_files[0], tmp)
                     _replace(tmp, home / name)
@@ -5877,11 +6032,22 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     if lang != "en":
         head.append(f"Cleaned as a {cvlang.name(lang)} audiobook, with the {cvlang.name(lang)} "
                     "word lists.")
-    (out / "CleanListen report.txt").write_text("\n".join(head + report) + "\n", encoding="utf8")
+    head += [""] + report_counts(st["mutes"], cuts) + ["", "Everything, in order", "--------------------"]
+    # with the cleaned M4B (the owner, 2026-11-17: "cleanlisten reports need to be put with the cleaned
+    # m4b"), else with the Yoto files, else in the clean folder
+    where = (Path(book["file"]).parent if book else
+             Path(chap["folders"][0]) if chap and chap.get("folders") and chapters_dir else out)
+    if elsewhere and where == out:
+        where = Path(outdir)
+    where.mkdir(parents=True, exist_ok=True)
+    rep = where / "CleanListen report.txt"
+    rep.write_text("\n".join(head + report) + "\n", encoding="utf8")
+    if elsewhere:
+        shutil.rmtree(work / "clean_parts", ignore_errors=True)
     say(1.0, "Saved.")
-    log(f"Saved to {out}")
+    log(f"Saved to {where}")
     return {"mutes": len(st["mutes"]), "cuts": len(cuts), "cut_minutes": total_cut_sec / 60,
-            "out": str(out), "chapters": chap, "m4b": book}
+            "out": str(where), "report": str(rep), "chapters": chap, "m4b": book}
 
 
 # ---------------------------------------------------------------------------

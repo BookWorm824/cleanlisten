@@ -34,6 +34,9 @@ WORDS_PER_BOX = 50
 PLACES = APP_DATA / "save_places.json"
 
 
+PREVIEW_PX = 110             # the cover preview on the start page
+
+
 def cover_thumbnail(pic, size=72):
     """A small PNG of a cover picture (tkinter shows PNG, not JPG), kept in CleanListen's own
     folder (never next to the picture: that may be the book's folder)."""
@@ -585,6 +588,7 @@ class App(tk.Tk):
                                    split=self.split_var.get(), m4b=self.m4b_var.get())
             self.author = self.author_var.get()
             self.series, self.series_no = self.series_var.get(), self.series_no_var.get()
+            self.book_name = self.book_name_var.get()
         except (AttributeError, tk.TclError):
             pass
 
@@ -841,22 +845,37 @@ class App(tk.Tk):
                         "title and author)",
                         variable=self.cover_online_var,
                         command=self._online_changed).pack(anchor="w", pady=(4, 0))
-        row = tk.Frame(self.m4b_box, bg=CARD)
-        row.pack(fill="x", pady=(6, 0))
-        tk.Label(row, text="Author:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
-        self.author_var = tk.StringVar(value=getattr(self, "author", "") or "")
-        author_entry = ttk.Entry(row, textvariable=self.author_var, width=40)
-        author_entry.pack(side="left", padx=(8, 0))
-        # a new author: look for the cover again (not on every key press)
-        author_entry.bind("<FocusOut>", lambda e: self._cover_refresh())
-        author_entry.bind("<Return>", lambda e: self._cover_refresh())
         self.m4b_place_lbl = self._place_row(self.m4b_box, "m4b")
         # an Audiobookshelf library: Author > Series > Book 2 - Title (its scanner reads them)
         self.abs_var = tk.BooleanVar(value=bool(places.get("abs", True)))
         self.abs_chk = ttk.Checkbutton(self.m4b_box, text="Make Author \u203a Series \u203a Book "
                                        "folders in it  (the way Audiobookshelf likes)",
                                        variable=self.abs_var, command=self._abs_changed)
-        self.series_row = tk.Frame(self.m4b_box, bg=CARD)
+        # the book's details, for the M4B and the chapter files alike (the Yoto files go in the same
+        # Author > Series > Book folders: the owner, 2026-11-17), with a look-up that fills them in
+        self.details_box = tk.Frame(b5, bg=CARD)
+        # the book's name, to change when the look-up (or the file name) got it wrong (the owner,
+        # 2026-11-17: "I want to be able to change if it got it wrong")
+        row = tk.Frame(self.details_box, bg=CARD)
+        row.pack(fill="x", pady=(6, 0))
+        tk.Label(row, text="Book name:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
+        self.book_name_var = tk.StringVar(value=getattr(self, "book_name", "") or
+                                          getattr(self, "_name_for_book", "") or "")
+        ttk.Entry(row, textvariable=self.book_name_var, width=44).pack(side="left", padx=(8, 0))
+        self.book_name_var.trace_add("write", lambda *_: self._book_name_typed())
+        row = tk.Frame(self.details_box, bg=CARD)
+        row.pack(fill="x", pady=(6, 0))
+        tk.Label(row, text="Author:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
+        self.author_var = tk.StringVar(value=getattr(self, "author", "") or "")
+        author_entry = ttk.Entry(row, textvariable=self.author_var, width=34)
+        author_entry.pack(side="left", padx=(8, 0))
+        # a new author: look for the cover again (not on every key press)
+        author_entry.bind("<FocusOut>", lambda e: self._cover_refresh())
+        author_entry.bind("<Return>", lambda e: self._cover_refresh())
+        ttk.Button(row, text="Look up this book\u2026", style="Plain.TButton",
+                   command=self.lookup_book).pack(side="left", padx=(10, 0))
+        self.series_row = tk.Frame(self.details_box, bg=CARD)
+        self.series_row.pack(anchor="w", fill="x", pady=(4, 0))
         tk.Label(self.series_row, text="Series:", bg=CARD, fg=MUTED,
                  font=(FONT, 10)).pack(side="left")
         self.series_var = tk.StringVar(value=getattr(self, "series", "") or "")
@@ -881,6 +900,23 @@ class App(tk.Tk):
         else:
             self.m4b_box.pack_forget()
         self._places_shown()
+
+    def _book_name_typed(self):
+        """The book's name changed (typed, or filled in by the look-up): the folders shown follow it."""
+        name = self.book_name_var.get().strip()
+        if name:
+            self._name_for_book = name
+        self._abs_preview()
+
+    def _details_shown(self):
+        """The author, series and look-up: shown when there are chapter files or an M4B to name."""
+        box = getattr(self, "details_box", None)
+        if not box or not box.winfo_exists():
+            return
+        if self.split_var.get() or self.m4b_var.get():
+            box.pack(anchor="w", fill="x", padx=(26, 0), pady=(4, 0))
+        else:
+            box.pack_forget()
 
     # ---------- where the chapter files and the M4B go ----------
     def _place_row(self, parent, which):
@@ -938,7 +974,7 @@ class App(tk.Tk):
                 res = engine.find_cover_online(name, author, APP_DATA / "covers",
                                                log=lambda m: None)
                 if res:
-                    st["thumb"] = cover_thumbnail(res["file"])
+                    st["thumb"] = cover_thumbnail(res["file"], PREVIEW_PX)
                 st["res"] = res
             except Exception:
                 pass
@@ -984,23 +1020,23 @@ class App(tk.Tk):
         m.config(text="M4B goes in: " + (os.path.normpath(self.m4b_dir) if self.m4b_dir
                                           else "the clean folder"))
         m.usual_btn.config(state="normal" if self.m4b_dir else "disabled")
-        for w in (self.abs_chk, self.series_row, self.abs_lbl):
+        for w in (self.abs_chk, self.abs_lbl):
             w.pack_forget()
         if self.m4b_dir:
             self.abs_chk.pack(anchor="w", pady=(4, 0))
             if self.abs_var.get():
-                self.series_row.pack(anchor="w", fill="x", pady=(4, 0), padx=(22, 0))
                 self.abs_lbl.pack(anchor="w", fill="x", pady=(2, 0), padx=(22, 0))
+        self._details_shown()
         self._abs_preview()
 
     def _chapters_text(self):
         lbl = self.chap_lbl
         if self.chapters_dir:
-            # as render() names it: the book, without its number in the series
-            name = engine.safe_name(engine.strip_number(
-                self._book_name(), engine._number(self.series_no_var.get())))
-            lbl.config(text="Chapter files go in: " + os.path.normpath(
-                str(Path(self.chapters_dir) / name)))
+            # as render() names it: Author > Series > Book 2 - Title, as the M4B
+            val = lambda name: getattr(self, name).get().strip() if hasattr(self, name) else ""
+            home = engine.abs_folder(self.chapters_dir, self._book_name(), val("author_var"),
+                                     val("series_var"), val("series_no_var"))
+            lbl.config(text="Chapter files go in: " + os.path.normpath(str(home)))
         else:
             lbl.config(text="Chapter files go in: a “Chapters” folder in the clean folder")
         lbl.usual_btn.config(state="normal" if self.chapters_dir else "disabled")
@@ -1031,6 +1067,7 @@ class App(tk.Tk):
                 "abs": bool(m4b and m4b_dir and abs_on),
                 "series": getattr(self, "series", "") or "",
                 "series_no": getattr(self, "series_no", "") or "",
+                "book_name": getattr(self, "book_name", "") or "",
                 # saving looks it up then if the start page hadn't found it yet
                 "cover_online": bool(self.cover_online_var.get()
                                      if getattr(self, "cover_online_var", None)
@@ -1061,16 +1098,22 @@ class App(tk.Tk):
             self.series_var.set(series)
             self.series_no_var.set(no)
             try:
-                self._name_for_book = engine.m4b_title(self.audio) if self.audio else ""
+                name = engine.m4b_title(self.audio) if self.audio else ""
             except Exception:
-                self._name_for_book = book_title(self.audio) if self.audio else ""
+                name = book_title(self.audio) if self.audio else ""
+            if getattr(self, "book_name_var", None):
+                self.book_name_var.set(name)
+            self._name_for_book = name
         online = None
+        thumb = None            # a preview of whichever cover it gets (the owner, 2026-11-17)
         if getattr(self, "cover_pick", None):
             text = f"Cover: {Path(self.cover_pick).name}"
+            thumb = cover_thumbnail(self.cover_pick, PREVIEW_PX)
         elif not self.audio:
             text = "Cover: the book's own picture, when it has one"
         else:
             found = engine.find_cover(self.audio)
+            thumb = self._found_cover_preview(found)
             text = ("Cover: the picture inside the book" if found and found[0] == "book" else
                     f"Cover: {Path(found[1]).name}" if found else
                     "No cover picture found. Choose one, or it's made without one.")
@@ -1086,14 +1129,198 @@ class App(tk.Tk):
                 else:
                     text = ("No cover picture found, here or online. Choose one, or it's made "
                             "without one.")
-        self._show_thumb(online["thumb"] if online else None)
+        self._show_thumb(online["thumb"] if online else thumb)
         if getattr(self, "_can_drop", False):
             text += "\nOr drag a picture here from a folder to use that one."
         lbl.config(text=text, fg=INK if self.audio else MUTED)
         self._places_shown()
 
+    def lookup_book(self, on_cover=None):
+        """Look the book up online by its title and fill in the author, series, number and cover (the
+        owner, 2026-11-17: "add a button that will do a search on the book title to auto fill series
+        name and number, cover photo, author name etc (you can give options on author name to help
+        whittle it down)"). A window lists what was found, with each cover; a list of the authors
+        found narrows it down; "Use this one" fills them in."""
+        win = tk.Toplevel(self)
+        win.title("Look up this book")
+        win.configure(bg=CARD)
+        win.transient(self)
+        top = tk.Frame(win, bg=CARD, padx=14, pady=10)
+        top.pack(fill="x")
+        tk.Label(top, text="Title:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
+        name = engine.strip_number(getattr(self, "_name_for_book", "") or "",
+                                   engine._number(self.series_no_var.get()))
+        title_var = tk.StringVar(value=name)
+        entry = ttk.Entry(top, textvariable=title_var, width=36)
+        entry.pack(side="left", padx=(8, 8))
+        search_btn = ttk.Button(top, text="Search", style="Plain.TButton")
+        search_btn.pack(side="left")
+        row2 = tk.Frame(win, bg=CARD, padx=14)
+        row2.pack(fill="x")
+        tk.Label(row2, text="Author:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
+        ANY = "Any author"
+        who_var = tk.StringVar(value=ANY)
+        who = ttk.Combobox(row2, textvariable=who_var, state="readonly", width=34, values=[ANY])
+        who.pack(side="left", padx=(8, 0))
+        said = tk.Label(win, text="", bg=CARD, fg=MUTED, font=(FONT, 10), anchor="w", padx=14)
+        said.pack(fill="x", pady=(6, 0))
+        outer = tk.Frame(win, bg=CARD)
+        outer.pack(fill="both", expand=True, padx=14, pady=(4, 12))
+        canvas = tk.Canvas(outer, bg=CARD, highlightthickness=0, width=F.wrap(560), height=420)
+        bar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=bar.set)
+        bar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        listing = tk.Frame(canvas, bg=CARD)
+        canvas.create_window((0, 0), window=listing, anchor="nw")
+        listing.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        win.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+        state = {"books": [], "thumbs": {}, "n": 0}
+
+        def use(b):
+            self.book_name_var.set(re.sub(r"\s*\((un)?abridged\)\s*$", "", b["title"], flags=re.I))
+            self.author_var.set(", ".join(a for a in b["authors"] if a))
+            self.series_var.set(b["series"])
+            self.series_no_var.set(b["series_no"])
+            said.config(text="Getting the cover…")
+
+            got = {}
+
+            def get():
+                got["pic"] = engine.fetch_picture(b["cover_url"], APP_DATA / "covers" / "lookup", "cover")
+                got["done"] = True
+
+            def wait():         # (the window is only touched from its own thread)
+                if not got.get("done"):
+                    self.after(150, wait)
+                    return
+                if got.get("pic"):
+                    self.cover_pick = got["pic"]
+                (on_cover or self._cover_refresh)()
+                if win.winfo_exists():
+                    win.destroy()
+            threading.Thread(target=get, daemon=True, name="cover download").start()
+            self.after(150, wait)
+
+        def show():
+            for w in listing.winfo_children():
+                w.destroy()
+            pick = who_var.get()
+            books = [b for b in state["books"] if pick == ANY or pick in b["authors"]]
+            if not books:
+                tk.Label(listing, text="Nothing found. Try fewer words in the title.", bg=CARD,
+                         fg=MUTED, font=(FONT, 10)).pack(anchor="w")
+            for b in books:
+                card = tk.Frame(listing, bg=CARD, highlightthickness=1, highlightbackground=LINE,
+                                padx=8, pady=6)
+                card.pack(fill="x", pady=3)
+                img = None
+                th = state["thumbs"].get(b["thumb_url"])
+                if th:
+                    try:
+                        img = tk.PhotoImage(file=th)
+                    except tk.TclError:
+                        img = None
+                pic = tk.Label(card, bg=CARD)
+                if img:
+                    pic.config(image=img)
+                    pic.image = img
+                else:
+                    pic.config(text="(no picture)", fg=MUTED, font=(FONT, 8), width=10)
+                pic.pack(side="left", padx=(0, 10))
+                words = tk.Frame(card, bg=CARD)
+                words.pack(side="left", fill="x", expand=True)
+                tk.Label(words, text=b["title"], bg=CARD, fg=INK, font=(FONT, 11, "bold"),
+                         anchor="w", wraplength=F.wrap(330), justify="left").pack(anchor="w")
+                bits = [", ".join(a for a in b["authors"] if a) or "Author not given"]
+                if b["series"]:
+                    bits.append(b["series"] + (f", book {b['series_no']}" if b["series_no"] else ""))
+                if b["narrators"]:
+                    bits.append("read by " + ", ".join(b["narrators"][:2]))
+                if b["year"]:
+                    bits.append(b["year"])
+                tk.Label(words, text="  ·  ".join(bits), bg=CARD, fg=MUTED, font=(FONT, 9),
+                         anchor="w", wraplength=F.wrap(330), justify="left").pack(anchor="w")
+                ttk.Button(card, text="Use this one", style="Plain.TButton",
+                           command=lambda b=b: use(b)).pack(side="right")
+
+        def search():
+            title = title_var.get().strip()
+            if not title:
+                return
+            state["n"] += 1
+            n = state["n"]
+            said.config(text="Looking it up…")
+            search_btn.config(state="disabled")
+
+            got = {}
+
+            def work():
+                books = engine.find_book_info(title)
+                thumbs = {}
+
+                def thumb(b):
+                    f = engine.fetch_picture(b["thumb_url"], APP_DATA / "covers" / "lookup", "small")
+                    return b["thumb_url"], (cover_thumbnail(f, 70) if f else None)
+                try:
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(6) as pool:
+                        for url, th in pool.map(thumb, [b for b in books if b["thumb_url"]][:20]):
+                            thumbs[url] = th
+                except Exception:
+                    pass
+
+                got.update(books=books, thumbs=thumbs, done=True)
+
+            def done():
+                if not got.get("done"):
+                    self.after(150, done)
+                    return
+                if not win.winfo_exists() or n != state["n"]:
+                    return
+                books = got["books"]
+                state["books"], state["thumbs"] = books, got["thumbs"]
+                authors = []
+                for b in books:
+                    for a in b["authors"]:
+                        if a and a not in authors:
+                            authors.append(a)
+                who.config(values=[ANY] + authors)
+                mine = self.author_var.get().strip()
+                who_var.set(mine if mine in authors else ANY)
+                said.config(text=(f"Found {len(books)} on {books[0]['source']}. Pick the author to "
+                                  "narrow it down, then choose the book." if books else
+                                  "Nothing found online (or no internet)."))
+                search_btn.config(state="normal")
+                show()
+            threading.Thread(target=work, daemon=True, name="book lookup").start()
+            self.after(150, done)
+
+        search_btn.config(command=search)
+        entry.bind("<Return>", lambda e: search())
+        who.bind("<<ComboboxSelected>>", lambda e: show())
+        search()
+
+    def _found_cover_preview(self, found):
+        """A small picture of the cover the book has (inside it, or in its folder), or None."""
+        if not found:
+            return None
+        try:
+            kind, p = found
+            if kind == "file":
+                return cover_thumbnail(p, PREVIEW_PX)
+            key = hashlib.sha1("|".join(self.audio or ()).encode()).hexdigest()[:16]
+            folder = APP_DATA / "covers" / "inbook" / key
+            pic = folder / "cover.jpg"
+            if not pic.exists():
+                folder.mkdir(parents=True, exist_ok=True)
+                engine.cover_file(found, folder)
+            return cover_thumbnail(str(pic), PREVIEW_PX) if pic.exists() else None
+        except Exception:
+            return None
+
     def _show_thumb(self, path):
-        """The small picture of the cover found online (none otherwise)."""
+        """The small picture of the cover it gets (none when there's no picture)."""
         lbl = self.cover_img_lbl
         img = None
         if path:
@@ -1276,6 +1503,8 @@ class App(tk.Tk):
             on_setup = getattr(self, "series_var", None) and self.page_name == "setup"
             data.update(series=self.series_var.get().strip() if on_setup else
                         getattr(self, "series", ""),
+                        book_name=self.book_name_var.get().strip() if on_setup else
+                        getattr(self, "book_name", ""),
                         series_no=self.series_no_var.get().strip() if on_setup else
                         getattr(self, "series_no", ""))
             if self.page_name == "review" and self.analysis and self.workdir:
@@ -1316,6 +1545,8 @@ class App(tk.Tk):
         self.cover_pick = data.get("cover") if data.get("cover") and Path(data["cover"]).exists() else None
         self.author = data.get("author") or ""
         self.series, self.series_no = data.get("series") or "", data.get("series_no") or ""
+        self.book_name = data.get("book_name") or ""
+        self._name_for_book = self.book_name or getattr(self, "_name_for_book", "")
         self._cover_for = tuple(self.audio)
         self.resume_note = data.get("note") or "Picked up where you left off."
         if data.get("page") == "review" and data.get("workdir"):
@@ -2092,6 +2323,7 @@ class App(tk.Tk):
         self.author = self.author_var.get().strip()
         self.series = self.series_var.get().strip()
         self.series_no = self.series_no_var.get().strip()
+        self.book_name = self.book_name_var.get().strip()
         self.abs_layout = self.abs_var.get()
         if self.make_m4b and self.m4b_dir and self.abs_layout and self.series_no and \
                 not engine._number(self.series_no):
@@ -2549,8 +2781,10 @@ class App(tk.Tk):
         row.pack(anchor="w", pady=(6, 0))
         if job["step"] == BQ.DONE and (job.get("result") or {}).get("out"):
             out = job["result"]["out"]
+            # with the M4B or the Yoto files now (the owner, 2026-11-17), wherever render put it
+            rep = job["result"].get("report") or str(Path(out) / "CleanListen report.txt")
             ttk.Button(row, text="See what was removed", style="Plain.TButton",
-                       command=lambda: open_path(str(Path(out) / "CleanListen report.txt"))
+                       command=lambda: open_path(rep)
                        ).pack(side="left", padx=(0, 8))
             ttk.Button(row, text="Send what we refined…", style="Plain.TButton",
                        command=lambda: self._refined_for(job)).pack(side="left", padx=(0, 8))
@@ -2640,6 +2874,12 @@ class App(tk.Tk):
         self.split_chapters = job.get("split", False)
         self.make_m4b = job.get("m4b", False)
         self.cover_pick, self.author = job.get("cover"), job.get("author") or ""
+        # its own places and details, for "Saving & book details" (not the start page's last ones)
+        self.chapters_dir = job.get("chapters_dir") or getattr(self, "chapters_dir", None)
+        self.m4b_dir = job.get("m4b_dir") or getattr(self, "m4b_dir", None)
+        self.abs_layout = job.get("abs", getattr(self, "abs_layout", True))
+        self.series, self.series_no = job.get("series") or "", job.get("series_no") or ""
+        self.book_name = job.get("book_name") or ""
         self.saved_opts = dict(job.get("opts") or self.saved_opts)
         self.review_key = key
         self.view_mode = "list"
@@ -2875,17 +3115,16 @@ class App(tk.Tk):
         jump = tk.Frame(p, bg=BG)
         jump.pack(fill="x", pady=(2, 0))
 
-        if getattr(self, "make_m4b", False):
-            # choose the M4B's cover here too, without starting over (2026-11-05)
-            crow = tk.Frame(self.footer, bg=BG)
-            crow.pack(side="top", fill="x", pady=(0, 4))
-            self.review_cover_lbl = tk.Label(crow, text="", bg=BG, fg=MUTED, font=(FONT, 10))
-            self.review_cover_lbl.pack(side="left")
-            ch = tk.Label(crow, text="Change cover\u2026", bg=BG, fg=ACCENT,
-                          font=(FONT, 10, "underline"), cursor="hand2")
-            ch.pack(side="left", padx=(8, 0))
-            ch.bind("<Button-1>", lambda e: self._change_review_cover())
-            self._show_review_cover()
+        # what it saves and where, the book's details and the cover, changed here too, after the scan
+        # (the owner, 2026-11-17: "and all of this should be able to do after the scan as well")
+        crow = tk.Frame(self.footer, bg=BG)
+        crow.pack(side="top", fill="x", pady=(0, 4))
+        self.review_cover_lbl = tk.Label(crow, text="", bg=BG, fg=MUTED, font=(FONT, 10), anchor="w",
+                                         justify="left", wraplength=F.wrap(620))
+        self.review_cover_lbl.pack(side="left", fill="x", expand=True)
+        ttk.Button(crow, text="Saving & book details\u2026", style="Plain.TButton",
+                   command=self.saving_details).pack(side="right")
+        self._show_review_cover()
         # Send to phone in plain sight, just above Save (the owner, 2026-11-15: "i didnt see the
         # send to phone button", "Yes, add the button"; it was only in the More menu). Packed
         # first so a long summary gives way, not the button.
@@ -3389,9 +3628,177 @@ class App(tk.Tk):
         return name
 
     def _show_review_cover(self):
+        """The line above Save on the review page: what it saves, where, and the book's details."""
         lbl = getattr(self, "review_cover_lbl", None)
-        if lbl and lbl.winfo_exists():
-            lbl.config(text="M4B cover: " + self._cover_name(getattr(self, "cover_pick", None)))
+        if not lbl or not lbl.winfo_exists():
+            return
+        what = [w for w, on in (("Yoto chapter files", getattr(self, "split_chapters", False)),
+                                ("one M4B", getattr(self, "make_m4b", False))) if on]
+        name = getattr(self, "book_name", "") or (self.analysis or {}).get("title", "") or "this book"
+        by = getattr(self, "author", "") or ""
+        series, no = getattr(self, "series", "") or "", getattr(self, "series_no", "") or ""
+        bits = [f"Saving: {' and '.join(what) if what else 'the clean audio'}",
+                f"\u201c{name}\u201d" + (f" by {by}" if by else "")
+                + (f" ({series}" + (f", book {no}" if no else "") + ")" if series else "")]
+        if getattr(self, "make_m4b", False):
+            bits.append("Cover: " + self._cover_name(getattr(self, "cover_pick", None)))
+        lbl.config(text="   \u00b7   ".join(bits))
+
+    def saving_details(self):
+        """After the scan: what's saved and where, the book's name, author, series and number (with the
+        look-up), and the cover with its preview, as on the start page (the owner, 2026-11-17: "and
+        all of this should be able to do after the scan as well")."""
+        win = tk.Toplevel(self)
+        win.title("Saving & book details")
+        win.configure(bg=CARD)
+        win.transient(self)
+        box = tk.Frame(win, bg=CARD, padx=16, pady=12)
+        box.pack(fill="both", expand=True)
+        places = load_places()
+        keep = {"chapters_dir": getattr(self, "chapters_dir", None) or places.get("chapters_dir"),
+                "m4b_dir": getattr(self, "m4b_dir", None) or places.get("m4b_dir")}
+        split = tk.BooleanVar(value=bool(getattr(self, "split_chapters", False)))
+        m4b = tk.BooleanVar(value=bool(getattr(self, "make_m4b", False)))
+        abs_on = tk.BooleanVar(value=bool(getattr(self, "abs_layout", places.get("abs", True))))
+        where = {}
+
+        def place_row(which, text):
+            row = tk.Frame(box, bg=CARD)
+            row.pack(fill="x", padx=(24, 0), pady=(2, 0))
+            lbl = tk.Label(row, text="", bg=CARD, fg=INK, font=(FONT, 10), anchor="w",
+                           wraplength=F.wrap(360), justify="left")
+            lbl.pack(side="left")
+
+            def pick():
+                d = filedialog.askdirectory(parent=win, title=text, initialdir=keep[which] or None)
+                if d:
+                    keep[which] = d
+                    shown()
+            ttk.Button(row, text="Usual place", style="Plain.TButton",
+                       command=lambda: (keep.__setitem__(which, None), shown())).pack(side="right",
+                                                                                     padx=(6, 0))
+            ttk.Button(row, text="Change\u2026", style="Plain.TButton", command=pick).pack(side="right")
+            where[which] = lbl
+
+        ttk.Checkbutton(box, text="Chapter files  (for Yoto and players that can't skip chapters)",
+                        variable=split, command=lambda: shown()).pack(anchor="w")
+        place_row("chapters_dir", "Where should the chapter files go?")
+        ttk.Checkbutton(box, text="One M4B with the cover and chapters  (for phones and audiobook apps)",
+                        variable=m4b, command=lambda: shown()).pack(anchor="w", pady=(8, 0))
+        place_row("m4b_dir", "Where should the M4B go? (Your Audiobookshelf library folder, say.)")
+        ttk.Checkbutton(box, text="Author \u203a Series \u203a Book folders in it  (the way "
+                        "Audiobookshelf likes)", variable=abs_on,
+                        command=lambda: shown()).pack(anchor="w", padx=(24, 0), pady=(2, 0))
+        # the book's details (the same variables the look-up fills in)
+        self.book_name_var = tk.StringVar(value=getattr(self, "book_name", "") or
+                                          (self.analysis or {}).get("title", "") or "")
+        self.author_var = tk.StringVar(value=getattr(self, "author", "") or "")
+        self.series_var = tk.StringVar(value=getattr(self, "series", "") or "")
+        self.series_no_var = tk.StringVar(value=getattr(self, "series_no", "") or "")
+        self._name_for_book = self.book_name_var.get()
+        tk.Label(box, text="The book", bg=CARD, fg=INK, font=(FONT, 11, "bold")).pack(anchor="w",
+                                                                                   pady=(12, 2))
+        for label, var, width in (("Book name:", self.book_name_var, 44), ("Author:", self.author_var, 34)):
+            row = tk.Frame(box, bg=CARD)
+            row.pack(fill="x", pady=(2, 0))
+            tk.Label(row, text=label, bg=CARD, fg=MUTED, font=(FONT, 10), width=11,
+                     anchor="w").pack(side="left")
+            ttk.Entry(row, textvariable=var, width=width).pack(side="left")
+            if var is self.author_var:
+                ttk.Button(row, text="Look up this book\u2026", style="Plain.TButton",
+                           command=lambda: self.lookup_book(on_cover=cover_shown)).pack(side="left",
+                                                                                        padx=(10, 0))
+        row = tk.Frame(box, bg=CARD)
+        row.pack(fill="x", pady=(2, 0))
+        tk.Label(row, text="Series:", bg=CARD, fg=MUTED, font=(FONT, 10), width=11,
+                 anchor="w").pack(side="left")
+        ttk.Entry(row, textvariable=self.series_var, width=26).pack(side="left", padx=(0, 12))
+        tk.Label(row, text="Book number:", bg=CARD, fg=MUTED, font=(FONT, 10)).pack(side="left")
+        ttk.Entry(row, textvariable=self.series_no_var, width=5).pack(side="left", padx=(8, 0))
+        saved_as = tk.Label(box, text="", bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w",
+                            wraplength=F.wrap(520), justify="left")
+        saved_as.pack(fill="x", pady=(6, 0))
+        # the cover, with its picture
+        crow = tk.Frame(box, bg=CARD, highlightthickness=1, highlightbackground=LINE, padx=8, pady=6)
+        crow.pack(fill="x", pady=(10, 0))
+        pic = tk.Label(crow, bg=CARD)
+        pic.pack(side="left", padx=(0, 10))
+        cname = tk.Label(crow, text="", bg=CARD, fg=INK, font=(FONT, 10), anchor="w",
+                         wraplength=F.wrap(300), justify="left")
+        cname.pack(side="left")
+        chosen = {"cover": getattr(self, "cover_pick", None)}
+
+        def cover_shown():
+            if getattr(self, "cover_pick", None) != chosen["cover"]:
+                chosen["cover"] = self.cover_pick           # (the look-up picked one)
+            if not win.winfo_exists():
+                return
+            f = chosen["cover"]
+            th = cover_thumbnail(f, PREVIEW_PX) if f else self._found_cover_preview(
+                engine.find_cover(list(self.audio or (self.analysis or {}).get("parts", []))))
+            img = None
+            if th:
+                try:
+                    img = tk.PhotoImage(file=th)
+                except tk.TclError:
+                    img = None
+            pic.config(image=img or "", text="" if img else "(no picture)", fg=MUTED, font=(FONT, 8))
+            pic.image = img
+            cname.config(text="Cover: " + self._cover_name(f))
+
+        def change_cover():
+            parts = list(self.audio or (self.analysis or {}).get("parts", []))
+
+            def picked(f):
+                chosen["cover"] = f
+                cover_shown()
+            self.choose_cover(parts, self.workdir, picked, now=self._cover_name(chosen["cover"]))
+        ttk.Button(crow, text="Change cover\u2026", style="Plain.TButton",
+                   command=change_cover).pack(side="right")
+
+        def shown():
+            for which, lbl in where.items():
+                d = keep[which]
+                lbl.config(text=("Chapter files go in: " if which == "chapters_dir" else "M4B goes in: ")
+                           + (os.path.normpath(d) if d else "the clean folder"))
+            title = self.book_name_var.get().strip() or "Book name"
+            a, s, n = self.author_var.get().strip(), self.series_var.get().strip(), self.series_no_var.get().strip()
+            lines = []
+            if split.get() and keep["chapters_dir"]:
+                lines.append("Chapter files:  " + os.path.normpath(str(engine.abs_folder(
+                    keep["chapters_dir"], title, a, s, n))))
+            if m4b.get() and keep["m4b_dir"]:
+                home = (engine.abs_folder(keep["m4b_dir"], title, a, s, n) if abs_on.get()
+                        else Path(keep["m4b_dir"]))
+                lines.append("M4B:  " + os.path.normpath(str(home / (engine.safe_name(
+                    engine.strip_number(title, engine._number(n)) if abs_on.get() else title) + ".m4b"))))
+            saved_as.config(text="\n".join(lines))
+        for v in (self.book_name_var, self.author_var, self.series_var, self.series_no_var):
+            v.trace_add("write", lambda *_: shown())
+
+        def ok():
+            self.split_chapters, self.make_m4b = split.get(), m4b.get()
+            self.chapters_dir, self.m4b_dir, self.abs_layout = keep["chapters_dir"], keep["m4b_dir"], abs_on.get()
+            self.book_name = self.book_name_var.get().strip()
+            self.author = self.author_var.get().strip()
+            self.series, self.series_no = self.series_var.get().strip(), self.series_no_var.get().strip()
+            self.cover_pick = chosen["cover"]
+            save_places({**places, "chapters_dir": self.chapters_dir, "m4b_dir": self.m4b_dir,
+                         "abs": bool(self.abs_layout)})
+            job = self.books.find(getattr(self, "review_key", None) or "")
+            if job is not None:          # a book already on "Your books": it saves with these
+                job.update(split=self.split_chapters, m4b=self.make_m4b, cover=self.cover_pick,
+                           author=self.author or None, **self._places_for_job())
+                self.books.save()
+            self._show_review_cover()
+            win.destroy()
+        row = tk.Frame(box, bg=CARD)
+        row.pack(fill="x", pady=(12, 0))
+        ttk.Button(row, text="OK", style="Main.TButton", command=ok).pack(side="right")
+        ttk.Button(row, text="Cancel", style="Plain.TButton", command=win.destroy).pack(side="right",
+                                                                                       padx=(0, 8))
+        shown()
+        cover_shown()
 
     def _change_review_cover(self):
         parts = list(self.audio or (self.analysis or {}).get("parts", []))

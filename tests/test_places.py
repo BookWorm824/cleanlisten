@@ -67,16 +67,22 @@ def test_m4b_into_an_audiobookshelf_library(tmp_path, mp3_book):
     assert res["m4b"]["file"] == str(book) and book.exists() and has_cover(book)
     assert [t for _, t in chapters(book)] == ["Chapter 1", "Chapter 2"]
     assert probe(book)["format"]["tags"]["title"] == "The Clinic"
-    # the chapter files in their own folder in the one chosen; nothing else there touched
-    assert sorted(p.name for p in (yoto / "The Clinic").glob("*.mp3")) == \
-        ["01 Chapter 1.mp3", "02 Chapter 2.mp3"]
+    # the chapter files in Author > Series > Book folders too (the owner, 2026-11-17: "the yoto chapters
+    # needs organized the same way (audiobookshelf format)"); nothing else there touched
+    yoto_book = yoto / "Cate Quinn" / "Clinic Files" / "Book 2 - The Clinic"
+    assert sorted(p.name for p in yoto_book.glob("*.mp3")) == ["01 Chapter 1.mp3", "02 Chapter 2.mp3"]
     assert (other / "01 Keep me.mp3").exists() and (yoto / "loose.mp3").exists()
-    assert res["chapters"]["folders"] == [str(yoto / "The Clinic")]
-    # the clean copy and report still in the usual place, and nothing left in it
-    assert (out / "CleanListen report.txt").exists() and not (out / "Chapters").exists()
-    assert not list(out.glob("*.m4b")) and not list(lib.rglob("~saving~*"))
-    report = (out / "CleanListen report.txt").read_text(encoding="utf8")
-    assert str(book.parent) in report and str(yoto / "The Clinic") in report
+    assert res["chapters"]["folders"] == [str(yoto_book)]
+    assert (yoto_book / "cover.jpg").exists()       # "also save the cover in the yoto copies folder"
+    # no third copy in the clean folder ("there is also no reason to save in the original folder if I
+    # request another location"), and the report goes with the M4B ("put with the cleaned m4b")
+    assert not out.exists() or not list(out.iterdir())
+    assert not list(lib.rglob("~saving~*"))
+    rep = book.parent / "CleanListen report.txt"
+    assert res["report"] == str(rep) and res["out"] == str(book.parent)
+    report = rep.read_text(encoding="utf8")
+    assert str(book.parent) in report and str(yoto_book) in report
+    assert "Content removed (for a content warning)" in report and "Words muted:" in report
 
 
 @needs_ffmpeg
@@ -103,5 +109,59 @@ def test_an_m4b_book_is_copied_into_the_library(tmp_path):
                    m4b_dir=tmp_path / "Lib", abs_layout=True, series=series, series_no=no)
     book = tmp_path / "Lib" / "Lisa Harris" / "Grace Ford" / "Book 2 - Nearly Safe" / "Nearly Safe.m4b"
     assert res["m4b"]["file"] == str(book) and book.exists()
-    assert (tmp_path / "Clean" / "Nearly Safe.m4b").exists()       # the clean copy stays
+    assert not (tmp_path / "Clean" / "Nearly Safe.m4b").exists()   # no extra copy (2026-11-17)
+    assert (book.parent / "CleanListen report.txt").exists()
     assert probe(book)["format"]["tags"]["title"] == "Nearly Safe"
+
+
+@needs_ffmpeg
+def test_the_clean_folder_keeps_its_copy_when_nothing_else_has_a_place(tmp_path, mp3_book):
+    parts, words = mp3_book
+    work = job(tmp_path, parts, words)
+    out = tmp_path / "Clean"
+    res = E.render(work, out, m4b=True, log=lambda m: None)          # the M4B in the clean folder
+    assert list(out.glob("*.mp3")) and (out / "The Clinic.m4b").exists()
+    assert res["report"] == str(out / "CleanListen report.txt")
+
+
+def test_report_counts_each_kind():
+    lines = E.report_counts([{"cat": "mild", "word": "damn"}, {"cat": "mild", "word": "Damn"},
+                             {"cat": "deity", "word": "oh my god"}, {"cat": "crude", "word": "fart"}],
+                            [{"kind": "ref", "s": 0, "e": 30}, {"kind": "violence", "s": 40, "e": 100}])
+    text = "\n".join(lines)
+    assert "Words muted: 4" in text and "Mild swearing: 2   (damn ×2)" in text
+    assert "God's name used as a swear: 1" in text and "Crude words: 1" in text
+    assert "Passages cut: 2 (1.5 minutes)" in text and "Sexual references: 1" in text and "Violence: 1" in text
+
+
+def test_book_lookup_reads_audible(monkeypatch):
+    answer = {"products": [
+        {"title": "Anne of Avonlea", "authors": [{"name": "L. M. Montgomery"}], "narrators": [{"name": "A Reader"}],
+         "series": [{"title": "Anne of Green Gables", "sequence": "2"}], "release_date": "2010-01-01",
+         "product_images": {"500": "https://x/500.jpg", "1215": "https://x/1215.jpg"}},
+        {"title": "Anne of Avonlea", "authors": [{"name": "Lucy Maud Montgomery"}], "series": None,
+         "product_images": {}}]}
+    asked = []
+    monkeypatch.setattr(E, "_get_json", lambda url, timeout=15: asked.append(url) or answer)
+    books = E.find_book_info("Anne of Avonlea")
+    assert asked and "api.audible.com" in asked[0] and "series" in asked[0]
+    b = books[0]
+    assert (b["title"], b["authors"], b["series"], b["series_no"], b["cover_url"], b["year"]) ==         ("Anne of Avonlea", ["L. M. Montgomery"], "Anne of Green Gables", "2", "https://x/1215.jpg", "2010")
+    assert {a for x in books for a in x["authors"]} == {"L. M. Montgomery", "Lucy Maud Montgomery"}
+    monkeypatch.setattr(E, "_get_json", lambda url, timeout=15: (_ for _ in ()).throw(OSError("offline")))
+    assert E.find_book_info("Anne of Avonlea") == []          # no internet: nothing, no error
+
+
+@needs_ffmpeg
+def test_the_book_name_they_set_names_the_folders_and_the_m4b(tmp_path, mp3_book):
+    # the owner, 2026-11-17: the look-up fills in the book's name, "but I want to be able to change if it
+    # got it wrong"
+    parts, words = mp3_book
+    work = job(tmp_path, parts, words)
+    res = E.render(work, tmp_path / "Clean", chapters=True, m4b=True, log=lambda m: None,
+                   chapters_dir=tmp_path / "Yoto", m4b_dir=tmp_path / "Lib", abs_layout=True,
+                   series="Clinic Files", series_no="2", book_name="The Clinic Returns")
+    book = tmp_path / "Lib" / "Cate Quinn" / "Clinic Files" / "Book 2 - The Clinic Returns" / "The Clinic Returns.m4b"
+    assert res["m4b"]["file"] == str(book) and book.exists()
+    assert probe(book)["format"]["tags"]["title"] == "The Clinic Returns"
+    assert (tmp_path / "Yoto" / "Cate Quinn" / "Clinic Files" / "Book 2 - The Clinic Returns").is_dir()
