@@ -5134,7 +5134,7 @@ def send_to_phone_wifi(workdir, phone, title="", author="", profile="", summary=
             r = conn.getresponse()
             body = r.read()
         except (OSError, http.client.HTTPException) as ex:
-            raise RuntimeError(f"The tablet stopped answering. Keep CleanShelf's “Receive from PC” "
+            raise RuntimeError(f"The tablet stopped answering. Keep CleanRead Mobile's “Receive from PC” "
                                f"page open on it and try again. ({ex})") from ex
         try:
             d = json.loads(body.decode("utf8") or "{}")
