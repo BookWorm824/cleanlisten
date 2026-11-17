@@ -490,6 +490,18 @@ class Book:
         between = self.paras[q].text[self.words[i - 1][2]:a]
         return not (self.wn[i - 1] in DICK_INSULT_BEFORE and not re.search(r"[,;:\-–—]", between))
 
+    @property
+    def has_donkey(self):
+        """Does this book have a donkey ("ass" beside a cart, a cow, a load... at least three times, more
+        than it's said to someone)? Then a lone "the ass" is the animal too (The Swiss Family Robinson)."""
+        got = getattr(self, "_has_donkey", None)
+        if got is None:
+            at = [i for i, w in enumerate(self.wn) if w in ("ass", "asses")]
+            animal = sum(1 for i in at if E.ass_animal(self.wn, i))
+            insult = sum(1 for i in at if (self.wn[i - 1] if i else "") in E.ASS_INSULT_BEFORE - {"an"})
+            got = self._has_donkey = animal >= 3 and animal > insult
+        return got
+
     def shut_up_said(self, i):
         """Is "shut up" at word i said to someone (in an older book): at the start of a sentence, or after
         "you", "oh", "now", "just", "do", "please" ("Shut up, said Peter", "You shut up!")?"""
@@ -701,7 +713,10 @@ OLD_BOOK_LEFT = {"boner", "boners",
                  # "He would probably have been aroused much earlier" (woken)
                  "erection", "erections", "sex", "sexes", "aroused", "arousal",
                  # "the affection born of long intercourse for their good old minister" (dealings: Anne)
-                 "intercourse"}
+                 "intercourse",
+                 # "It was plain that his conquest had added half a foot to his height" (a trophy: The
+                 # Swiss Family Robinson)
+                 "conquest", "conquests"}
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -1050,7 +1065,16 @@ OLD_SEX_SCENE = SEX_SCENE - {"pleasure", "desire", "lover", "lovers", "kiss", "k
 # in an older book "a pleasure to help", "in their breasts" (hearts), "bosom" aren't sexual (Little Women,
 # the night run's report, 2026-11-17)
 OLD_SOFT_SEX = {"pleasure", "pleasures", "breast", "breasts", "bosom", "bosoms", "desire", "desires", "passion",
-                "thrill", "thrilled", "throbbing", "panting", "moaned", "moan", "rapture"}
+                "thrill", "thrilled", "throbbing", "panting", "moaned", "moan", "rapture",
+                # the sea: "it swelled, subsided, foamed" (The Swiss Family Robinson)
+                "swelled", "swelling", "subsided", "foamed", "foaming", "heaving", "heaved"}
+
+
+def old_sex_scene(words):
+    """In an older book: two different sex-scene words within 25 words of each other ("embrace" ... "naked"
+    pages apart in The Swiss Family Robinson's long passage isn't a scene)."""
+    hits = [(k, w) for k, w in enumerate(words) if w in OLD_SEX_SCENE]
+    return any(w1 != w2 and abs(k1 - k2) <= 25 for k1, w1 in hits for k2, w2 in hits)
 
 
 def in_pain(words, around):
@@ -1083,8 +1107,10 @@ def UNMARRIED(words, near=None):
     sp = _UNMARRIED(words)
     # "promising each other that we will never marry but be nice old maids and live together forever"
     # (two girls: Anne of Green Gables)
-    return sp if sp and not (NOT_A_COUPLE | {"married", "husband", "wife", "wedding", "marry", "maids"}) & \
-        set(words) else []
+    # ... nor animals: "a swarm of birds living together in a state of society in one nest" (The Swiss
+    # Family Robinson)
+    return sp if sp and not (NOT_A_COUPLE | {"married", "husband", "wife", "wedding", "marry", "maids"} | ANIMALS |
+                             {"swarm", "nest", "nests", "herd", "flock", "colony"}) & set(words) else []
 
 
 def SLEEPING_ALL(words, near=None):
@@ -1147,6 +1173,11 @@ SUBSTANCES = NotSoftDrink(SUBSTANCES)
 # "a smoking gun"
 SMOKED_NOT = "out|turkey|ham|hams|salmon|trout|haddock|mackerel|herring|herrings|kipper|kippers|fish|meat|meats|sausage|sausages|bacon|cheese|cheeses|oysters|brisket|pork|beef|chicken|duck|eel|paprika|glass|glasses|almonds|venison|tongue|sturgeon|whitefish|cod|ribs"
 SMOKING_NOT = ("musket|muskets|pistol|pistols|rifle|rifles|cannon|cannons|gun|guns|ruin|ruins|wreck|wreckage|crater|craters|embers|remains|rubble|chimney|chimneys|volcano|barrel|barrels|hole|holes|debris|ashes|cinders|logs|fire|fires|wick|candle|candles|lamp|lamps|stove|torch|torches|pan|grease|oil|engine|engines|exhaust|tires|brakes|fuse|crack|cracks|hot")
+SMOKE_NOT_TOBACCO = {"bees", "bee", "hive", "hives", "wasps", "insects", "stupefy", "stupefied", "stupefaction",
+                     "graters", "grater", "dried", "salted", "cured", "curing", "hams", "fish", "meat", "bacon",
+                     "herrings"}
+
+
 class NotGivenUp:
     """Not someone giving smoking up: "that he has given up smoking" (Little Women)."""
 
@@ -1154,6 +1185,10 @@ class NotGivenUp:
         self.m = m
 
     def __call__(self, words, near=None):
+        # ... nor smoking out bees, tobacco graters among the tools, or meat "dried and smoked" (The Swiss
+        # Family Robinson, the night run's report, 2026-11-17)
+        if SMOKE_NOT_TOBACCO & set(words):
+            return []
         return [(i, j) for i, j in self.m(words, near)
                 if not (words[max(0, i - 2):i] in (["given", "up"], ["gave", "up"], ["give", "up"],
                                                    ["giving", "up"], ["gives", "up"]) or
@@ -1248,7 +1283,9 @@ SICK_WORDS = {"sick", "ill", "illness", "invalid", "invalids", "fever", "feveris
               "nurse", "medicine", "medicines", "beef", "faint", "fainted",
               "fainting", "swoon", "swooned", "recover", "recovered", "recovering", "recovery",
               "patient", "convalescent", "influenza", "bronchitis", "pneumonia", "delirious",
-              "sickroom", "sickbed", "physician", "chemist", "chemist's", "remedy", "tonic"}
+              "sickroom", "sickbed", "physician", "chemist", "chemist's", "remedy", "tonic",
+              # "an ointment of butter and wine" (The Swiss Family Robinson)
+              "ointment", "salve", "poultice", "wound", "wounds", "bruise", "bruises", "bandage", "cure"}
 DRUNK_WORDS = {"drunk", "drunken", "drunkenly", "drunkard", "drunkards", "tipsy", "sloshed",
                "hangover", "hungover", "intoxicated", "booze", "boozing", "liquor", "toast", "toasts",
                "cheers", "pub", "tavern", "inn", "bar", "saloon"}
@@ -1387,6 +1424,11 @@ DRUG_NEEDLE = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", 
 def MEDICAL(words, near=None):
     """A needle going in or a wound being stitched (not drug use)."""
     sp = _MEDICAL(words)
+    # a tree tapped: "I made deep incisions in the trunks", "incisions made in the bark" (The Swiss Family
+    # Robinson, the night run's report, 2026-11-17)
+    if sp and {"bark", "trunk", "trunks", "tree", "trees", "palm", "palms", "stem", "stems", "branch",
+               "branches", "sap"} & set(words):
+        return []
     return sp if sp and not DRUGS(words) and not DRUG_NEEDLE & set(words) else []
 
 
@@ -1463,7 +1505,9 @@ def IMMODEST(words, near=None):
     """Immodest clothing. A paint or wire stripper isn't a person (the owner, 2026-11-13: "read
     the context. like a paint stripper would be ok. but a person stripper isnt")."""
     return [sp for sp in _IMMODEST(words, near)
-            if not (words[sp[0]].startswith("stripper") and E.stripper_tool(words, sp[0]))]
+            if not (words[sp[0]].startswith("stripper") and E.stripper_tool(words, sp[0])) and
+            # a strap: "I added a thong of leather" (The Swiss Family Robinson)
+            not (words[sp[0]].startswith("thong") and words[sp[0] + 1:sp[0] + 2] == ["of"])]
 
 
 GESTURES = Matcher(
@@ -1517,7 +1561,13 @@ ANIMALS = {"bear", "bears", "pig", "pigs", "rat", "rats", "snake", "snakes", "wo
            "moose", "bull", "cow", "turkey", "game", "wildcat", "wildcats", "cub", "cubs", "vixen",
            "crow", "crows", "kitten", "kittens", "monkey", "monkeys", "toad", "toads", "frog", "frogs",
            # "There's where I killed my first goat.", "Care killed a cat." (Treasure Island)
-           "goat", "goats", "cat", "cats", "dog", "dogs", "horse", "horses", "seal", "seals"}
+           "goat", "goats", "cat", "cats", "dog", "dogs", "horse", "horses", "seal", "seals",
+           # The Swiss Family Robinson
+           "lobster", "lobsters", "jackal", "jackals", "jackall", "jackalls", "flamingo", "flamingos",
+           "flamingoes", "kangaroo", "kangaroos", "penguin", "penguins", "agouti", "agoutis", "ostrich",
+           "ostriches", "porcupine", "porcupines", "boa", "shark", "sharks", "whale", "whales", "turtle",
+           "turtles", "tortoise", "tortoises", "hyena", "hyenas", "bustard", "bustards", "pigeon", "pigeons",
+           "ortolan", "ortolans", "onager", "buffaloes", "monster", "game"}
 # nobody killed: "I have not killed anything", "she had never killed anything in all her life"
 KILL_NOT = {"not", "never", "nothing", "didnt", "didn't", "hasnt", "hasn't", "havent", "haven't", "hadnt",
             "hadn't", "wont", "won't", "cant", "can't", "cannot", "dont", "don't", "doesnt", "doesn't",
@@ -1554,12 +1604,29 @@ STORY_WORDS = {"story", "stories", "writing", "write", "wrote", "written", "nove
                "elopements", "romance", "romances", "plot", "plots", "hers", "heroine", "hero"}
 
 
+GUNSHOT_DISTANCE_PREV = {"within", "of", "out", "half", "a", "beyond", "musket"}
+GUNSHOT_DISTANCE_NEXT = {"reach", "range", "distance", "of"}
+
+
 def figure_of_speech(words, i):
     """Little Women (the night run's report, 2026-11-17): "as if she had murdered some innocent thing",
     "as if she had stabbed her dearest friend" (a feeling), "a pair of killing boots" (stylish), "I always
     wanted to do the killing part" (in a play), "in a fair way to be killed by kindness" (a saying)."""
     before = words[max(0, i - 6):i]
     if any(before[k:k + 2] in (["as", "if"], ["as", "though"]) for k in range(len(before))):
+        return True
+    # The Swiss Family Robinson (the night run's report, 2026-11-17): "within gunshot", "out of gunshot
+    # reach" (a distance); "prevent its being strangled", "as they might be strangled" (saving animals);
+    # "without killing the little warlike creatures" (bees), "killing an innocent animal"; "the
+    # slaughtered buffalo's skin"
+    if words[i].startswith("gunshot") and ((words[i - 1] if i else "") in GUNSHOT_DISTANCE_PREV or
+                                           (words[i + 1] if i + 1 < len(words) else "") in GUNSHOT_DISTANCE_NEXT):
+        return True
+    if words[i].startswith("strangl") and ({"its"} | KILL_IF) & set(before):
+        return True
+    if words[i].startswith(("kill", "slaughter")) and \
+            ({"creatures", "creature", "animal", "animals", "game", "birds", "beasts", "beast", "prey"} |
+             ANIMALS) & set([w[:-2] if w.endswith(("'s", "’s")) else w for w in words[i + 1:i + 5]]):
         return True
     nxt = words[i + 1] if i + 1 < len(words) else ""
     if words[i] == "killing" and nxt in KILLING_LOOK:
@@ -1638,6 +1705,27 @@ SORROW = {"suffering", "suffered", "grief", "sorrow", "sorrows", "worry", "worri
           "debts", "work", "overwork", "cold", "consumption"}
 
 
+KILLED_PERSON = {"hunter", "hunters", "man", "men", "woman", "women", "brother", "brothers", "sister", "sisters", "people", "person",
+                 "child", "children", "boy", "boys", "girl", "girls", "father", "son", "sons", "daughter", "friend",
+                 "friends", "wife", "husband", "sailor", "sailors", "savage", "savages", "captain", "soldier",
+                 "soldiers", "king", "queen", "prisoner", "prisoners", "baby", "abel", "cain", "human", "humans"}
+
+
+def animal_killed(words, around):
+    """Is every kill word here an animal killed (an animal named in the sentence or the ones around it,
+    no person in the sentence, and "him/it/them/one" or nothing after the word)?"""
+    ks = [i for i, w in enumerate(words) if w.startswith(("kill", "slaughter", "murder"))]
+    if not ks:
+        return False
+    if not (ANIMALS | {"animal", "animals", "creature", "creatures", "game", "prey", "beast", "beasts"}) & \
+            (set(words) | set(around)):
+        return False
+    # ... and not an animal killing someone: "The bear attacked the camp. It killed him."
+    return all(not KILLED_PERSON & set(words[i + 1:i + 5]) and
+               not ((words[i - 1] if i else "") in ({"it", "which", "that", "they"} | ANIMALS) and
+                    {"him", "her", "them", "me", "us", "you"} & set(words[i + 1:i + 3])) for i in ks)
+
+
 def kill_told_before(words, before):
     """Is every kill word in this sentence an animal killed, or sorrow that killed someone, as the
     sentences just before tell?"""
@@ -1692,6 +1780,11 @@ VIOLENCE = ViolenceMatcher(
              "shot him|her|them|me|you|us !a|an|another|one|that|this|daggers|looks|glances",
              "shot at !" + SHOT_AT_NOT, "shot dead", "slit his|her|their throat",
              "kicked|kicks|kicking him|her|them|me in", "hit|punched him|her|them in the"])
+EXECUTION_DEATH = {"prisoner", "prisoners", "condemned", "scaffold", "gallows", "hanged", "hanging", "hang",
+                   "beheaded", "guillotine", "firing", "squad", "death", "die", "died", "dead", "executioner",
+                   "criminal", "criminals", "sentence", "sentenced", "block", "traitor", "traitors", "public",
+                   "electric", "chair", "lethal", "injection", "witnessed", "stake", "burned", "rebels", "spy",
+                   "spies", "murderer", "murderers", "convict", "convicts", "dock"}
 TORTURED_BY = {"thirst", "hunger", "doubt", "doubts", "fear", "fears", "anxiety", "jealousy", "remorse",
                "curiosity", "guilt", "heat", "cold", "toothache", "pain", "regret", "shame", "suspense",
                "worry", "memories", "longing", "uncertainty", "hope", "conscience"}
@@ -1709,6 +1802,8 @@ def pain_of(words, i):
         return True
     if words[i].startswith("execution") and (words[i - 1] if i else "") in ("into", "in"):
         return True     # "carry his threat into execution", "if not masterly in execution" (Little Women)
+    if words[i].startswith("execution") and not EXECUTION_DEATH & set(words):
+        return True     # carrying out: "the execution of our design", "of my project" (The Swiss Family Robinson)
     return words[i] == "hanged" and words[i + 1:i + 2] == ["if"]
 
 
@@ -3104,6 +3199,8 @@ def analyze(book, opts, progress=None, cancel=None):
         if cat != "mine" and (book.dick_name(i) or old_sleep_with_someone(
                 book.wn, i, j, book.old_style, book.sent_words(book.word_sent[i]))):
             continue
+        if book.wn[i] in ("ass", "asses") and book.has_donkey and                 (book.wn[i - 1] if i else "") not in E.ASS_INSULT_BEFORE - {"an"}:
+            continue    # the family's donkey (The Swiss Family Robinson: "even our ass", "the ass began to kick")
         if cat == "rude" and book.old_style and book.wn[i:i + 2] == ["shut", "up"] and not book.shut_up_said(i):
             continue    # "He keeps his grandson shut up", the cot-bed "suddenly shut up" (Little Women)    # Dick the ploughboy in an older book (the owner, 2026-11-16: "leave all words
             #             except pussy"); "you Dick!" and a modern book's "dick" still count
@@ -3192,6 +3289,12 @@ def analyze(book, opts, progress=None, cancel=None):
     def _words(c):
         return [w for k in (c.get("sents") or []) for w in book.sent_words(k)]
     cuts = [c for c in cuts if not (c["kind"] == "violence" and kill_told_before(_words(c), _before(c)))]
+    # an animal hunted or killed for food, named in the sentences around ("I killed him with a single
+    # blow with my stick", "the jackall he had killed": The Swiss Family Robinson, the night run's report,
+    # 2026-11-17); not with a person in the sentence ("Cain killed his brother")
+    cuts = [c for c in cuts if not (c["kind"] == "violence" and animal_killed(
+        [w for w in (nrm(t) for t in c["raw"].split()) if w] if c.get("part") else _words(c),
+        _before(c) + _around(c)))]
     cuts = [c for c in cuts if not (c["kind"] == "ref" and pet_in_bed(_words(c), _around(c)))]
     # a wounded man moaning isn't a sex scene: "with a low moan, writhed himself back ... The moan, which
     # told of pain and deadly weakness" (Treasure Island, the night run's report, 2026-11-17)
@@ -3204,8 +3307,10 @@ def analyze(book, opts, progress=None, cancel=None):
     cuts = [c for c in cuts if not (c["kind"] == "sex" and (
         in_pain(_words(c), _around(c)) if c.get("sents") else in_pain(*_passage(c))))]
     if book.old_style:      # a "sex" passage in an older book with no sex scene in it ("it's a pleasure to help")
-        cuts = [c for c in cuts if not (c["kind"] == "sex" and not OLD_SEX_SCENE & set(
+        cuts = [c for c in cuts if not (c["kind"] == "sex" and not old_sex_scene(
             _words(c) if c.get("sents") else _passage(c)[0]))]
+        # smoking out bees told in the next sentence ("took some tobacco and a pipe": The Swiss Family Robinson)
+        cuts = [c for c in cuts if not (c["kind"] == "smoking" and SMOKE_NOT_TOBACCO & set(_around(c)))]
     if book.old_style:      # a child undressing for bed (Pollyanna)
         def _cut_words(c):      # just the part cut, when only part of the sentence goes
             return [w for w in (nrm(t) for t in c["raw"].split()) if w] if c.get("part") else _words(c)

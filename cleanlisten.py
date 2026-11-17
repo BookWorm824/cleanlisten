@@ -1000,6 +1000,46 @@ AROUSED_FEELINGS = {"suspicion", "suspicions", "curiosity", "interest", "anger",
                     "watchers", "household", "house", "camp", "guards", "guard", "sentries", "sentry",
                     "town", "village", "neighbours", "neighbors", "crew", "sleepers", "whole", "dogs",
                     "enemy", "garrison", "ship", "everyone", "everybody"}
+# The Swiss Family Robinson (the night run's report, 2026-11-17): the family's donkey ("a cow and an ass,
+# two goats", "the two asses drew nearer", "Camels and asses are very fond of thistles"), unless said to
+# someone ("you ass", "such an ass"); "a faggot of dried bamboo" (a bundle of sticks); "gulls, man of war
+# birds, boobies, albatrosses" (seabirds); "a sort of silent and stupid perplexity", "stood stupid with
+# amazement" (dazed)
+ASS_ANIMAL_NEAR = {"cow", "cows", "goat", "goats", "sheep", "sow", "pig", "pigs", "cart", "carts", "load", "loads",
+                   "loaded", "kick", "kicked", "kicking", "kicks", "wild", "harness", "harnessed", "saddle",
+                   "saddled", "bray", "brayed", "braying", "donkey", "donkeys", "mule", "mules", "buffalo",
+                   "onager", "onagers", "cattle", "camel", "camels", "beast", "beasts", "animal", "animals",
+                   "stable", "stables", "hay", "thistles", "rode", "ride", "riding", "mounted", "drove", "herd",
+                   "bridle", "halter", "panniers", "foal", "grazing", "manger", "ox", "oxen", "horse", "horses"}
+ASS_INSULT_BEFORE = {"you", "such", "silly", "great", "pompous", "conceited", "utter", "perfect", "regular",
+                     "stupid", "young", "what", "complete", "absolute", "an", "big", "fat", "dumb", "lazy"}
+FAGGOT_WOOD = {"bundle", "bundles", "bound", "wood", "sticks", "stick", "fire", "fires", "bamboo", "dried", "dry",
+               "lighting", "light", "lit", "burn", "burning", "kindling", "carrying", "carry", "firewood",
+               "brushwood", "twigs", "branches", "fuel", "hearth", "bind", "tied"}
+BOOBY_BIRDS = {"gulls", "gull", "birds", "bird", "albatross", "albatrosses", "pelican", "pelicans", "penguins",
+               "frigate", "aquatic", "terns", "tern", "cormorants", "gannets", "petrels", "sea", "seabirds"}
+STUPID_DAZED_NEXT = {"perplexity", "amazement", "astonishment", "surprise", "wonder", "terror", "fright", "stare",
+                     "stupor", "sleep", "fatigue", "with"}
+STUPID_DAZED_PREV = {"stood", "stand", "stands", "sat", "sit", "looked", "gazed", "stared", "lay", "remained"}
+
+
+def ass_animal(words, i):
+    """Is "ass"/"asses" at words[i] the animal (a cart, a cow, a load close by), not said to someone?"""
+    prev = words[i - 1] if i else ""
+    if prev in ASS_INSULT_BEFORE and not (prev == "an" and ASS_ANIMAL_NEAR & set(words[max(0, i - 12):i])):
+        return False
+    return bool(ASS_ANIMAL_NEAR & set(words[max(0, i - 15):i + 16]))
+
+
+def stupid_dazed(words, i):
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    nxt2 = words[i + 2] if i + 2 < len(words) else ""
+    if nxt == "with":
+        return nxt2 in STUPID_DAZED_NEXT - {"with"} or nxt2 in {"astonishment", "amazement", "grief", "fear", "sleep",
+                                                                 "cold", "terror", "wonder", "drink", "fatigue"}
+    return nxt in STUPID_DAZED_NEXT or (words[i - 1] if i else "") in STUPID_DAZED_PREV
+
+
 PUSSY_WORDS = {"pussy", "pussies"}
 PUSSY_CAT_NEXT = {"cat", "cats", "kitten", "kittens"}
 CAT_WORDS = {"cat", "cats", "cat's", "kitten", "kittens", "kitten's", "kitty", "kitties", "kittie",
@@ -1186,7 +1226,10 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                         "short", "convulsive", "spasmodic", "nervous", "hasty", "abrupt", "rough",
                         "hard", "strong", "powerful", "vigorous", "smart", "gentle", "light",
                         "feeble", "involuntary", "backward", "upward", "forward", "downward",
-                        "single", "final", "savage", "fierce"}
+                        "single", "final", "savage", "fierce",
+                        # "and then a second jerk, accompanied by a rapid motion of the boat" (The Swiss
+                        # Family Robinson, the night run's report, 2026-11-17)
+                        "second", "first", "third", "another", "great", "last", "slight", "few"}
                     for w in ("jerk", "jerks")},
                  # "play dumb", "he played dumb when they asked" (Camp Club Girls); unable to speak
                  # (the owner, 2026-11-16: "dumb if its aninsult"): "struck dumb", "she stood dumb"
@@ -1275,9 +1318,21 @@ SUCK_NOT_BEFORE = {"a", "one", "another",   # "don't offer even a suck" (of a pi
                    "quicksand", "mud", "plant", "roots", "sponge", "lamprey", "lampreys"}
 
 
+# sucking food or milk: "each of the boys seized one [sugarcane] and began to suck it", "when I have
+# sucked this part dry", the young monkey "put to one of the goats, that he might suck" (The Swiss Family
+# Robinson, the night run's report, 2026-11-17)
+SUCK_FOOD = {"sugar", "sugarcane", "sugarcanes", "cane", "canes", "juice", "milk", "honey", "teat", "udder",
+             "goat", "goats", "monkey", "lamb", "calf", "kid", "marrow", "sap", "nectar", "dry", "orange",
+             "oranges", "lemon", "lemons", "egg", "eggs", "bottle", "thumb", "breast", "mother", "pith"}
+
+
+def suck_food(words, i):
+    return bool(SUCK_FOOD & set(words[max(0, i - 12):i + 13]))
+
+
 def suck_swear(words, i):
     """Is words[i] "suck(s/ed)" meaning "is bad" ("that sucks"), not sucking something?"""
-    return (words[i] in SUCK_WORDS and not (i and words[i - 1] in SUCK_NOT_BEFORE) and
+    return (words[i] in SUCK_WORDS and not (i and words[i - 1] in SUCK_NOT_BEFORE) and not suck_food(words, i) and
             (words[i + 1] if i + 1 < len(words) else "") not in SUCK_NOT_NEXT)
 
 
@@ -1526,7 +1581,8 @@ def _find_language(words, cats, breaks=()):
                     if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
                                           ph == ("shut", "up") and (nxt in SHUT_UP_SAFE_NEXT or
                                                                     shut_up_closed(words[i - 1] if i else "")) or
-                                          ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT):
+                                          ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT or
+                                          ph[0] in SUCK_WORDS and suck_food(words, i)):
                         continue  # "shut it down", "shut up in the attic", "it sucks the juice out"
                     if ph[0] == "safe" and nxt in SAFE_WORD_NOT_NEXT:
                         continue  # "Is there a safe word to use?"
@@ -1616,6 +1672,10 @@ def _find_language(words, cats, breaks=()):
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w in ("jerk", "jerks") and jerk_motion(words, i) or
                         w in PUSSY_WORDS and pussy_cat(words, i) or
+                        w in ("ass", "asses") and ass_animal(words, i) or
+                        w in ("faggot", "faggots") and FAGGOT_WOOD & set(words[max(0, i - 10):i + 11]) or
+                        w in ("boobies", "booby") and BOOBY_BIRDS & set(words[max(0, i - 10):i + 11]) or
+                        w in ("stupid",) and stupid_dazed(words, i) or
                         w in ("aroused", "arousal") and AROUSED_FEELINGS & set(words[i + 1:i + 3]) or
                         w == "gay" and gay_happy(words, i) or
                         w in ("sex", "sexes") and sex_means_gender(words, i) or
