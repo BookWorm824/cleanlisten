@@ -26,3 +26,9 @@ def test_not_rape_talk(text):
 def test_without_penetration_is_explicit():
     ws = words("assaulted but without penetration")
     assert E.explicit_finding_words(ws) == {2, 3}
+
+
+def test_without_penetration_isnt_muted_as_a_word_on_its_own():
+    # as CleanView: only an explicit finding (the line goes), not a sexual word muted by itself
+    ws = words("assaulted but without penetration")
+    assert not [s for s in E.find_language(ws, ["sexual"]) if ws[s[0]] == "without"]

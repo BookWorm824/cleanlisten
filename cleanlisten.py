@@ -564,7 +564,6 @@ SEXUAL_PHRASES = [
     ("stripper", "pole"), ("stripper", "poles"), ("strippers", "pole"), ("strippers", "poles"),
     ("stripper's", "pole"), ("stripper's", "poles"),
     ("forced", "penetration"), ("signs", "of", "penetration"), ("evidence", "of", "penetration"),
-    ("without", "penetration"),         # CleanView 1.18.125 (Criminal Minds)
     # strip clubs (CleanView 1.18.111, LINE_WORDS["sexref"]; the owner, 2026-11-16: "any of the
     # strip club stuff needs cut for all ages if it is checked"). With sexual references ticked
     # CleanRead cuts the line (_ref_hit). Not "a comic strip", "strip the bed", "the Vegas strip",
