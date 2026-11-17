@@ -72,26 +72,68 @@ def test_dumb_meaning_unable_to_speak(text):
     assert "dumb" not in found(text, ["rude"]), text
 
 
-# --- A3. "pussy": always out, in every book --------------------------------------------------
-@pytest.mark.parametrize("text", ["The pussy cat purred.", "a sprig of pussy willow",
-                                  "Here, pussy, pussy!", "He called him a pussy.",
-                                  "The pussies were asleep in the barn."])
-def test_pussy_always_marked(text):
+# --- A3. "pussy": out, except the cat ---------------------------------------------------------
+# First "leave all words except pussy. take that word out"; then, the same day: "if pussy is used as a
+# cat only", "it can stay", "but keep it limited".
+@pytest.mark.parametrize("text", ["a sprig of pussy willow", "Here, pussy, pussy!", "He called him a pussy.",
+                                  "Don't be such a pussy about it.", "The pussies were asleep in the barn.",
+                                  "Such a pussy, the cat isn't even scary."])
+def test_pussy_marked_unless_its_the_cat(text):
     assert [w for w in found(text, ["sexual"]) if w.startswith("puss")], text
 
 
+@pytest.mark.parametrize("text", [
+    "The pussy cat purred.", "She held the little pussy kitten.",
+    "The tortoiseshell lady came to rub herself against the brown stockings of Bobbie with arched back, "
+    "waving tail, and reverberating purrs. Dear me, said Bobbie, stooping to stroke her, how very kind "
+    "everybody is today, even you, Pussy!",
+    "Beth had sweet peas and mignonette, with chickweed for the bird, and catnip for the pussies.",
+    "The kitten mewed, and the old pussy licked its ears.",
+])
+def test_pussy_the_cat_stays(text):
+    assert not [w for w in found(text, ["sexual"]) if w.startswith("puss")], text
+
+
 def test_pussy_not_left_in_by_an_ai():
-    # Claude, ChatGPT and the AI helper may only untick words with an innocent meaning
+    # Claude, ChatGPT and the AI helper may only untick words with an innocent meaning; only the cat
+    # rule leaves it
     assert not E.may_untick_word({"cat": "sexual", "word_raw": "pussy"})
     assert not E.may_untick_word({"cat": "sexual", "word_raw": "pussies"})
     assert "pussy" not in E.INNOCENT_NEXT and "pussy" not in E.INNOCENT_PREV
 
 
-def test_pussy_marked_in_cleanread_even_in_an_old_book(tmp_path):
-    book = _book(tmp_path, OLD + ["The pussy cat sat by the fire."], "old_pussy")
+def test_pussy_the_cat_left_in_an_old_book(tmp_path):
+    # "as quiet as old pussy when she is after a bird" (Black Beauty): no cat word near, but an older book
+    book = _book(tmp_path, OLD + ["I go as smooth and as quiet as old pussy when she is after a bird.",
+                                  "Everything she loved was gathered there, and the beloved pussies."], "old_pussy")
+    assert book.old_style
+    an = R.analyze(book, dict(sexual=True, refs=True))
+    assert [m["word_raw"] for m in an["mutes"]] == []
+    assert [c for c in an["cuts"] if c["kind"] == "ref"] == []
+
+
+def test_pussy_the_insult_still_marked_in_an_old_book(tmp_path):
+    book = _book(tmp_path, OLD + ["Don't be such a pussy, Tom."], "old_pussy_insult")
     assert book.old_style
     an = R.analyze(book, dict(sexual=True))
     assert [m["word_raw"] for m in an["mutes"] if m["on"]] == ["pussy"]
+
+
+def test_pussy_still_marked_in_a_modern_book(tmp_path):
+    book = _book(tmp_path, MODERN + ["He said something about her pussy."], "modern_pussy")
+    assert not book.old_style
+    an = R.analyze(book, dict(sexual=True))
+    assert [m["word_raw"] for m in an["mutes"] if m["on"]] == ["pussy"]
+
+
+def test_railway_childrens_cat_not_cut_as_a_sexual_reference(tmp_path):
+    book = _book(tmp_path, MODERN + [
+        "The cat came to rub herself against Bobbie with arched back and reverberating purrs.",
+        "Dear me, said Bobbie, stooping to stroke her, how very kind everybody is today, even you, Pussy!"],
+        "modern_cat")
+    an = R.analyze(book, dict(sexual=True, refs=True))
+    assert [m["word_raw"] for m in an["mutes"]] == []
+    assert [c for c in an["cuts"] if c["kind"] == "ref"] == []
 
 
 # --- A4. "Dick" the name in an older book --------------------------------------------------

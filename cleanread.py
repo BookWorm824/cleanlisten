@@ -469,18 +469,34 @@ class Book:
 
         The same for "Sissy" (a name for a sister: "I'm a bit off my head, Sissy", The Railway
         Children) and "boner" (no rude meaning in an older book: the children's game of "the broken
-        boner"), from the owner's report on 2026-11-16 ("i think too much was flagged here")."""
-        if not self.old_style or self.wn[i] not in OLD_NAMES and self.wn[i] not in OLD_BOOK_LEFT:
+        boner"), from the owner's report on 2026-11-16 ("i think too much was flagged here"); and
+        "pussy", the cat in an older book (the owner, 2026-11-16: "if pussy is used as a cat only",
+        "it can stay", "but keep it limited": "as quiet as old pussy when she is after a bird", Black
+        Beauty; "the beloved pussies", Little Women), however it's written, but not "such a pussy"."""
+        w = self.wn[i]
+        if not self.old_style or w not in OLD_NAMES and w not in OLD_BOOK_LEFT and w not in E.PUSSY_WORDS:
             return False
-        if self.wn[i] in OLD_BOOK_LEFT:
+        if w in OLD_BOOK_LEFT:
             return True
         q, a, b = self.words[i]
-        if self.paras[q].text[a:b] != OLD_NAMES[self.wn[i]]:
+        if w in OLD_NAMES and self.paras[q].text[a:b] != OLD_NAMES[w]:
             return False
         if i == self.sents[self.word_sent[i]][3] or self.words[i - 1][0] != q:
             return True                          # "Dick ran to the gate."
         between = self.paras[q].text[self.words[i - 1][2]:a]
         return not (self.wn[i - 1] in DICK_INSULT_BEFORE and not re.search(r"[,;:\-–—]", between))
+
+    @property
+    def pussy_cats(self):
+        """The sentences (as word tuples) where "pussy" is the cat (Book.dick_name in an older book,
+        cleanlisten.pussy_cat with the words around it), for the sexual-references check, which reads
+        one sentence at a time."""
+        got = getattr(self, "_pussy_cats", None)
+        if got is None:
+            sis = {self.word_sent[i] for i, w in enumerate(self.wn)
+                   if w in E.PUSSY_WORDS and (self.dick_name(i) or E.pussy_cat(self.wn, i))}
+            got = self._pussy_cats = frozenset(tuple(self.sent_words(si)) for si in sis)
+        return got
 
     def doubtful_word(self, i, j, cat):
         """A note when a flagged word probably has its innocent meaning, else ''."""
@@ -787,11 +803,13 @@ def explicit_sentences(book):
     return out
 
 
-def _ref_hit(words, old_style=False):
+def _ref_hit(words, old_style=False, cats=frozenset()):
     """A sexual reference: a sexual word or phrase ("sexy", "make love", "slept with him"),
     or two explicit words together, or sex drugs (Viagra, "the little blue pill", Spanish
     fly...; CleanView 1.18.15). One "breast", "naked" or "pleasure" on its own
     doesn't count ("the Tin Woodman's breast", "a thrill of pleasure")."""
+    if cats and tuple(words) in cats:
+        words = [w for w in words if w not in E.PUSSY_WORDS]   # the cat (Book.pussy_cats)
     if E.sex_drug_spans(words):
         return True
     for i, j, _ in E.find_language(words, ["sexual"]):
@@ -2302,7 +2320,7 @@ def scan(book, use_ai=False, progress=None, cancel=None):
         elif key == "ref":
             explicit = explicit_sentences(book)
             for si in range(S):
-                if _ref_hit(book.sent_words(si), book.old_style) or si in explicit:
+                if _ref_hit(book.sent_words(si), book.old_style, book.pussy_cats) or si in explicit:
                     items.append(sent_item(si, []))
         else:
             for run_ in find_passages(book, key):
@@ -2654,7 +2672,7 @@ def analyze(book, opts, progress=None, cancel=None):
     in_passage = set(q for c in cuts for q in c["paras"])
     kiss_mode = opts.get("kiss", "keep")
     sentence_filters = [
-        ("ref", opts.get("refs"), lambda w: _ref_hit(w, book.old_style)),
+        ("ref", opts.get("refs"), lambda w: _ref_hit(w, book.old_style, book.pussy_cats)),
         ("religion", bool(rparts), lambda w: ("anger" in rparts and E.blames_god(w) or
                                                "preach" in rparts and E.invokes_providence(w) or
                                                "prayers" in rparts and E.strict_religion_hit(w) and

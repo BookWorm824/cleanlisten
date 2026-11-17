@@ -206,8 +206,7 @@ def test_more_slang_found(text, word, cat):
 @pytest.mark.parametrize("text", [
     "Moby Dick is a long book.",
     "She graduated summa cum laude.",
-    # (not "The pussy cat purred." any more: the owner, 2026-11-16, "take that word out";
-    # tests/test_old_words_and_gump.py)
+    "The pussy cat purred.",       # the cat stays (the owner, 2026-11-16; tests/test_old_words_and_gump.py)
     "They polished the brass door knockers.",
     "General Hooker led the army.",
     "The family jewels were stolen.",

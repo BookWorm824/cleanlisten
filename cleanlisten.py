@@ -511,8 +511,9 @@ SEXUAL_WORDS = [
     # a person who strips, not the tool or the chemical (stripper_tool() below)
     r"stripper('s|s)?",
     # crude words for body parts and sex (from CleanView's TV and film list). "pussy" is marked
-    # out every time, in every book, "pussy cat" and "pussy willow" too (the owner, 2026-11-16,
-    # of Black Beauty's old-fashioned words: "leave all words except pussy. take that word out")
+    # out (the owner, 2026-11-16, of Black Beauty's old-fashioned words: "leave all words except
+    # pussy. take that word out"), except when it means a cat (later that day: "if pussy is used as
+    # a cat only", "it can stay", "but keep it limited"): pussy_cat()
     r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
     r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
     r"cockblock(s|ed|er|ing)?", r"schlongs?", r"todgers?", r"dildos?",
@@ -970,7 +971,37 @@ def stripper_tool(words, i):
     return any(w in STRIPPER_THINGS for w in words[max(0, i - 3):i] + words[i + 1:i + 6])
 
 
-# (No "pussy cat" / "pussy willow" any more: the owner, 2026-11-16, "take that word out".)
+# "pussy" meaning a cat stays (the owner, 2026-11-16: "if pussy is used as a cat only", "it can stay",
+# "but keep it limited"): "pussy cat", or a cat word close by ("came to rub herself against the brown
+# stockings of Bobbie with arched back, waving tail, and reverberating purrs ... even you, Pussy!", The
+# Railway Children; "catnip for the pussies", Little Women). Still out: "pussy willow", "such a pussy",
+# "don't be a pussy", and any other use. (In an older book CleanRead also leaves it unless it's said as
+# an insult: Book.dick_name.)
+PUSSY_WORDS = {"pussy", "pussies"}
+PUSSY_CAT_NEXT = {"cat", "cats", "kitten", "kittens"}
+CAT_WORDS = {"cat", "cats", "cat's", "kitten", "kittens", "kitten's", "kitty", "kitties", "kittie",
+             "purr", "purrs", "purred", "purring", "mew", "mews", "mewed", "mewing", "meow", "meows",
+             "meowed", "meowing", "miaow", "miaowed", "miaowing", "catnip", "whiskers", "tabby", "tomcat",
+             "tom-cat", "tomcats", "mouser", "mousers", "litter", "kittenish"}
+PUSSY_INSULT_BEFORE = {"a", "an", "such", "big", "total", "complete", "real", "what", "being", "some",
+                       "your", "fucking", "damn", "bloody"}
+PUSSY_CAT_REACH = 30          # words either side (about two sentences)
+
+
+def pussy_cat(words, i):
+    """Is "pussy"/"pussies" at words[i] a cat: "pussy cat", or a cat word close by (not after "a",
+    "such", "big"... that make it the insult)?"""
+    if words[i] not in PUSSY_WORDS:
+        return False
+    if (words[i + 1] if i + 1 < len(words) else "") in PUSSY_CAT_NEXT:
+        return True
+    if (words[i - 1] if i else "") in PUSSY_INSULT_BEFORE:
+        return False
+    near = words[max(0, i - PUSSY_CAT_REACH):i] + words[i + 1:i + 1 + PUSSY_CAT_REACH]
+    return any(w in CAT_WORDS for w in near)
+
+
+
 INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  # the raccoon (CleanView 1.18.111): "a coon dog", "coon hunting", "a coon's age"
                  "coon": {"dog", "dogs", "hound", "hounds", "hunt", "hunts", "hunting", "hunter",
@@ -1513,6 +1544,7 @@ def _find_language(words, cats, breaks=()):
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w in ("jerk", "jerks") and jerk_motion(words, i) or
+                        w in PUSSY_WORDS and pussy_cat(words, i) or
                         w == "gay" and gay_happy(words, i) or
                         w in ("sex", "sexes") and sex_means_gender(words, i) or
                         w == "bondage" and bondage_slavery(words, i) or
@@ -2791,7 +2823,7 @@ INNOCENT_WORDS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "pr
                   "crud", "cruddy", "sod", *SUCK_WORDS, *FRUIT_WORDS}
 # Not "retard"/"retarded": a slur even said as a description ("a severely retarded boy"). The
 # verb ("retard the spread") is never flagged in the first place (INNOCENT_NEXT). Not "pussy" /
-# "pussies" any more, not even the cat (the owner, 2026-11-16: "take that word out").
+# "pussies": no checker leaves it in; only the cat rule does (pussy_cat, the owner, 2026-11-16).
 
 
 def may_untick_word(m, words=None):

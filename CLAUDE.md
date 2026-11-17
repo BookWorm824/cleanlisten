@@ -392,8 +392,14 @@ plain words, learned from Lauren directly and from her exported reviews:
 - **Old-fashioned words** (the owner, 2026-11-16, from her Black Beauty report: "leave all words
   except pussy. take that word out", "i guess if jerk is used directed towards a person it should
   come out", "but if its a motion should stay. like he jerked the rope", "and dumb if its
-  aninsult"): "pussy" is always marked, in every book (no "pussy cat"/"pussy willow" guard, and
-  not in `INNOCENT_WORDS`, so no AI leaves it in). "jerk" only at a person ("you jerk", "what a
+  aninsult"): "pussy" is marked (not in `INNOCENT_WORDS`, so no AI leaves it in), except
+  the cat (later that day: "if pussy is used as a cat only", "it can stay", "but keep it limited"):
+  "pussy cat", or a cat word within 30 words (purrs, kitten, catnip...: `pussy_cat`), or in an older
+  book any use not said as an insult (`Book.dick_name`: "as quiet as old pussy", "the beloved
+  pussies"); "pussy willow", "such a pussy", "don't be a pussy" stay marked. From The Railway
+  Children the same day ("i think too much was flagged here"): "rum" meaning odd, "Bong" (French),
+  beating eggs, "on pain of torture", "Come hither with me", screwing up one's eyes aren't flagged;
+  "Sissy" (a name) and "boner" are left in an older book (tests/test_railway_children.py). "jerk" only at a person ("you jerk", "what a
   jerk", "that jerk of a husband"); a movement isn't ("a jerk of his head", "jerk at the rein",
   "with a jerk", "a sudden jerk", "gave the rein a jerk": `jerk_motion`, INNOCENT_PREV). "dumb"
   only as an insult; unable to speak isn't ("dumb beasts", "a poor dumb creature", "struck/stood/
