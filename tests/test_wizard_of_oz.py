@@ -20,7 +20,7 @@ def test_not_violence(text):
 
 
 @pytest.mark.parametrize("text", [
-    "The house fell on the witch and killed her.", "He killed the guard and ran.",
+    "The witch's soldiers killed her.", "He killed the guard and ran.",
     "He fought the wolf with his axe and killed it.", "They never stopped; they killed him anyway.",
 ])
 def test_still_violence(text):

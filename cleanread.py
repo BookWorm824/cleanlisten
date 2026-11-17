@@ -699,7 +699,9 @@ OLD_BOOK_LEFT = {"boner", "boners",
                  # The Wind in the Willows: "a fanciful erection clothed in more cockleshells" (a
                  # building), "both his popularity, and the sex that seemed to inspire it" (the ladies),
                  # "He would probably have been aroused much earlier" (woken)
-                 "erection", "erections", "sex", "sexes", "aroused", "arousal"}
+                 "erection", "erections", "sex", "sexes", "aroused", "arousal",
+                 # "the affection born of long intercourse for their good old minister" (dealings: Anne)
+                 "intercourse"}
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -923,11 +925,19 @@ def old_flirt_hit(words, old_style):
     return not old_style or any(FLIRT_STRONG.match(w) for w in words) or bool(OLD_ROMANCE & set(words))
 
 
+COME_FORMS = ("come", "came", "comes", "coming")
+
+
 def old_rel_hit(words, old_style):
     """rel_hit; in an older book not a wink alone ("Then, as he looked, it winked at him, and so declared
     itself to be an eye": The Wind in the Willows)."""
     if not rel_hit(words, old_style):
         return False
+    if old_style and any(w in COME_FORMS and words[k + 1:k + 2] == ["out"] for k, w in enumerate(words)):
+        # "everything seems to be calling to me, 'Anne, Anne, come out to us.'" (Anne of Green Gables)
+        ws = [w for k, w in enumerate(words) if not (w == "out" and k and words[k - 1] in COME_FORMS)]
+        if not rel_hit(ws, old_style):
+            return False
     if old_style and any(w.startswith("wink") for w in words) and not OLD_ROMANCE & set(words) and \
             not any(FLIRT_STRONG.match(w) for w in words):
         ws = [w for w in words if not w.startswith("wink")]
@@ -1008,8 +1018,18 @@ def old_sleeping_hit(words, old_style):
 SLEEP_SOMEONE = {"someone", "somebody", "anyone", "anybody"}
 
 
-def old_sleep_with_someone(words, i, j, old_style):
-    return old_style and words[i] in E.SLEEP_FORMS and j - i == 3 and words[j - 1] in SLEEP_SOMEONE
+# ... and comfort: "Anne dear, would you like to have me sleep with you tonight?" (Marilla, the night
+# Matthew dies: Anne of Green Gables, the night run's report, 2026-11-17)
+SLEEP_KIND = {"dear", "child", "darling", "tonight", "to-night", "mother", "aunt", "sister", "lonely",
+              # "Could you sleep with them, grandmother?" (the pillows: Heidi, the night run's report, 2026-11-17)
+              "grandmother", "grandmamma", "grandma", "granny", "grandfather", "pillows", "pillow"}
+
+
+def old_sleep_with_someone(words, i, j, old_style, sent=()):
+    if not (old_style and words[i] in E.SLEEP_FORMS and j - i == 3):
+        return False
+    return words[j - 1] in SLEEP_SOMEONE or words[j - 1] in ("you", "me", "them") and bool(
+        SLEEP_KIND & (set(sent) or set(words)))
 
 
 # A child undressing for bed in an older book: "She undressed, folded her clothes neatly", "she was
@@ -1048,11 +1068,23 @@ def SLEEPING(words, near=None):
     return sp if sp and not NOT_A_COUPLE & set(words) else []
 
 
+def old_unmarried_hit(words, old_style):
+    """An unmarried couple; in an older book "spend the night with" is a visit ("I might have let her
+    spend the night with Diana": Anne of Green Gables)."""
+    sp = UNMARRIED(words)
+    if old_style:
+        sp = [(i, j) for i, j in sp if words[i + 1:i + 4] != ["the", "night", "with"]]
+    return bool(sp)
+
+
 def UNMARRIED(words, near=None):
     """An unmarried couple living or sleeping together. Not "we slept together as children" or
     "living together with her sisters"; and a married couple isn't this."""
     sp = _UNMARRIED(words)
-    return sp if sp and not (NOT_A_COUPLE | {"married", "husband", "wife", "wedding"}) & set(words) else []
+    # "promising each other that we will never marry but be nice old maids and live together forever"
+    # (two girls: Anne of Green Gables)
+    return sp if sp and not (NOT_A_COUPLE | {"married", "husband", "wife", "wedding", "marry", "maids"}) & \
+        set(words) else []
 
 
 def SLEEPING_ALL(words, near=None):
@@ -1490,7 +1522,7 @@ ANIMALS = {"bear", "bears", "pig", "pigs", "rat", "rats", "snake", "snakes", "wo
 KILL_NOT = {"not", "never", "nothing", "didnt", "didn't", "hasnt", "hasn't", "havent", "haven't", "hadnt",
             "hadn't", "wont", "won't", "cant", "can't", "cannot", "dont", "don't", "doesnt", "doesn't",
             "neither", "nor"}
-KILL_AUX = {"have", "has", "had", "be", "been", "ever", "really", "actually", "i", "he", "she", "they", "we",
+KILL_AUX = {"am", "is", "are", "was", "were", "have", "has", "had", "be", "been", "ever", "really", "actually", "i", "he", "she", "they", "we",
             "you", "did", "do", "does", "yet", "so", "much", "as"}
 # what's killed is the animal named earlier ("a beetle ... killed the poor little thing"), not "the hunter"
 KILL_THE_CREATURE = {"thing", "things", "creature", "creatures", "it", "beast", "beasts", "animal", "animals"}
@@ -1502,7 +1534,8 @@ KILL_FIGHT = {"fought", "fight", "fighting", "axe", "ax", "sword", "gun", "rifle
               "stabbed", "shot", "chopped", "slashed", "battle", "attacked", "attack"}
 
 
-SLAP_FRIENDLY = {"thigh", "thighs", "knee", "knees", "leg", "legs", "forehead", "brow", "table", "tables",
+SLAP_FRIENDLY = {"reins", "rein",      # "Matthew slapped the reins on the sorrel's back" (Anne)
+                 "thigh", "thighs", "knee", "knees", "leg", "legs", "forehead", "brow", "table", "tables",
                  "desk", "counter", "pocket", "pockets", "side", "sides", "hands", "palms", "palm", "bar",
                  "steering", "wheel", "mosquito", "mosquitoes", "fly", "flies", "water", "mud", "paint"}
 SLAP_THING_HOW = {"open", "shut", "closed", "down", "onto", "on", "aside", "away", "together", "into",
@@ -1511,6 +1544,14 @@ SLAP_THING_HOW = {"open", "shut", "closed", "down", "onto", "on", "aside", "away
 
 KILLING_LOOK = {"boots", "hat", "hats", "bonnet", "bonnets", "dress", "dresses", "gown", "gowns", "glance",
                 "glances", "smile", "look", "looks", "pace", "part", "parts", "costume", "bow"}
+
+
+KILL_ACCIDENT = {"accident", "train", "trains", "falling", "fell", "fall", "tree", "lightning", "storm",
+                 "avalanche", "earthquake", "flood", "drowned", "drowning", "car", "crash", "horse", "thrown",
+                 "fever", "illness", "explosion", "mine", "shipwreck", "wreck"}
+STORY_WORDS = {"story", "stories", "writing", "write", "wrote", "written", "novel", "novels", "play", "plays",
+               "book", "books", "poem", "poems", "tale", "tales", "chapter", "mystery", "mysteries", "elopement",
+               "elopements", "romance", "romances", "plot", "plots", "hers", "heroine", "hero"}
 
 
 def figure_of_speech(words, i):
@@ -1522,6 +1563,21 @@ def figure_of_speech(words, i):
         return True
     nxt = words[i + 1] if i + 1 < len(words) else ""
     if words[i] == "killing" and nxt in KILLING_LOOK:
+        return True
+    # Anne of Green Gables (the night run's report, 2026-11-17): "Mr. Thomas was killed falling under a
+    # train" (an accident), "You'll fall off and be killed.", "Anne, are you killed?", "Diana puts too
+    # many murders into hers", "writing about love and murder and elopements", "killing yourself over
+    # your books"
+    if words[i].startswith("kill") and KILL_ACCIDENT & set(words[max(0, i - 5):i + 5]):
+        return True
+    if words[i] == "killed" and words[max(0, i - 2):i] in (["are", "you"], ["is", "she"], ["is", "he"],
+                                                           ["were", "you"], ["am", "i"]):
+        return True
+    if words[i].startswith("murder") and not words[i].startswith(("murdered", "murdering")) and \
+            STORY_WORDS & set(words):
+        return True
+    if words[i] in ("killing", "kill") and words[i + 1:i + 3] in (["yourself", "over"], ["herself", "over"],
+                                                                  ["himself", "over"], ["myself", "over"]):
         return True
     return words[i].startswith("kill") and "kindness" in words[i + 1:i + 4]
 
@@ -3045,7 +3101,8 @@ def analyze(book, opts, progress=None, cancel=None):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
-        if cat != "mine" and (book.dick_name(i) or old_sleep_with_someone(book.wn, i, j, book.old_style)):
+        if cat != "mine" and (book.dick_name(i) or old_sleep_with_someone(
+                book.wn, i, j, book.old_style, book.sent_words(book.word_sent[i]))):
             continue
         if cat == "rude" and book.old_style and book.wn[i:i + 2] == ["shut", "up"] and not book.shut_up_said(i):
             continue    # "He keeps his grandson shut up", the cot-bed "suddenly shut up" (Little Women)    # Dick the ploughboy in an older book (the owner, 2026-11-16: "leave all words
@@ -3097,6 +3154,7 @@ def analyze(book, opts, progress=None, cancel=None):
         ("kiss_ss", opts.get("kiss_ss", "keep") in ("passionate", "all"),
          lambda w: old_kiss_ss_hit(w, opts.get("kiss_ss"), book.old_style)),
         *((k, opts.get(k), (lambda w: old_sleeping_hit(w, book.old_style)) if k == "sleeping" else
+           (lambda w: old_unmarried_hit(w, book.old_style)) if k == "unmarried" else
            (lambda w, k=k: E.sentence_hit(k, w))) for k in E.MORE_KINDS),
         *((t, opts.get(t), lambda w, t=t: E.topic_hit(t, w)) for t in E.TOPICS),
     ]

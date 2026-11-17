@@ -478,6 +478,7 @@ REVERENT_BEFORE = {
     "worship", "worshipped", "worshiped", "glorify", "embraced", "embrace", "risen", "crucified",
     "let", "lets", "letting"}           # "Had I let Jesus illuminate my path" (CleanView 1.18.13)
 REVERENT_NEXT = {
+    "blessing", "blesses", "blessed",   # "Christ Blessing Little Children" (a picture: Anne of Green Gables)
     "told", "tells", "said", "says", "taught", "teaches", "loves", "loved", "died", "dies", "rose",
     "sent", "sends", "heard", "hears", "healed", "heals", "saves", "saved", "wept", "promised",
     "promises", "forgave", "forgives", "answered", "answers", "himself", "alone", "came", "comes",
@@ -1038,6 +1039,8 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  # Little Women (the night run's report, 2026-11-17): "all pricks of conscience", sewing
                  # ("darned his own socks", "darning hose"; "darning" and "darns" are always sewing)
                  "pricks": {"of"}, "prick": {"of"},
+                 # "if people wouldn't twit me about my looks" (tease: Anne of Green Gables)
+                 "twit": {"me", "him", "her", "us", "them", "you", "about"},
                  "darned": {"his", "her", "my", "their", "your", "our", "the", "socks", "stockings", "hose"},
                  "darn": {"his", "her", "my", "their", "your", "our", "the", "socks", "stockings", "hose"},
                  # waking or stirring up a feeling: "So the Lion aroused himself and bounded forward" (The
@@ -1170,7 +1173,9 @@ INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WW
                            "needle", "to", "can", "could", "will", "would", "may", "might"},
                  # turf: "an unending strip of sod" (never "sod it", "you lucky sod")
                  "sod": {"of", "with", "some", "fresh", "green", "new", "lay", "laid",
-                         "laying", "cut", "grass"},
+                         "laying", "cut", "grass",
+                         # "a stir of hidden pulses under the gray sod" (Anne of Green Gables)
+                         "gray", "grey", "wet", "damp", "under", "beneath", "the"},
                  "hooker": {"general", "john", "joe"}, "hookers": {"general"},
                  "knockers": {"door"}, "fools": {"april"}, "fool": {"april"},
                  "butt": {"cigarette", "cigar", "rifle", "gun"},
@@ -2133,8 +2138,15 @@ def bully_not(words, i, ph):
     pace" (a saying), "Some make fun of it" (a thing, her book), not bullying."""
     if ph == ("kill", "yourself"):
         nxt = words[i + 2] if i + 2 < len(words) else ""
-        return (words[i - 1] if i else "") in ("don't", "dont", "not", "needn't", "neednt") and nxt.endswith("ing")
+        prev = words[i - 1] if i else ""
+        # ... and a warning: "Anne Shirley, you'll kill yourself." (Anne of Green Gables)
+        return prev in ("don't", "dont", "not", "needn't", "neednt") and nxt.endswith("ing") or \
+            prev in ("you'll", "youll", "you'd", "youd", "will", "would")
     if ph[1:] == ("fun", "of"):
+        # an apology isn't bullying: "I'm awful sorry I made fun of your hair, Anne" (Anne of Green Gables)
+        if {"sorry", "regret", "remorseful", "apologize", "apologise", "forgive", "ashamed"} & \
+                set(words[max(0, i - 20):i]):
+            return True
         return (words[i + 3] if i + 3 < len(words) else "") in ("it", "its", "this", "that")
     return False
 
