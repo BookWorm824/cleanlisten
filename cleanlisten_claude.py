@@ -195,7 +195,8 @@ KIND_RULES = {
                 "off', 'gave him the finger') or makes a crude sexual gesture.",
     "flirt": "Flirting: cut sentences where someone flirts, hits on, winks at or makes romantic "
              "advances toward someone. A married couple being affectionate is fine.",
-    "holiday": "Holidays: cut sentences about Christmas (Santa, Christmas trees, presents, carols), "
+    "holiday": "Holidays: cut sentences about Christmas (Santa, Christmas trees, presents, carols, "
+               "Advent, the nativity story or a nativity play: Bethlehem, the manger, wise men), "
                "Halloween (trick-or-treating, costumes, jack-o'-lanterns), Valentine's Day "
                "(valentines, Cupid), Easter (the Easter bunny, Easter eggs and egg hunts, Easter "
                "baskets) or St. Patrick's Day (leprechauns, a pot of gold, wearing green or "

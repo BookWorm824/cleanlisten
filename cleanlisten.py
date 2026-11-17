@@ -499,6 +499,10 @@ def reverent(words, i, j=None):
         return True                    # "Please, please, dear Jesus." (CleanView 1.18.13)
     if prev == "by" and two in ("swear", "swears", "swore", "sworn", "swearing"):
         return False                   # "I swear by Jesus" (CleanView 1.18.10)
+    if prev == "baby":                 # "the baby Jesus", not "Sweet baby Jesus!"
+        return two != "sweet"          # (CleanView 1.18.120)
+    if {"name", "named"} & set(words[max(0, i - 4):i]):
+        return True                    # "his name will be Jesus" (a nativity play, CleanView 1.18.120)
     if nxt in ("is", "was"):
         return (words[j + 1] if j + 1 < len(words) else "") in REVERENT_IS
     return prev in REVERENT_BEFORE or nxt in REVERENT_NEXT or (two, prev) == ("thank", "you")
@@ -1071,6 +1075,8 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                           "hunters", "skin", "skins", "cat", "cats", "tail", "tails", "age", "ages",
                           "trap", "traps"},
                  "coons": {"age", "ages"}, "coon's": {"age", "ages"},
+                 # "Two little dicky birds sitting on a wall" heard as "titty birds" (CleanView 1.18.120)
+                 "titty": {"bird", "birds"},
                  "dick": {"grayson", "tracy", "van", "whittington", "cheney", "clark", "york",
                           "turpin", "dastardly", "smith", "jones", "johnson", "and", "francis"},
                  # turf: "sod houses", "a sod roof" (CleanView 1.18.11, from CleanRead)
@@ -2264,6 +2270,14 @@ TOPIC_WORDS = {
         r"north pole|reindeer|rudolph the|"
         r"rudolph's (red )?nose|mistletoe|"
         r"yuletide|jingle bells|"
+        # the nativity (CleanView 1.18.120, Call the Midwife's Christmas special: its nativity
+        # play went through): not "(the) advent (of)" but "the Advent calendar", not "a dog in the
+        # manger", not Bethlehem Steel; shepherds and angels alone are left to the AI helper
+        r"nativity|advent(?= (calendars?|wreaths?|candles?|season|sundays?)\b)|"
+        r"(?<!the )(?<!an )advent(?! of\b)|(?<!dog in the )manger|bethlehem(?! steel)|"
+        r"(three )?wise men|three kings|frankincense|myrrh|silent night|o holy night|"
+        r"hark the herald|o come,? all ye faithful|we three kings|the first noel|deck the halls|"
+        r"mince pies?|"
         r"hallowe'?en|trick ?or ?treat\w*|jack ?o'?lanterns?|all hallows|"
         # a lone "Valentine" is a name ("Let's get Valentine.", I Love Lucy; CleanView 1.18.37)
         r"valentines|valentine's|cupid|"
@@ -2796,7 +2810,9 @@ AI_TYPES = {
     "crude": "crude or gross-out humor: jokes about farting, pooping, peeing, burping, boogers or "
              "other bodily functions, toilet humor, or vulgar jokes and pranks (a character simply "
              "feeling sick or using the bathroom is NOT this)",
-    "holiday": "a holiday: Christmas (Santa, Christmas trees and decorations, presents, carols), "
+    "holiday": "a holiday: Christmas (Santa, Christmas trees and decorations, presents, carols, "
+               "Advent, and the nativity story or a nativity play: Bethlehem, the manger, Mary and "
+               "Joseph, baby Jesus, shepherds, angels, wise men), "
                "Halloween (trick-or-treating, Halloween costumes, jack-o'-lanterns), Valentine's "
                "Day (valentines, Cupid), Easter (the Easter bunny, Easter eggs or egg hunts, Easter "
                "baskets) or St. Patrick's Day (leprechauns, a pot of gold, wearing green or "
