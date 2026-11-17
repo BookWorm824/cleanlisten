@@ -677,7 +677,11 @@ OLD_BOOK_LEFT = {"boner", "boners",
                  # Pollyanna, the night run's report, 2026-11-17)
                  "lover", "lovers",
                  # "now, my cock, you've got to" (old slang for "my fellow": Treasure Island)
-                 "cock", "cocks"}
+                 "cock", "cocks",
+                 # The Wind in the Willows: "a fanciful erection clothed in more cockleshells" (a
+                 # building), "both his popularity, and the sex that seemed to inspire it" (the ladies),
+                 # "He would probably have been aroused much earlier" (woken)
+                 "erection", "erections", "sex", "sexes", "aroused", "arousal"}
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -824,8 +828,16 @@ def _ref_hit(words, old_style=False, cats=frozenset()):
             continue        # a lonely child wanting someone near at night
         if not words[i].startswith("arous"):
             return True
-    strong = {w for w in words if any(p.match(w) for p in E.SEX_C[3])}
+    # not "thrust his paw into his trouser-pocket" (The Wind in the Willows, the night run's report,
+    # 2026-11-17: "Toad straddled on the hearthrug, thrust his paw into his trouser-pocket")
+    strong = {w for k, w in enumerate(words) if any(p.match(w) for p in E.SEX_C[3]) and
+              not (w.startswith("thrust") and THRUST_THING & set(words[k + 1:k + 4]))}
     return len(strong) >= 2
+
+
+THRUST_THING = {"paw", "paws", "hand", "hands", "fist", "fists", "pocket", "pockets", "head", "sword", "finger",
+                "fingers", "arm", "arms", "stick", "spade", "oar", "oars", "chin", "nose", "foot", "feet",
+                "knife", "dagger", "spear", "pole", "way", "letter", "note", "paper", "money"}
 
 
 GOD_NEAR = {"god", "god's", "jesus", "christ", "almighty", "lord", "heaven"}
@@ -878,6 +890,29 @@ def old_kiss_hit(words, mode, old_style):
     if not old_style or mode != "passionate":
         return kiss_hit(words, mode)
     return kiss_hit(words, "all") and bool(OLD_ROMANCE & set(words))
+
+
+FLIRT_STRONG = re.compile(r"flirt|coquett|come-?hither|pick-?up")
+
+
+def old_flirt_hit(words, old_style):
+    """Flirting; in an older book a wink alone isn't ("'Rather!' replied the Otter, winking at the Mole.":
+    The Wind in the Willows, the night run's report, 2026-11-17)."""
+    if not E.flirt_hit(words):
+        return False
+    return not old_style or any(FLIRT_STRONG.match(w) for w in words) or bool(OLD_ROMANCE & set(words))
+
+
+def old_rel_hit(words, old_style):
+    """rel_hit; in an older book not a wink alone ("Then, as he looked, it winked at him, and so declared
+    itself to be an eye": The Wind in the Willows)."""
+    if not rel_hit(words, old_style):
+        return False
+    if old_style and any(w.startswith("wink") for w in words) and not OLD_ROMANCE & set(words) and \
+            not any(FLIRT_STRONG.match(w) for w in words):
+        ws = [w for w in words if not w.startswith("wink")]
+        return bool(rel_hit(ws, old_style))
+    return True
 
 
 def old_kiss_ss_hit(words, mode, old_style):
@@ -2970,11 +3005,11 @@ def analyze(book, opts, progress=None, cancel=None):
                                                "preach" in rparts and E.invokes_providence(w) or
                                                "prayers" in rparts and E.strict_religion_hit(w) and
                                                not (E.blames_god(w) or E.invokes_providence(w)))),
-        ("relationship", opts.get("relationships"), lambda w: rel_hit(w, book.old_style)),
+        ("relationship", opts.get("relationships"), lambda w: old_rel_hit(w, book.old_style)),
         ("crude", opts.get("crude"), E.crude_hit),
         ("bully", opts.get("bully"), E.bully_hit),
         ("disrespect", opts.get("disrespect"), E.disrespect_hit),
-        ("flirt", opts.get("flirt"), E.flirt_hit),
+        ("flirt", opts.get("flirt"), lambda w: old_flirt_hit(w, book.old_style)),
         ("kiss", kiss_mode in ("passionate", "all"),
          lambda w: old_kiss_hit(w, kiss_mode, book.old_style) and not E.relationship_hit(w)),
         ("kiss_ss", opts.get("kiss_ss", "keep") in ("passionate", "all"),

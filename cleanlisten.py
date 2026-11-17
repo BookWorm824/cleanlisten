@@ -2806,7 +2806,9 @@ def apply_hard_rule(st, asr):
 # ("the tooting of boats", "tooted the horn") (the training run, 2026-11-15)
 MOON_NOT_NEXT = {"around", "about", "over", "like", "after", "along", "away", "through", "by", "for",
                  "uke", "at", "on", "in", "upon", "into"}
-TOOT_NOT_NEAR = {"horn", "horns", "whistle", "whistles", "car", "cars", "boat", "boats", "train",
+TOOT_NOT_NEAR = {"trumpeter", "trumpeters", "motorcar", "motorcars", "band", "bands", "pipes", "piper",
+                 "pipers",          # "The trumpeters are tooting" (The Wind in the Willows, 2026-11-17)
+                 "horn", "horns", "whistle", "whistles", "car", "cars", "boat", "boats", "train",
                  "trains", "ship", "ships", "tugboat", "tugboats", "tug", "tugs", "bugle", "bugles",
                  "trumpet", "trumpets", "truck", "trucks", "bus", "buses", "taxi", "taxis", "cab",
                  "cabs", "siren", "sirens", "signal", "signaling", "signalling", "own", "flute",
