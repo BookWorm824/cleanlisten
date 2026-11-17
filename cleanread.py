@@ -465,11 +465,17 @@ class Book:
         """Is word i "Dick" the name, in an older book (the owner, 2026-11-16, of Black Beauty, where
         Dick is the ploughboy: "leave all words except pussy")? Written "Dick" (not "dick" or
         "DICK"), and not right after a word that makes it the insult ("you Dick!", "such a Dick";
-        "Thank you, Dick" is the name). Modern books are left to the word lists."""
-        if not self.old_style or self.wn[i] != "dick":
+        "Thank you, Dick" is the name). Modern books are left to the word lists.
+
+        The same for "Sissy" (a name for a sister: "I'm a bit off my head, Sissy", The Railway
+        Children) and "boner" (no rude meaning in an older book: the children's game of "the broken
+        boner"), from the owner's report on 2026-11-16 ("i think too much was flagged here")."""
+        if not self.old_style or self.wn[i] not in OLD_NAMES and self.wn[i] not in OLD_BOOK_LEFT:
             return False
+        if self.wn[i] in OLD_BOOK_LEFT:
+            return True
         q, a, b = self.words[i]
-        if self.paras[q].text[a:b] != "Dick":
+        if self.paras[q].text[a:b] != OLD_NAMES[self.wn[i]]:
             return False
         if i == self.sents[self.word_sent[i]][3] or self.words[i - 1][0] != q:
             return True                          # "Dick ran to the gate."
@@ -648,6 +654,9 @@ OLD_PREV = {"so", "very", "rather", "quite", "how", "most", "too", "a", "an", "s
 # Turpin" are names in an older book)
 DICK_INSULT_BEFORE = {"you", "a", "an", "such", "big", "total", "complete", "real", "absolute",
                       "being", "what", "some", "your"}
+# names (written with a capital) left in an older book, and words left there however written
+OLD_NAMES = {"dick": "Dick", "sissy": "Sissy"}
+OLD_BOOK_LEFT = {"boner", "boners"}
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -778,7 +787,7 @@ def explicit_sentences(book):
     return out
 
 
-def _ref_hit(words):
+def _ref_hit(words, old_style=False):
     """A sexual reference: a sexual word or phrase ("sexy", "make love", "slept with him"),
     or two explicit words together, or sex drugs (Viagra, "the little blue pill", Spanish
     fly...; CleanView 1.18.15). One "breast", "naked" or "pleasure" on its own
@@ -786,6 +795,8 @@ def _ref_hit(words):
     if E.sex_drug_spans(words):
         return True
     for i, j, _ in E.find_language(words, ["sexual"]):
+        if old_style and j == i + 1 and words[i] in OLD_BOOK_LEFT:
+            continue        # "the broken boner" in an older book (Book.dick_name)
         if not words[i].startswith("arous"):
             return True
     strong = {w for w in words if any(p.match(w) for p in E.SEX_C[3])}
@@ -963,6 +974,42 @@ DRINKING = Matcher(
              "!shrimp|prawn|prawns|crab|crabmeat|lobster|fruit|seafood|oyster|tomato|juice|molotov|drug|vitamin|chemical|medication|antibiotic|antiviral cocktail|cocktails !sauce|sauces|dress|dresses|fork|forks|napkin|napkins|onion|onions|frank|franks|sausage|sausages|wieners|weenies|stick|sticks|umbrella|umbrellas|glass|glasses|shaker|shakers",
              "!cotton gin !rummy|rummy's"])
 DRINKING = NotSoftDrink(DRINKING)
+
+# "rum" meaning odd, in older books (The Railway Children, the owner, 2026-11-16: "i think too much
+# was flagged here"): "What rum names", "It is most extraordinarily rum!", "a rum go", "a rum old
+# fellow". Not the drink: "a bottle of rum", "rum and water", "the rum", "a rum punch".
+RUM_ODD_PREV = {"most", "very", "extraordinarily", "jolly", "rather", "uncommonly", "deuced",
+                "deucedly", "precious", "pretty", "awfully", "mighty", "so", "too", "how", "quite",
+                "devilish", "dashed", "confoundedly", "really", "monstrous", "remarkably", "beastly"}
+RUM_ODD_NEXT = {"go", "start", "thing", "things", "one", "ones", "lot", "sort", "sorts", "kind",
+                "fellow", "fellows", "chap", "chaps", "customer", "customers", "business", "affair",
+                "affairs", "idea", "ideas", "place", "places", "way", "ways", "name", "names", "old",
+                "little", "world", "joke", "case", "job", "creature", "creatures", "beggar",
+                "beggars", "card", "cove", "coves", "story", "stories", "notion", "notions", "game",
+                "person", "people", "feeling", "look", "looks", "set", "crew", "dodge", "time",
+                "times", "country", "house", "shop", "face", "voice", "noise", "noises", "state",
+                "lot", "go's", "goings", "doings", "habit", "habits", "trick", "tricks", "fish"}
+
+
+def rum_odd(words, i):
+    """Is "rum" at words[i] the old word for odd ("a rum go", "most extraordinarily rum")?"""
+    prev = words[i - 1] if i else ""
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    return prev in RUM_ODD_PREV or nxt in RUM_ODD_NEXT
+
+
+class NotOddRum:
+    """A matcher that leaves out "rum" when it means odd."""
+
+    def __init__(self, m):
+        self.m = m
+
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in self.m(words, near)
+                if not (j == i + 1 and words[i] == "rum" and rum_odd(words, i))]
+
+
+DRINKING = NotOddRum(DRINKING)
 # Not "the price was high enough", "the walls were high", "Grace's head shot up", "Sparks were
 # shooting up", "his hand shot up" (the training run, 2026-11-15): "high" only after someone
 # ("she was high", "they got high", "high as a kite"), and "shooting up" only with a drug word
@@ -987,9 +1034,21 @@ SHOOT_UP_NEAR = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction"
                  "syringes", "vein", "veins", "spoon", "junk", "fix"}
 
 
+# "bong" only with smoking or drugs in the sentence: not the French "bon" spelled the English way
+# ("Bong is 'good,'" said Phyllis. "Nous etre bong pour vous.", The Railway Children, the owner,
+# 2026-11-16) or a bell ("the clock went bong").
+BONG_NEAR = {"smoke", "smoked", "smokes", "smoking", "pot", "weed", "marijuana", "hit", "hits", "rip",
+             "toke", "tokes", "high", "stoned", "hash", "grass", "dope", "drug", "drugs", "lighter",
+             "pipe", "pipes", "glass", "water", "bowl", "packed", "pack", "joint", "joints", "stash"}
+
+
+def bong_not_drug(words, i):
+    return words[i] == "bong" and not BONG_NEAR & set(words)
+
+
 def DRUGS(words, near=None):
     """Drug use by the word lists; "shooting up" only when a drug word is in the sentence."""
-    sp = _DRUGS(words, near)
+    sp = [(i, j) for i, j in _DRUGS(words, near) if not (j == i + 1 and bong_not_drug(words, i))]
     if SHOOT_UP_NEAR & set(words):
         sp = sp + _SHOOT_UP.spans(words)
     return sp
@@ -1119,10 +1178,34 @@ SHOT_AT_NOT = ("sunset|sunrise|dusk|night|noon|midnight|twilight|golden|blue|mag
                "close|wide|f|iso|location|locations")
 
 
+# cooking, not a fight: "You beat up whites of eggs and mix powdered sugar with them" (The Railway
+# Children, the owner, 2026-11-16)
+BEAT_UP_FOOD = {"whites", "white", "eggs", "egg", "yolks", "yolk", "cream", "butter", "batter",
+                "sugar", "mixture", "dough", "flour", "milk", "honey", "icing", "meringue", "froth",
+                "the", "some", "two", "three", "four", "an"}
+BEAT_UP_FOOD_AFTER_THE = {"whites", "white", "eggs", "egg", "yolks", "yolk", "cream", "butter",
+                          "batter", "sugar", "mixture", "dough", "flour", "milk", "honey", "icing",
+                          "meringue"}
+
+
+def beat_up_food(words, i, j):
+    """Is the "beat up" at words[i:j] whipping food ("beat up whites of eggs", "beat up the cream")?"""
+    if words[i:j] != ["beat", "up"]:
+        return False
+    nxt = words[j:j + 3]
+    if not nxt or nxt[0] not in BEAT_UP_FOOD:
+        return False
+    if nxt[0] in BEAT_UP_FOOD_AFTER_THE:
+        return True
+    return any(w in BEAT_UP_FOOD_AFTER_THE for w in nxt[1:])
+
+
 class ViolenceMatcher(Matcher):
     def __call__(self, words, near=None):
         out = []
         for i, j in super().__call__(words, near):
+            if beat_up_food(words, i, j):
+                continue
             if j == i + 1 and words[i].startswith("punch"):
                 nxt = [w for w in words[i + 1:i + 4] if w not in ("the", "a", "an", "his", "her", "their",
                                                                   "my", "your", "our", "in", "some")]
@@ -1141,6 +1224,12 @@ VIOLENCE = ViolenceMatcher(
              "shot him|her|them|me|you|us !a|an|another|one|that|this|daggers|looks|glances",
              "shot at !" + SHOT_AT_NOT, "shot dead", "slit his|her|their throat",
              "kicked|kicks|kicking him|her|them|me in", "hit|punched him|her|them in the"])
+def pain_of(words, i):
+    """"on pain of torture", "under pain of death": a warning said in fun, not torture (The Railway
+    Children, the owner, 2026-11-16: "don't you let the word pass your lips on pain of torture")."""
+    return words[i - 3:i] in (["on", "pain", "of"], ["under", "pain", "of"])
+
+
 DISTURBING = Matcher(
     words=[r"tortur(e|es|ing|er|ers)", r"executions?", r"executioners?", r"behead(ed|ing)",
            r"hanged", r"lynch(ed|ing)", r"massacre(d|s)?"],
@@ -1153,6 +1242,19 @@ DISTURBING = Matcher(
              "thoughts|dreams|sleep|night|nights|smile|features|brow|mouth|whisper|breath|breathing|"
              "silence|memories|past|existence|artist|genius|sigh|scream|howl|wail|love|longing|"
              "feelings|emotions|self|psyche|grief|sorrow|despair|guilt|wretch|countenance|visage"])
+
+
+class NotPainOf:
+    """DISTURBING without "on pain of torture" (pain_of)."""
+
+    def __init__(self, m):
+        self.m = m
+
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in self.m(words, near) if not (j == i + 1 and pain_of(words, i))]
+
+
+DISTURBING = NotPainOf(DISTURBING)
 
 
 CLEAN_AI = dict(E.AI_TYPES)     # the same definitions as CleanListen (kissing, drinking... too)
@@ -2200,7 +2302,7 @@ def scan(book, use_ai=False, progress=None, cancel=None):
         elif key == "ref":
             explicit = explicit_sentences(book)
             for si in range(S):
-                if _ref_hit(book.sent_words(si)) or si in explicit:
+                if _ref_hit(book.sent_words(si), book.old_style) or si in explicit:
                     items.append(sent_item(si, []))
         else:
             for run_ in find_passages(book, key):
@@ -2552,7 +2654,7 @@ def analyze(book, opts, progress=None, cancel=None):
     in_passage = set(q for c in cuts for q in c["paras"])
     kiss_mode = opts.get("kiss", "keep")
     sentence_filters = [
-        ("ref", opts.get("refs"), _ref_hit),
+        ("ref", opts.get("refs"), lambda w: _ref_hit(w, book.old_style)),
         ("religion", bool(rparts), lambda w: ("anger" in rparts and E.blames_god(w) or
                                                "preach" in rparts and E.invokes_providence(w) or
                                                "prayers" in rparts and E.strict_religion_hit(w) and

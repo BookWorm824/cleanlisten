@@ -681,6 +681,11 @@ SCREW_PHRASES += [("screw", "us"), ("screw", "us", "over")]
 SCREW_PHRASES += [(v, "with", o) for v in SCREW_FORMS for o in ("me", "us", "you", "him", "her", "them", "people")]
 SCREW_PHRASES += [(v, "over") for v in SCREW_FORMS]
 SCREWED_WHO_SAFE_NEXT = {"up", "in", "into", "onto", "down", "together", "shut", "tight", "tightly", "back"}
+# a face screwed up: "screwing her eyelids more tightly together" (The Railway Children, the owner,
+# 2026-11-16), "screwed his eyes shut", "screw her face up"
+SCREW_FACE = {"eyes", "eye", "eyelids", "eyelid", "face", "faces", "mouth", "lips", "forehead", "brow",
+              "brows", "nose", "features", "cheeks", "eyebrows", "lids"}
+SCREWED_WHO_SAFE_NEXT |= SCREW_FACE
 SCREW_OVER_NOT = {"the", "a", "an", "it", "its", "this", "that", "these", "those", "in", "into", "on",
                   "onto", "up", "down", "off", "back", "around"}
 SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "tight", "tightly", "to",
@@ -734,7 +739,7 @@ def screw_over(words, i):
 
 SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
                    "together", "up", "through", "firmly", "securely", "loose", "around", "the",
-                   "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"}
+                   "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"} | SCREW_FACE
 # Slang for a man's private parts. These are everyday words too ("skipping stones", "tennis
 # balls", "a pair of shoes"), so only the slang word in these phrases is muted (as swearing):
 # grow some stones / grow a pair, has the balls to, kicked him in the nuts, busting my balls,
@@ -1896,11 +1901,16 @@ FLIRT_PATTERNS = (
 PRONOUN_SLOT = {"hit", "hits", "hitting", "checked", "checking", "chat", "chats", "chatted",
                 "chatting", "eyed", "eyeing", "come", "comes", "came", "coming"}
 FLIRT_WORDS = _c([r"flirty", r"flirtatious(ly)?", r"flirtations?", r"flirts?", r"flirted",
-                  r"flirting", r"coquettish(ly)?", r"come-hither", r"pick-?up-?lines?"])
+                  r"flirting", r"coquettish(ly)?", r"come-?hither", r"pick-?up-?lines?"])
 FLIRT_PHRASES = [("pickup", "line"), ("pick", "up", "line"), ("pick-up", "line"),
                  ("pickup", "lines"), ("bedroom", "eyes"), ("playing", "hard", "to", "get"),
                  ("played", "hard", "to", "get"), ("gave", "him", "the", "eye"),
-                 ("gave", "her", "the", "eye"), ("come", "hither")]
+                 ("gave", "her", "the", "eye")] + [
+                 # "a come hither look"; not "Come hither with me" (come here, in older books: The
+                 # Railway Children, the owner, 2026-11-16, "i think too much was flagged here")
+                 ("come", "hither", w) for w in ("look", "looks", "smile", "smiles", "eyes", "glance",
+                                                 "glances", "stare", "gaze", "expression", "pose",
+                                                 "voice", "way", "manner", "wink")]
 FLIRT_OBJ_AFTER = KISS_AFTER | {"from", "across", "over", "while", "as", "when", "until", "before",
                                 "after", "during", "at", "in", "on", "shamelessly", "openly",
                                 "outrageously", "all", "throughout", "for", "but", "so", "too"}
