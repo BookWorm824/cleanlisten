@@ -1144,9 +1144,21 @@ def bong_not_drug(words, i):
     return words[i] == "bong" and not BONG_NEAR & set(words)
 
 
+# "ecstasy" is joy unless the drug is plainly meant ("the lamb began to suck it with ravenous ecstasy",
+# "leaving ecstasy and nudging elbows", The Secret Garden, the night run's report, 2026-11-17)
+ECSTASY_DRUG_NEAR = {"pill", "pills", "tablet", "tablets", "molly", "mdma", "popped", "popping", "dealer",
+                     "dealers", "dealing", "drug", "drugs", "rave", "raves", "high", "overdose", "overdosed",
+                     "dose", "doses", "snorted", "stoned", "club", "clubbing"}
+
+
+def ecstasy_joy(words, i):
+    return words[i] == "ecstasy" and not ECSTASY_DRUG_NEAR & set(words)
+
+
 def DRUGS(words, near=None):
     """Drug use by the word lists; "shooting up" only when a drug word is in the sentence."""
-    sp = [(i, j) for i, j in _DRUGS(words, near) if not (j == i + 1 and bong_not_drug(words, i))]
+    sp = [(i, j) for i, j in _DRUGS(words, near)
+          if not (j == i + 1 and (bong_not_drug(words, i) or ecstasy_joy(words, i)))]
     if SHOOT_UP_NEAR & set(words):
         sp = sp + _SHOOT_UP.spans(words)
     return sp
@@ -1218,11 +1230,18 @@ NAKED_NOT_NEXT = {"eye", "truth", "flame", "flames", "ambition", "blade", "blade
                   "hand", "toes", "wrists", "wrist", "face", "scalp", "head"}
 
 
+BOTTOMLESS_PERSON = {"dancer", "dancers", "dancing", "waitress", "waitresses", "girl", "girls", "woman",
+                     "women", "man", "men", "bar", "bars", "club", "clubs", "photo", "photos", "picture",
+                     "pictures", "model", "models", "and"}
+
+
 def innocent_nudity(words, i):
     """Is words[i] ("naked", "topless") about something other than a body?"""
     w, nxt = words[i], (words[i + 1] if i + 1 < len(words) else "")
     if w == "topless":
         return nxt in TOPLESS_NOT_NEXT
+    if w == "bottomless":       # "some lovely bottomless lake" (The Secret Garden): only a person counts
+        return nxt not in BOTTOMLESS_PERSON
     if w == "naked":
         return nxt in NAKED_NOT_NEXT or any(p in NAKED_NOT_AFTER for p in words[max(0, i - 2):i])
     return False
@@ -1313,12 +1332,26 @@ ANIMALS = {"bear", "bears", "pig", "pigs", "rat", "rats", "snake", "snakes", "wo
            "moose", "bull", "cow", "turkey", "game"}
 
 
+SLAP_THING_HOW = {"open", "shut", "closed", "down", "onto", "on", "aside", "away", "together", "into",
+                  "flat", "back", "off"}
+
+
 def kill_not_violence(words, i):
-    """Is the kill word at words[i] something that might happen, or an animal killed?"""
+    """Is the kill (or slap) word at words[i] something that might happen, an animal killed, or a thing
+    slapped down? (The Secret Garden, the night run's report, 2026-11-17: "She slapped it open with her
+    hand" (a curtain), "she slapped it down on the kitchen dresser" (a tray), "If you had been his own
+    boy and he had been a slapping sort of man, he would have slapped you", "Its mother had been killed
+    nearby" (a fox cub's).)"""
+    if words[i].startswith("slap"):
+        if words[i + 1:i + 2] in (["it"], ["them"]) and SLAP_THING_HOW & set(words[i + 2:i + 4]):
+            return True
+        return bool(KILL_IF & set(words[:i]))     # "If you had been his own boy and he had been a slapping sort of man"
     if not words[i].startswith("kill"):
         return False
     if KILL_IF & set(words[max(0, i - 5):i]):
         return True
+    if "its" in words[max(0, i - 4):i]:
+        return True             # "Its mother had been killed nearby" (an animal's)
     after = [w for w in words[i + 1:i + 4] if w not in ("a", "an", "the", "his", "her", "their", "that",
                                                        "this", "some", "two", "three", "every")]
     if after and after[0] in ANIMALS:

@@ -1035,7 +1035,8 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                           "themselves", "ourselves", "yourselves", "me", "you", "him", "her", "them",
                           "us", "anyone", "anybody", "everyone", "everybody", "nobody", "people", "of"},
                  "fools": {"gold", "around", "rush"},
-                 "butt": {"in", "heads"}, "butts": {"in", "heads"},
+                 # "nuzzle into its folds and butt its tight-curled head" (a lamb: The Secret Garden)
+                 "butt": {"in", "heads", "its", "his", "their", "against"}, "butts": {"in", "heads", "its", "against"},
                  "dumb": {"waiter", "waiters", "luck", "founded", "show",
                           # unable to speak (the owner, 2026-11-16, of Black Beauty: "and dumb if
                           # its aninsult"): "our dumb beasts", "a poor dumb creature" (but "you
@@ -1057,7 +1058,7 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  "gay": GAY_HAPPY_NEXT,
                  "bullshit": {"degree", "degrees"},                 # "a BS degree"
                  # "keep it spic and span", "Spic 'n' Span"; "a wop bop a loo bop"
-                 "spic": {"and", "n"}, "spick": {"and", "n"}, "wop": {"bop", "bam", "doo"},
+                 "spic": {"and", "n", "an"}, "spick": {"and", "n", "an"}, "wop": {"bop", "bam", "doo"},
                  # "blasted off", "blasted through the rock", "blasted the door open", "a blasted
                  # heath" (CleanView 1.18.93)
                  "blasted": {"off", "through", "away", "out", "open", "apart", "into", "the", "a",
@@ -1197,7 +1198,23 @@ NOT_RUDE_NEXT = {"down", "off", "in", "into", "on", "onto", "up", "out", "togeth
                  # closing a door: "tiptoed to the door, shut it softly" (Camp Club Girls; training
                  # run, 2026-11-15), "he shut it behind him"
                  "softly", "quietly", "gently", "behind", "firmly", "carefully", "slowly",
-                 "noiselessly", "silently", "hard", "quickly", "fast", "again", "against", "after"}
+                 "noiselessly", "silently", "hard", "quickly", "fast", "again", "against", "after",
+                 # a lamb at its bottle: "the lamb began to suck it with ravenous ecstasy" (The Secret Garden)
+                 "with", "greedily", "eagerly", "hungrily", "dry", "clean", "from", "through"}
+# "shut up" meaning closed (The Secret Garden, the night run's report, 2026-11-17: "a hundred rooms,
+# nearly all shut up", "the garden which was shut up", "since it was shut up ten year'", "that poor lad
+# lyin' shut up"): rude only said to someone, not after these
+SHUT_UP_CLOSED_PREV = {"was", "were", "been", "be", "is", "are", "am", "being", "all", "seem", "seems",
+                       "seemed", "lyin", "lying", "lie", "lies", "lay", "kept", "keep", "keeps", "keeping",
+                       "remain", "remains", "remained", "stay", "stays", "stayed", "left", "get", "got",
+                       "gets", "getting", "locked", "close", "closely", "tight", "long", "quite", "still"}
+
+
+def shut_up_closed(prev):
+    """Does the word before "shut up" make it closed ("was shut up", "them's shut up and locked")?"""
+    return prev in SHUT_UP_CLOSED_PREV or prev.endswith(("'s", "’s"))
+
+
 # "shut up shop", "shut up in the attic", "shut up the house": shut away, not rude
 SHUT_UP_SAFE_NEXT = {"in", "inside", "shop", "house", "the", "his", "her", "my", "their", "our",
                      "with", "within", "together", "tight", "tightly", "alone", "for", "here",
@@ -1469,7 +1486,8 @@ def _find_language(words, cats, breaks=()):
                     if ph[0] in SCREW_FORMS[1:] and ph[1] in SCREW_WHO and nxt in SCREWED_WHO_SAFE_NEXT:
                         continue  # "he screwed him up good", "screws them in tight"
                     if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
-                                          ph == ("shut", "up") and nxt in SHUT_UP_SAFE_NEXT or
+                                          ph == ("shut", "up") and (nxt in SHUT_UP_SAFE_NEXT or
+                                                                    shut_up_closed(words[i - 1] if i else "")) or
                                           ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT):
                         continue  # "shut it down", "shut up in the attic", "it sucks the juice out"
                     if ph[0] == "safe" and nxt in SAFE_WORD_NOT_NEXT:
@@ -1991,8 +2009,15 @@ FLIRT_NOT = {"disaster", "danger", "death", "idea", "notion", "thought", "bankru
              "trouble", "madness", "suicide", "ruin", "temptation", "fate", "possibility"}
 
 
+# a bird flicking its tail: "and flirted his tail and twittered", "the robin gave another flirt to his
+# wings" (The Secret Garden, the night run's report, 2026-11-17)
+FLIRT_TAIL = {"tail", "tails", "wing", "wings", "feathers", "fan"}
+
+
 def _flirt_metaphor(words, i):
-    """"flirted with disaster", "flirting with the idea" aren't flirting."""
+    """"flirted with disaster", "flirting with the idea", a bird that "flirted his tail" aren't flirting."""
+    if FLIRT_TAIL & set(words[i + 1:i + 5]):
+        return True
     nxt = words[i + 1:i + 4]
     if nxt[:1] != ["with"]:
         return False
@@ -2006,6 +2031,8 @@ def flirt_hit(words):
         return True
     if any(any(p.match(w) for p in FLIRT_WORDS) and not _flirt_metaphor(words, i)
            for i, w in enumerate(words)):
+        return True
+    if any(w == "flirt" and not _flirt_metaphor(words, i) for i, w in enumerate(words)):
         return True
     return any(tuple(words[i:i + len(ph)]) == ph for ph in FLIRT_PHRASES for i in range(len(words)))
 
