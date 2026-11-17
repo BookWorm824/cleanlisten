@@ -1010,7 +1010,9 @@ AROUSED_FEELINGS = {"suspicion", "suspicions", "curiosity", "interest", "anger",
 # birds, boobies, albatrosses" (seabirds); "a sort of silent and stupid perplexity", "stood stupid with
 # amazement" (dazed)
 ASS_ANIMAL_NEAR = {"cow", "cows", "goat", "goats", "sheep", "sow", "pig", "pigs", "cart", "carts", "load", "loads",
-                   "loaded", "kick", "kicked", "kicking", "kicks", "wild", "harness", "harnessed", "saddle",
+                   # not "kick" ("kick your ass", "get your ass kicked": CleanView ran this over 110,535
+                   # past lines, 2026-11-17); "the ass began to kick at the goats" has the goats
+                   "loaded", "wild", "harness", "harnessed", "saddle",
                    "saddled", "bray", "brayed", "braying", "donkey", "donkeys", "mule", "mules", "buffalo",
                    "onager", "onagers", "cattle", "camel", "camels", "beast", "beasts", "animal", "animals",
                    "stable", "stables", "hay", "thistles", "rode", "ride", "riding", "mounted", "drove", "herd",
@@ -1027,9 +1029,22 @@ STUPID_DAZED_NEXT = {"perplexity", "amazement", "astonishment", "surprise", "won
 STUPID_DAZED_PREV = {"stood", "stand", "stands", "sat", "sit", "looked", "gazed", "stared", "lay", "remained"}
 
 
+# after these "ass" is the body ("your ass", "kick some ass", "cancer's ass": CleanView's fix, 2026-11-17),
+# unless a farm animal, a cart or harness is close by: The Swiss Family Robinson's "both my cow and my ass",
+# "our ass instantly ran up to take its favourite oats"
+ASS_BODY_BEFORE = {"your", "his", "her", "my", "their", "our", "yo", "some", "whose", "own"}
+ASS_ANIMAL_STRONG = {"cow", "cows", "goat", "goats", "sheep", "pig", "pigs", "cart", "carts", "harness",
+                     "harnessed", "saddle", "saddled", "bray", "brayed", "braying", "donkey", "donkeys", "mule",
+                     "mules", "buffalo", "onager", "onagers", "cattle", "camel", "camels", "stable", "stables",
+                     "hay", "thistles", "herd", "bridle", "halter", "panniers", "foal", "grazing", "manger",
+                     "ox", "oxen", "horse", "horses", "oats"}
+
+
 def ass_animal(words, i):
     """Is "ass"/"asses" at words[i] the animal (a cart, a cow, a load close by), not said to someone?"""
     prev = words[i - 1] if i else ""
+    if prev in ASS_BODY_BEFORE or prev.endswith("'s"):
+        return bool(ASS_ANIMAL_STRONG & set(words[max(0, i - 15):i + 16]))
     if prev in ASS_INSULT_BEFORE and not (prev == "an" and ASS_ANIMAL_NEAR & set(words[max(0, i - 12):i])):
         return False
     return bool(ASS_ANIMAL_NEAR & set(words[max(0, i - 15):i + 16]))
