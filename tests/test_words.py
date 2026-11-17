@@ -120,14 +120,12 @@ def test_body_slang_is_swearing():
     ("He was staring at her coconuts", ["coconuts"]),
     ("Look at them big melons", ["melons"]),
     ("Her huge melons", ["melons"]),
-    ("You popped her cherry?", ["cherry"]),
     ("I lost my cherry at prom", ["cherry"]),
     ("She kneed him in the grapes", ["grapes"]),
     ("Kicked me right in the plums", ["plums"]),
     ("hit him in the franks and beans", ["franks", "beans"]),
     ("He zipped his franks and beans", ["franks", "beans"]),
     ("freezing my grapes off out here", ["grapes"]),
-    ("Is that a banana in your pocket?", ["banana"]),
     ("a cucumber in his pants", ["cucumber"]),
     ("Look at her tight buns", ["buns"]),
     ("his juicy peach", ["peach"]),
@@ -815,3 +813,9 @@ def test_the_same_sex_sentence_check_and_gay_meaning_happy(text, same_sex):
     import cleanread as R
     assert E.relationship_hit(words(text)) is same_sex
     assert R.rel_hit(words(text)) is same_sex
+
+
+@pytest.mark.parametrize("text", ["You popped her cherry?", "Is that a banana in your pocket?"])
+def test_fruit_innuendo_said_whole_is_a_sexual_phrase(text):
+    # CleanView 1.18.127's researched phrases: the whole innuendo is muted (a sexual reference in CleanRead)
+    assert [c for _, c in hits(text)] == ["sexual"]

@@ -716,7 +716,36 @@ OLD_BOOK_LEFT = {"boner", "boners",
                  "intercourse",
                  # "It was plain that his conquest had added half a foot to his height" (a trophy: The
                  # Swiss Family Robinson)
-                 "conquest", "conquests"}
+                 "conquest", "conquests",
+                 # older meanings of CleanView 1.18.127's researched words: shag tobacco (and the bird), a
+                 # pert "hussy", a "totty" (a little child), "cunny" (a rabbit), "lewd fellows" (wicked), a
+                 # "smut" (soot) on her nose, "perverted" (twisted), "topless towers" (very tall),
+                 # "nubile" (old enough to marry), "humping" (carrying a load)
+                 "shag", "shags", "hussy", "hussies", "totty", "cunny", "lewd", "lewdness", "smut",
+                 "smuts", "smutty", "perverted", "perverts", "pervert", "topless", "nubile", "humping",
+                 # found by running them over the classics: "ejaculated Elizabeth Ann" (exclaimed: 37 times),
+                 # Tigger "sort of boffed" (bounced), Dick's letter "cum over here" (come), "too much
+                 # lovemaking into her stories" (courting), "the idle trollops" (slatterns), "an orgy was
+                 # beginning" (a drinking party: The Prince and the Pauper)
+                 "ejaculate", "ejaculated", "ejaculates", "ejaculating", "ejaculation", "ejaculations",
+                 "boff", "boffs", "boffed", "boffing", "cum", "cums", "lovemaking", "trollop", "trollops",
+                 "orgy", "orgies"}
+# ... and phrases: "knocked up" (woken by a knock, or worn out), a "peep-show" (a fairground box of
+# pictures), a "French letter" (a letter in French), a "glory-hole" (a lumber cupboard), "a bit of
+# crumpet" (tea), "intimate relations" (close dealings)
+# and from the classics: "it was a good lay" (a plan: Treasure Island), "I could easily have my way with
+# him" (get the better of: Kidnapped), "bid you pleasure yourself with your dream" (enjoy: The Prince and
+# the Pauper), "love making" (courting), going to bed with a sister or a doll
+OLD_BOOK_LEFT_PHRASES = re.compile(
+    r"(?:knocked up|peep ?shows?|french letters?|glory ?holes?|bit of crumpet|intimate relations|love making|"
+    r"good lays?|(?:have|has|had|having) \S+ (?:wicked )?way with \S+|pleasur\S* \S+sel(?:f|ves)|"
+    r"(?:go|goes|going|went|gone) to bed with \S+)")
+
+
+def old_left(words, i, j, old_style):
+    """In an older book, are words[i:j] an old meaning left in (OLD_BOOK_LEFT, OLD_BOOK_LEFT_PHRASES)?"""
+    return old_style and (j == i + 1 and words[i] in OLD_BOOK_LEFT or
+                          bool(OLD_BOOK_LEFT_PHRASES.fullmatch(" ".join(words[i:j]))))
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -857,8 +886,8 @@ def _ref_hit(words, old_style=False, cats=frozenset()):
     if E.sex_drug_spans(words):
         return True
     for i, j, _ in E.find_language(words, ["sexual"]):
-        if old_style and j == i + 1 and words[i] in OLD_BOOK_LEFT:
-            continue        # "the broken boner", "her lover" in an older book (Book.dick_name)
+        if old_left(words, i, j, old_style):
+            continue        # "the broken boner", "her lover", "knocked up" in an older book (Book.dick_name)
         if old_sleep_with_someone(words, i, j, old_style):
             continue        # a lonely child wanting someone near at night
         if not words[i].startswith("arous"):
@@ -1017,7 +1046,9 @@ NOT_A_COUPLE = FAMILY | {"girls", "boys", "sisters", "brothers", "friends", "roo
 # "an illicit affair", "cheated on" still count).
 COURTSHIP_WORDS = {"an", "the", "their", "his", "her", "my", "your", "love", "affair", "affairs", "lover",
                    "lovers", "were", "became", "become", "are", "be", "being", "been", "with", "took",
-                   "take", "taking", "taken", "takes", "a", "between"}
+                   "take", "taking", "taken", "takes", "a", "between",
+                   # "we mustn't stand philandering here" (dawdling, flirting: Little Women)
+                   "philandering", "philander", "philanders", "philandered"}
 
 
 def old_sleeping_hit(words, old_style):
@@ -1087,8 +1118,9 @@ def undressed_for_bed(words, around):
 
 
 def SLEEPING(words, near=None):
-    """Sleeping around: casual sex, affairs, cheating."""
-    sp = _CASUAL(words)
+    """Sleeping around: casual sex, affairs, cheating (and CleanView 1.18.127's researched words:
+    womanizer, philanderer, wife-swapping, a booty call...)."""
+    sp = _CASUAL(words) + E.term_spans(words, E.CASUAL_TERMS_RX)
     return sp if sp and not NOT_A_COUPLE & set(words) else []
 
 
@@ -1425,8 +1457,9 @@ DRUG_NEEDLE = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", 
 
 
 def MEDICAL(words, near=None):
-    """A needle going in or a wound being stitched (not drug use)."""
-    sp = _MEDICAL(words)
+    """A needle going in or a wound being stitched (not drug use); and crime case talk, with CleanView
+    1.18.127's researched words (incest, bestiality, a child molester...)."""
+    sp = _MEDICAL(words) + E.term_spans(words, E.FORENSIC_TERMS_RX)
     # a tree tapped: "I made deep incisions in the trunks", "incisions made in the bark" (The Swiss Family
     # Robinson, the night run's report, 2026-11-17)
     if sp and {"bark", "trunk", "trunks", "tree", "trees", "palm", "palms", "stem", "stems", "branch",
@@ -3215,6 +3248,8 @@ def analyze(book, opts, progress=None, cancel=None):
         if cat != "mine" and (book.dick_name(i) or old_sleep_with_someone(
                 book.wn, i, j, book.old_style, book.sent_words(book.word_sent[i]))):
             continue
+        if cat == "sexual" and j > i + 1 and old_left(book.wn, i, j, book.old_style):
+            continue    # "knocked up", "a peep-show" in an older book
         if book.wn[i] in ("ass", "asses") and book.has_donkey and                 (book.wn[i - 1] if i else "") not in E.ASS_INSULT_BEFORE - {"an"}:
             continue    # the family's donkey (The Swiss Family Robinson: "even our ass", "the ass began to kick")
         if cat == "rude" and book.old_style and book.wn[i:i + 2] == ["shut", "up"] and not book.shut_up_said(i):
