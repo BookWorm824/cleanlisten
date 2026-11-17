@@ -499,8 +499,10 @@ def reverent(words, i, j=None):
         return True                    # "Please, please, dear Jesus." (CleanView 1.18.13)
     if prev == "by" and two in ("swear", "swears", "swore", "sworn", "swearing"):
         return False                   # "I swear by Jesus" (CleanView 1.18.10)
-    if prev == "baby":                 # "the baby Jesus", not "Sweet baby Jesus!"
-        return two != "sweet"          # (CleanView 1.18.120)
+    if prev in ("baby", "infant"):     # "the baby Jesus", "the infant Jesus", not "Sweet baby Jesus!"
+        return two != "sweet"          # (CleanView 1.18.120, 1.18.124)
+    if nxt == "child":                 # "the Christ child", not "Christ, child, get down!"
+        return prev == "the"           # (CleanView 1.18.124)
     if {"name", "named"} & set(words[max(0, i - 4):i]):
         return True                    # "his name will be Jesus" (a nativity play, CleanView 1.18.120)
     if nxt in ("is", "was"):
@@ -2282,9 +2284,15 @@ TOPIC_WORDS = {
     # own: a name in one of Lauren's books)
     "holiday": re.compile(
         r"\b(christmas(?! island)|xmas|santa(?! " + SANTA_PLACES + r"\b)( claus)?|saint nick|"
-        r"north pole|reindeer|rudolph the|"
+        r"north pole|reindeers?|rudolph the|"
         r"rudolph's (red )?nose|mistletoe|"
-        r"yuletide|jingle bells|"
+        r"yuletide|jingle bells|tinsel|"
+        # carols (CleanView 1.18.124, the second Christmas special: "carol singing", "my carol singer's
+        # lantern"; Carol alone is a name), and the nativity story told ("Herod decreed ... flee to
+        # Egypt with the infant Jesus"), not "Sweet baby Jesus!"
+        r"carols|carol sing(ing|ers?)|carol services?|carolling|caroling|carolers?|carollers?|"
+        r"king herod|herod (decreed|ordered|sent)|fle(e|d|eing|es) (in)?to egypt|(the )?infant jesus|"
+        r"(?<!sweet )baby jesus|the christ child|"
         # the nativity (CleanView 1.18.120, Call the Midwife's Christmas special: its nativity
         # play went through): not "(the) advent (of)" but "the Advent calendar", not "a dog in the
         # manger", not Bethlehem Steel; shepherds and angels alone are left to the AI helper

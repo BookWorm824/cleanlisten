@@ -57,3 +57,28 @@ def test_dicky_birds_misheard():
 def test_the_readers_are_told():
     for text in (E.AI_TYPES["holiday"], cc.KIND_RULES["holiday"]):
         assert "nativity" in text and "Advent" in text
+
+
+# --- CleanView 1.18.124 (the second Christmas special) ---------------------------------------------
+@pytest.mark.parametrize("text", [
+    "The reindeers pulled the sleigh.", "Hang the tinsel on the tree.", "We sang carols in the snow.",
+    "The carol singers came round.", "Off to the carol service.", "They went carolling.",
+    "Like Mary when Herod decreed that every baby boy should die.", "King Herod was angry.",
+    "They had to flee to Egypt.", "Joseph fled into Egypt with the infant Jesus.", "The baby Jesus in a manger.",
+    "A play about the Christ child.",
+])
+def test_the_second_special_is_christmas(text):
+    assert E.topic_hit("holiday", words(text)), text
+
+
+@pytest.mark.parametrize("text", ["Carol came round for tea.", "We drove through North Carolina.",
+                                  "Caroline was late again.", "Sweet baby Jesus, look at that!"])
+def test_not_the_second_special(text):
+    assert not E.topic_hit("holiday", words(text)), text
+
+
+def test_infant_jesus_and_the_christ_child_are_reverent():
+    assert not found("They prayed to the infant Jesus.", ["deity"])
+    assert not found("A play about the Christ child.", ["deity"])
+    assert found("Christ, child, get down from there!", ["deity"])
+    assert found("Sweet infant Jesus, what a mess!", ["deity"])
