@@ -857,6 +857,27 @@ FAMILY = {"mother", "mom", "mum", "mommy", "mama", "father", "dad", "daddy", "pa
           "girl's", "infant", "mother's", "father's"}
 
 
+# In an older book, "kissed her very hard" is a father saying goodbye (A Little Princess, the night run's
+# report, 2026-11-17): a kiss there is passionate only with these, and two women or two girls kissing is
+# family or friends ("Mrs. Carmichael was crying as she kissed her again"; Sara kissing Emily, her doll)
+# unless one of these is in the sentence.
+OLD_ROMANCE = {"passionately", "passionate", "passion", "lips", "lip", "mouth", "mouths", "tongue",
+               "tongues", "lover", "lovers", "hungrily", "sensually", "breathlessly", "ardently", "ardent",
+               "amorously", "embraced", "caressed", "caressing"}
+
+
+def old_kiss_hit(words, mode, old_style):
+    """kiss_hit, in an older book only with romance words for a passionate kiss."""
+    if not old_style or mode != "passionate":
+        return kiss_hit(words, mode)
+    return kiss_hit(words, "all") and bool(OLD_ROMANCE & set(words))
+
+
+def old_kiss_ss_hit(words, mode, old_style):
+    """Two women or two men kissing; in an older book only with romance words in the sentence."""
+    return E.kiss_ss_hit(words, mode) and (not old_style or bool(OLD_ROMANCE & set(words)))
+
+
 def kiss_hit(words, mode):
     if mode not in ("passionate", "all"):
         return False
@@ -1303,6 +1324,46 @@ def kill_not_violence(words, i):
     if after and after[0] in ANIMALS:
         return True
     return any(w in ANIMALS for w in words[max(0, i - 3):i]) and "being" in words[max(0, i - 2):i]
+
+
+# ... and with what's told just before (CleanRead, analyze): "he's killed tigers. He killed the one in the
+# skin Sara has in her room." (the animal), "The suffering was just as bad for my papa. It killed him."
+# (sorrow, not violence). A Little Princess, the night run's report, 2026-11-17.
+KILL_PERSON_NEXT = {"him", "her", "them", "me", "us", "you", "himself", "herself", "themselves", "man",
+                    "men", "woman", "women", "boy", "girl", "people", "children", "child", "everyone",
+                    "everybody", "somebody", "someone", "anyone", "his", "my", "your", "our", "their"}
+SORROW = {"suffering", "suffered", "grief", "sorrow", "sorrows", "worry", "worries", "worrying", "trouble",
+          "troubles", "shock", "heartbreak", "heartbroken", "broken-hearted", "fever", "illness", "disease",
+          "sickness", "disappointment", "loss", "losses", "ruin", "ruined", "despair", "loneliness", "debt",
+          "debts", "work", "overwork", "cold", "consumption"}
+
+
+def kill_told_before(words, before):
+    """Is every kill word in this sentence an animal killed, or sorrow that killed someone, as the
+    sentences just before tell?"""
+    ks = [i for i, w in enumerate(words) if w.startswith("kill")]
+    if not ks:
+        return False
+    for i in ks:
+        prev = words[i - 1] if i else ""
+        if prev in ("it", "that", "which", "this") and SORROW & (set(before) | set(words[:i])):
+            continue        # "It killed him." after "The suffering was just as bad for my papa."
+        if not KILL_PERSON_NEXT & set(words[i + 1:i + 4]) and ANIMALS & set(before) and \
+                any(w.startswith("kill") for w in before):
+            continue        # "He killed the one in the skin..." after "he's killed tigers."
+        return False
+    return True
+
+
+def pet_in_bed(words, around):
+    """Is this sexual reference only a pet, a doll or a baby sleeping with someone ("I shall let him
+    sleep with me tonight", the monkey), with no other sexual word in it?"""
+    rest = [w for w in words if w not in E.SLEEP_FORMS]
+    if not any(w in E.SLEEP_FORMS for w in words) or E.find_language(rest, ["sexual"]):
+        return False
+    if E.is_explicit(words) if hasattr(E, "is_explicit") else False:
+        return False
+    return bool(E.SLEEP_PETS & (set(words) | set(around)))
 
 
 class ViolenceMatcher(Matcher):
@@ -2771,9 +2832,10 @@ def analyze(book, opts, progress=None, cancel=None):
         ("bully", opts.get("bully"), E.bully_hit),
         ("disrespect", opts.get("disrespect"), E.disrespect_hit),
         ("flirt", opts.get("flirt"), E.flirt_hit),
-        ("kiss", kiss_mode in ("passionate", "all"), lambda w: E.kiss_hit(w, kiss_mode)),
+        ("kiss", kiss_mode in ("passionate", "all"),
+         lambda w: old_kiss_hit(w, kiss_mode, book.old_style) and not E.relationship_hit(w)),
         ("kiss_ss", opts.get("kiss_ss", "keep") in ("passionate", "all"),
-         lambda w: E.kiss_ss_hit(w, opts.get("kiss_ss"))),
+         lambda w: old_kiss_ss_hit(w, opts.get("kiss_ss"), book.old_style)),
         *((k, opts.get(k), lambda w, k=k: E.sentence_hit(k, w)) for k in E.MORE_KINDS),
         *((t, opts.get(t), lambda w, t=t: E.topic_hit(t, w)) for t in E.TOPICS),
     ]
@@ -2802,6 +2864,16 @@ def analyze(book, opts, progress=None, cancel=None):
         return [w for k in range(lo, hi) for w in book.sent_words(k)]
     cuts = [c for c in cuts if not (c["kind"] == "drinking" and drinking_for_the_sick(
         [w for k in (c.get("sents") or []) for w in book.sent_words(k)], _around(c)))]
+    # "killed" with the animal or the sorrow told in the sentence before, and a sexual reference that is
+    # only a pet sleeping with someone (A Little Princess, the night run's report, 2026-11-17)
+    def _before(c):
+        sis = c.get("sents") or []
+        return [w for k in range(max(0, min(sis) - 2), min(sis)) for w in book.sent_words(k)] if sis else []
+
+    def _words(c):
+        return [w for k in (c.get("sents") or []) for w in book.sent_words(k)]
+    cuts = [c for c in cuts if not (c["kind"] == "violence" and kill_told_before(_words(c), _before(c)))]
+    cuts = [c for c in cuts if not (c["kind"] == "ref" and pet_in_bed(_words(c), _around(c)))]
 
     # explicit findings in coroner talk are sexual references, with Medical on or off (the owner,
     # 2026-11-13): the lines the word lists didn't already take ("There was tearing.")

@@ -574,6 +574,18 @@ SEXUAL_PHRASES = [
 # with her teddy bear" is a little girl at bedtime (SLEEP_HER_NEXT, in _find_language). As in
 # CleanView, a sister or brother here counts too.
 SLEEP_FORMS = ("sleep", "sleeps", "slept", "sleeping")
+# ... but not a pet, a doll or a baby sleeping with someone (A Little Princess, the night run's report,
+# 2026-11-17: "I shall let him sleep with me tonight, and then take him back to the Indian gentleman
+# tomorrow", the monkey, who "slept at her feet"): one of these within 30 words either side
+SLEEP_PETS = {"monkey", "monkeys", "dog", "dogs", "puppy", "puppies", "pup", "kitten", "kittens", "cat",
+              "cats", "kitty", "doll", "dolls", "dolly", "teddy", "pet", "pets", "baby", "babies", "rabbit",
+              "rabbits", "bunny", "parrot", "bird", "lamb", "pony", "hamster", "guinea"}
+
+
+def sleep_with_pet(words, i):
+    """Is the "sleep with ..." at words[i] about a pet, a doll or a baby close by?"""
+    near = words[max(0, i - 30):i] + words[i + 3:i + 33]
+    return any(w in SLEEP_PETS for w in near)
 SLEEP_PARTNERS = ("boss", "husband", "wife", "ex", "sister", "brother", "friend", "partner",
                   "secretary", "assistant", "neighbor", "neighbour", "coworker", "student",
                   "teacher", "therapist", "patient", "intern")
@@ -1472,6 +1484,9 @@ def _find_language(words, cats, breaks=()):
                         continue  # "she slept with her teddy bear", "stepped out on her porch"
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
+                    if cat == "sexual" and len(ph) == 3 and ph[0] in SLEEP_FORMS and ph[1] == "with" and \
+                            sleep_with_pet(words, i):
+                        continue  # "I shall let him sleep with me tonight" (the monkey: A Little Princess)
                     if ph[-1] == "screwed" and nxt in SCREWED_SAFE_NEXT:
                         continue  # "it's screwed to the wall", "we're screwed up"
                     if ph == ("jesus", "christ") and reverent(words, i, i + 2):
