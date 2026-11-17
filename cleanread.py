@@ -474,6 +474,10 @@ class Book:
         "it can stay", "but keep it limited": "as quiet as old pussy when she is after a bird", Black
         Beauty; "the beloved pussies", Little Women), however it's written, but not "such a pussy"."""
         w = self.wn[i]
+        if self.old_style and w == "dumb":
+            # silent, in an older book ("the once smiling lips quite dumb", "promised to be dumb": Little
+            # Women, the night run's report, 2026-11-17); "you dumb thing" is still the insult
+            return not E.dumb_called(w, self.wn[i - 1] if i else "")
         if not self.old_style or w not in OLD_NAMES and w not in OLD_BOOK_LEFT and w not in E.PUSSY_WORDS:
             return False
         if w in OLD_BOOK_LEFT:
@@ -485,6 +489,20 @@ class Book:
             return True                          # "Dick ran to the gate."
         between = self.paras[q].text[self.words[i - 1][2]:a]
         return not (self.wn[i - 1] in DICK_INSULT_BEFORE and not re.search(r"[,;:\-–—]", between))
+
+    def shut_up_said(self, i):
+        """Is "shut up" at word i said to someone (in an older book): at the start of a sentence, or after
+        "you", "oh", "now", "just", "do", "please" ("Shut up, said Peter", "You shut up!")?"""
+        if i == self.sents[self.word_sent[i]][3] or self.words[i - 1][0] != self.words[i][0]:
+            return True
+        q, a, _ = self.words[i]
+        between = self.paras[q].text[self.words[i - 1][2]:a]
+        prev = self.wn[i - 1]
+        if prev == "and":       # "sit down and shut up", not "sick with this cold so long, and shut up"
+            return i >= 2 and self.wn[i - 2] in ("down", "sit", "here", "listen", "quiet", "still", "back", "go",
+                                                  "come", "now", "in", "out")
+        return prev in ("you", "oh", "now", "just", "do", "please", "ya", "will", "won't", "wont", "so", "then",
+                        "shall") or "“" in between or '"' in between
 
     @property
     def pussy_cats(self):
@@ -671,7 +689,7 @@ OLD_PREV = {"so", "very", "rather", "quite", "how", "most", "too", "a", "an", "s
 DICK_INSULT_BEFORE = {"you", "a", "an", "such", "big", "total", "complete", "real", "absolute",
                       "being", "what", "some", "your"}
 # names (written with a capital) left in an older book, and words left there however written
-OLD_NAMES = {"dick": "Dick", "sissy": "Sissy"}
+OLD_NAMES = {"dick": "Dick", "sissy": "Sissy", "dicks": "Dicks"}   # "Toms, Dicks, and Harrys" (Little Women)
 OLD_BOOK_LEFT = {"boner", "boners",
                  # a sweetheart in 1913 English ("the trouble with her lover", "who was her lover?":
                  # Pollyanna, the night run's report, 2026-11-17)
@@ -832,6 +850,8 @@ def _ref_hit(words, old_style=False, cats=frozenset()):
     # 2026-11-17: "Toad straddled on the hearthrug, thrust his paw into his trouser-pocket")
     strong = {w for k, w in enumerate(words) if any(p.match(w) for p in E.SEX_C[3]) and
               not (w.startswith("thrust") and THRUST_THING & set(words[k + 1:k + 4]))}
+    if old_style:
+        strong -= OLD_SOFT_SEX
     return len(strong) >= 2
 
 
@@ -1005,6 +1025,14 @@ SEX_SCENE = {"kissed", "kiss", "kisses", "kissing", "naked", "nude", "breasts", 
              "caress", "undressed", "thighs", "lover", "lovers", "desire", "pleasure", "embrace", "embraced"}
 
 
+OLD_SEX_SCENE = SEX_SCENE - {"pleasure", "desire", "lover", "lovers", "kiss", "kisses", "kissed", "kissing",
+                             "breast", "breasts"}
+# in an older book "a pleasure to help", "in their breasts" (hearts), "bosom" aren't sexual (Little Women,
+# the night run's report, 2026-11-17)
+OLD_SOFT_SEX = {"pleasure", "pleasures", "breast", "breasts", "bosom", "bosoms", "desire", "desires", "passion",
+                "thrill", "thrilled", "throbbing", "panting", "moaned", "moan", "rapture"}
+
+
 def in_pain(words, around):
     """Is this "moan ... writhed" someone in pain, with nothing of a sex scene in it?"""
     return bool(PAIN_WORDS & (set(words) | set(around))) and not SEX_SCENE & set(words)
@@ -1087,12 +1115,26 @@ SUBSTANCES = NotSoftDrink(SUBSTANCES)
 # "a smoking gun"
 SMOKED_NOT = "out|turkey|ham|hams|salmon|trout|haddock|mackerel|herring|herrings|kipper|kippers|fish|meat|meats|sausage|sausages|bacon|cheese|cheeses|oysters|brisket|pork|beef|chicken|duck|eel|paprika|glass|glasses|almonds|venison|tongue|sturgeon|whitefish|cod|ribs"
 SMOKING_NOT = ("musket|muskets|pistol|pistols|rifle|rifles|cannon|cannons|gun|guns|ruin|ruins|wreck|wreckage|crater|craters|embers|remains|rubble|chimney|chimneys|volcano|barrel|barrels|hole|holes|debris|ashes|cinders|logs|fire|fires|wick|candle|candles|lamp|lamps|stove|torch|torches|pan|grease|oil|engine|engines|exhaust|tires|brakes|fuse|crack|cracks|hot")
+class NotGivenUp:
+    """Not someone giving smoking up: "that he has given up smoking" (Little Women)."""
+
+    def __init__(self, m):
+        self.m = m
+
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in self.m(words, near)
+                if not (words[max(0, i - 2):i] in (["given", "up"], ["gave", "up"], ["give", "up"],
+                                                   ["giving", "up"], ["gives", "up"]) or
+                        (words[i - 1] if i else "") in ("quit", "quitting", "stopped", "stop"))]
+
+
 SMOKING = Matcher(
     words=[r"cigarettes?", r"cigars?", r"cigarillos?", r"tobacco", r"vap(e|es|ing|ed)",
            r"smokes", r"nicotine"],
     phrases=["smoked !" + SMOKED_NOT, "smoking !" + SMOKING_NOT,
              "lit|lighting|lights a|his|her|another cigarette|cigar|pipe",
              "smoke|smoked|smoking|smokes a|his|her pipe"])
+SMOKING = NotGivenUp(SMOKING)
 DRINKING = Matcher(
     words=[r"drunk(en|enly|ard|ards|s)?", r"beers?", r"wines?", r"whiske?y", r"vodka", r"tequila",
            r"booze", r"boozing", r"liquor", r"alcohol(ic|ics|ism)?", r"hangover", r"hungover",
@@ -1141,6 +1183,25 @@ class NotOddRum:
 
 
 DRINKING = NotOddRum(DRINKING)
+
+# "for he has Scotch blood in him" (Scottish: Little Women, the night run's report, 2026-11-17)
+SCOTCH_NOT_DRINK = {"blood", "broth", "terrier", "terriers", "tape", "egg", "eggs", "mist", "plaid", "pine",
+                    "pines", "cousin", "cousins", "accent", "granite", "fir", "firs", "bonnet", "bonnets", "reel",
+                    "reels", "gardener", "nurse", "woman", "man", "lass", "lad", "girl", "boy", "family",
+                    "people", "song", "songs", "hymn", "tune", "thrift", "porridge", "pancake", "pancakes"}
+
+
+class NotScotland:
+    def __init__(self, m):
+        self.m = m
+
+    def __call__(self, words, near=None):
+        return [(i, j) for i, j in self.m(words, near)
+                if not (j == i + 1 and words[i] == "scotch" and
+                        (words[i + 1] if i + 1 < len(words) else "") in SCOTCH_NOT_DRINK)]
+
+
+DRINKING = NotScotland(DRINKING)
 _DRINK_WORDS = DRINKING          # the drink words alone, before the mention rules below
 
 # Brief mentions that aren't drinking (The Railway Children, the owner, 2026-11-16: "Yes, teach it",
@@ -1448,6 +1509,23 @@ SLAP_THING_HOW = {"open", "shut", "closed", "down", "onto", "on", "aside", "away
                   "flat", "back", "off"}
 
 
+KILLING_LOOK = {"boots", "hat", "hats", "bonnet", "bonnets", "dress", "dresses", "gown", "gowns", "glance",
+                "glances", "smile", "look", "looks", "pace", "part", "parts", "costume", "bow"}
+
+
+def figure_of_speech(words, i):
+    """Little Women (the night run's report, 2026-11-17): "as if she had murdered some innocent thing",
+    "as if she had stabbed her dearest friend" (a feeling), "a pair of killing boots" (stylish), "I always
+    wanted to do the killing part" (in a play), "in a fair way to be killed by kindness" (a saying)."""
+    before = words[max(0, i - 6):i]
+    if any(before[k:k + 2] in (["as", "if"], ["as", "though"]) for k in range(len(before))):
+        return True
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    if words[i] == "killing" and nxt in KILLING_LOOK:
+        return True
+    return words[i].startswith("kill") and "kindness" in words[i + 1:i + 4]
+
+
 def kill_not_violence(words, i):
     """Is the kill (or slap) word at words[i] something that might happen, an animal killed, or a thing
     slapped down? (The Secret Garden, the night run's report, 2026-11-17: "She slapped it open with her
@@ -1538,7 +1616,7 @@ class ViolenceMatcher(Matcher):
         for i, j in super().__call__(words, near):
             if beat_up_food(words, i, j):
                 continue
-            if j == i + 1 and kill_not_violence(words, i):
+            if j == i + 1 and (kill_not_violence(words, i) or figure_of_speech(words, i)):
                 continue
             if j == i + 1 and words[i].startswith("punch"):
                 nxt = [w for w in words[i + 1:i + 4] if w not in ("the", "a", "an", "his", "her", "their",
@@ -1573,6 +1651,8 @@ def pain_of(words, i):
     if words[i].startswith("tortur") and words[i + 1:i + 2] in (["with"], ["by"]) and \
             TORTURED_BY & set(words[i + 2:i + 4]):
         return True
+    if words[i].startswith("execution") and (words[i - 1] if i else "") in ("into", "in"):
+        return True     # "carry his threat into execution", "if not masterly in execution" (Little Women)
     return words[i] == "hanged" and words[i + 1:i + 2] == ["if"]
 
 
@@ -2966,7 +3046,9 @@ def analyze(book, opts, progress=None, cancel=None):
         if book.words[j - 1][0] != q:
             j = i + 1
         if cat != "mine" and (book.dick_name(i) or old_sleep_with_someone(book.wn, i, j, book.old_style)):
-            continue    # Dick the ploughboy in an older book (the owner, 2026-11-16: "leave all words
+            continue
+        if cat == "rude" and book.old_style and book.wn[i:i + 2] == ["shut", "up"] and not book.shut_up_said(i):
+            continue    # "He keeps his grandson shut up", the cot-bed "suddenly shut up" (Little Women)    # Dick the ploughboy in an older book (the owner, 2026-11-16: "leave all words
             #             except pussy"); "you Dick!" and a modern book's "dick" still count
         doubt = book.doubtful_word(i, j, cat)
         if doubt and cat == "orientation" and book.old_style:
@@ -3063,6 +3145,9 @@ def analyze(book, opts, progress=None, cancel=None):
         return ws, near
     cuts = [c for c in cuts if not (c["kind"] == "sex" and (
         in_pain(_words(c), _around(c)) if c.get("sents") else in_pain(*_passage(c))))]
+    if book.old_style:      # a "sex" passage in an older book with no sex scene in it ("it's a pleasure to help")
+        cuts = [c for c in cuts if not (c["kind"] == "sex" and not OLD_SEX_SCENE & set(
+            _words(c) if c.get("sents") else _passage(c)[0]))]
     if book.old_style:      # a child undressing for bed (Pollyanna)
         def _cut_words(c):      # just the part cut, when only part of the sentence goes
             return [w for w in (nrm(t) for t in c["raw"].split()) if w] if c.get("part") else _words(c)

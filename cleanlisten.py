@@ -425,7 +425,9 @@ MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"godd
         r"crap(pier|piest|ped|ping|pers|holes|loads?|tastic|ola)", r"day+um+n?",   # "dayum"
         r"floozy", r"floozies", r"trollops?", r"strumpets?", r"verdammt"]
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
-          r"gosh", r"gosh(darn|dang).*", r"darn.*", r"heck", r"dang", r"dang(it|ed)",
+          r"gosh", r"gosh(darn|dang).*",
+          # not sewing: "darning", "darns", "a darning-needle" (Little Women, the night run's report, 2026-11-17)
+          r"darn(ed|edest|it|ation|nit)?", r"heck", r"dang", r"dang(it|ed)",
           r"dagnabb?it", r"frak(s|ked|king|kin)?", r"sheesh",
           # stand-ins for God, Jesus, Christ, damn and shit
           r"golly", r"jeepers", r"jee+sh", r"crikey", r"blimey", r"gorblimey", r"cripes",
@@ -1033,6 +1035,11 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  # turf: "sod houses", "a sod roof" (CleanView 1.18.11, from CleanRead)
                  "sod": {"house", "houses", "roof", "roofs", "hut", "huts", "buster", "busters"},
                  "cum": {"laude"}, "peckers": {"up"}, "pecker": {"up"},
+                 # Little Women (the night run's report, 2026-11-17): "all pricks of conscience", sewing
+                 # ("darned his own socks", "darning hose"; "darning" and "darns" are always sewing)
+                 "pricks": {"of"}, "prick": {"of"},
+                 "darned": {"his", "her", "my", "their", "your", "our", "the", "socks", "stockings", "hose"},
+                 "darn": {"his", "her", "my", "their", "your", "our", "the", "socks", "stockings", "hose"},
                  # waking or stirring up a feeling: "So the Lion aroused himself and bounded forward" (The
                  # Wonderful Wizard of Oz, the night run's report, 2026-11-17), "aroused from sleep",
                  # "aroused his curiosity"
@@ -1142,6 +1149,9 @@ def jerk_motion(words, i):
 
 
 INNOCENT_PREV = {"dick": {"moby", "uncle", "big", "camp"},     # Camp Dick, a WWI army camp
+                 # "don't offer even a suck" (of a pickled lime: Little Women), "his queer darns"
+                 "suck": {"a", "one", "another"},
+                 "darns": {"his", "her", "my", "their", "queer", "neat", "the", "those", "these"},
                  # "the rocket was blasted", "he got blasted", "the guns blasted" (CleanView
                  # 1.18.93); "you blasted fool" still counts, so not "you"
                  "blasted": {"was", "wasn't", "were", "weren't", "been", "being", "be", "got", "get",
@@ -1253,7 +1263,8 @@ SUCK_NOT_NEXT = {"up", "in", "on", "out", "into", "through", "from", "down", "of
                  "thumb", "thumbs", "milk", "dry", "every", "some", "those", "these", "straws",
                  "straw", "candy", "lollipops", "lollipop", "face", "faces", "teeth", "breath",
                  "cock", "cocks", "dick"}
-SUCK_NOT_BEFORE = {"vacuum", "vacuums", "straw", "straws", "pump", "pumps", "hose", "fan", "drain",
+SUCK_NOT_BEFORE = {"a", "one", "another",   # "don't offer even a suck" (of a pickled lime: Little Women)
+                   "vacuum", "vacuums", "straw", "straws", "pump", "pumps", "hose", "fan", "drain",
                    "leech", "leeches", "mosquito", "mosquitoes", "vampire", "vampires", "octopus",
                    "baby", "babies", "calf", "calves", "piglet", "piglets", "whirlpool",
                    "quicksand", "mud", "plant", "roots", "sponge", "lamprey", "lampreys"}
@@ -2117,12 +2128,23 @@ BULLY_PHRASES += [(v, o) for v in ("tormented", "tormenting", "torment", "mocked
                   for o in ("him", "her", "them", "me", "us")]
 
 
+def bully_not(words, i, ph):
+    """Little Women (the night run's report, 2026-11-17): "don't kill yourself driving at a desperate
+    pace" (a saying), "Some make fun of it" (a thing, her book), not bullying."""
+    if ph == ("kill", "yourself"):
+        nxt = words[i + 2] if i + 2 < len(words) else ""
+        return (words[i - 1] if i else "") in ("don't", "dont", "not", "needn't", "neednt") and nxt.endswith("ing")
+    if ph[1:] == ("fun", "of"):
+        return (words[i + 3] if i + 3 < len(words) else "") in ("it", "its", "this", "that")
+    return False
+
+
 def bully_hit(words):
     if any(any(p.match(w) for p in BULLY_WORDS) for w in words):
         return True
     n = len(words)
     for i in range(n):
-        if any(tuple(words[i:i + len(ph)]) == ph for ph in BULLY_PHRASES):
+        if any(tuple(words[i:i + len(ph)]) == ph and not bully_not(words, i, ph) for ph in BULLY_PHRASES):
             return True
         if words[i] in BULLY_LEAD:  # "you idiot", "you're such a loser", "you fat pig"
             j = i + 1
@@ -2806,7 +2828,9 @@ def apply_hard_rule(st, asr):
 # ("the tooting of boats", "tooted the horn") (the training run, 2026-11-15)
 MOON_NOT_NEXT = {"around", "about", "over", "like", "after", "along", "away", "through", "by", "for",
                  "uke", "at", "on", "in", "upon", "into"}
-TOOT_NOT_NEAR = {"trumpeter", "trumpeters", "motorcar", "motorcars", "band", "bands", "pipes", "piper",
+TOOT_NOT_NEAR = {"musicians", "musician", "fiddled", "fiddle", "fiddles", "music", "speakingtrumpet",
+                 "speaking-trumpet",   # Little Women: "The musicians fiddled, tooted, and banged"
+                 "trumpeter", "trumpeters", "motorcar", "motorcars", "band", "bands", "pipes", "piper",
                  "pipers",          # "The trumpeters are tooting" (The Wind in the Willows, 2026-11-17)
                  "horn", "horns", "whistle", "whistles", "car", "cars", "boat", "boats", "train",
                  "trains", "ship", "ships", "tugboat", "tugboats", "tug", "tugs", "bugle", "bugles",
@@ -2826,10 +2850,24 @@ def _crude_word(words, i):
     return True
 
 
+# "number two" counting things: "that was thorn number two" (Little Women, the night run's report,
+# 2026-11-17), "reason number two", "rule number two"
+NUMBER_TWO_COUNTED = {"thorn", "reason", "rule", "item", "point", "question", "step", "part", "page", "room",
+                      "player", "lesson", "chapter", "problem", "wish", "choice", "option", "suspect",
+                      "victim", "witness", "car", "house", "plan", "thing", "grievance", "son", "daughter",
+                      "wife", "husband", "and", "for", "as"}
+
+
 def crude_hit(words):
     if any(_crude_word(words, i) for i in range(len(words))):
         return True
-    return any(tuple(words[i:i + len(ph)]) == ph for ph in CRUDE_PHRASES for i in range(len(words)))
+    for i in range(len(words)):
+        for ph in CRUDE_PHRASES:
+            if tuple(words[i:i + len(ph)]) == ph:
+                if ph == ("number", "two") and (words[i - 1] if i else "") in NUMBER_TWO_COUNTED:
+                    continue
+                return True
+    return False
 
 
 def free_ai_memory():
