@@ -214,3 +214,79 @@ def test_the_box_closes_when_the_window_is_up():
 @pytest.mark.skipif(not WINDOWS, reason="a real window")
 def test_the_box_closes_when_it_stops():
     assert _box("aloud", "import time; time.sleep(1)") < 4
+
+
+# --- the update: several files at a time, each tried twice, within UPDATE_MOST, and the box told how far
+# it's got (the owner, 2026-11-17, via CleanView 1.18.128: after an update the box "just sits") ---------
+class FakeGitHub:
+    def __init__(self, files, version="9.9.9"):
+        self.files, self.version = files, version
+        self.slow, self.fail_once, self.asked = set(), set(), []
+
+    def urlopen(self, url, timeout=None):
+        import io
+        import json
+        name = url.rsplit("/", 1)[-1]
+        self.asked.append(name)
+        if name == "version.json":
+            body = json.dumps({"version": self.version, "files": list(self.files)}).encode()
+        else:
+            if name in self.slow:
+                time.sleep(3)
+            if name in self.fail_once:
+                self.fail_once.discard(name)
+                raise OSError("The handshake operation timed out")
+            body = self.files[name]
+        r = io.BytesIO(body)
+        return mock.MagicMock(__enter__=lambda s: r, __exit__=lambda s, *a: None)
+
+
+@pytest.fixture
+def gh(lm, tmp_path, monkeypatch):
+    here = tmp_path / "app"
+    here.mkdir()
+    (here / "version.json").write_text('{"version": "1.0.0", "files": []}')
+    monkeypatch.setattr(lm, "HERE", here)
+    g = FakeGitHub({"a.py": b"x = 1\n", "b.txt": b"hello", "CleanRead.pyw": b"y = 2\n"})
+    monkeypatch.setattr(lm.urllib.request, "urlopen", g.urlopen)
+    g.here = here
+    return g
+
+
+def test_update_gets_every_file_and_says_how_far(lm, gh):
+    assert lm.update("read") == "9.9.9"
+    for name, body in gh.files.items():
+        assert (gh.here / name).read_bytes() == body
+    note = lm.opening_note("read").read_text(encoding="utf8")
+    assert note.startswith("Updating CleanRead to 9.9.9") and "(3 of 3)" in note
+
+
+def test_a_file_that_fails_once_is_tried_again(lm, gh):
+    gh.fail_once.add("b.txt")
+    assert lm.update("read") == "9.9.9"
+    assert gh.asked.count("b.txt") == 2
+
+
+def test_too_slow_waits_for_next_time(lm, gh, monkeypatch):
+    gh.slow.add("CleanRead.pyw")
+    monkeypatch.setattr(lm, "UPDATE_MOST", 1)
+    t = time.time()
+    with pytest.raises(TimeoutError):
+        lm.update("read")
+    assert time.time() - t < 2.5
+    assert not (gh.here / "a.py").exists()          # nothing swapped in: it opens as it is
+
+
+@pytest.mark.skipif(not WINDOWS, reason="Windows processes")
+def test_still_opening_finds_the_one_started_before(lm):
+    lm.pid_file("read").write_text(str(os.getpid()), encoding="utf8")
+    assert lm.still_opening("read") is None           # this process itself doesn't count
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"], creationflags=0x08000000)
+    try:
+        lm.pid_file("read").write_text(str(p.pid), encoding="utf8")
+        proc = lm.still_opening("read")
+        assert proc is not None and proc.poll() is None
+    finally:
+        p.kill()
+        p.wait()
+    assert lm.Running(p.pid).poll() is not None

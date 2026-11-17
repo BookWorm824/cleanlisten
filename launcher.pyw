@@ -323,18 +323,46 @@ def update(arg=None):
         remote = json.loads(r.read().decode("utf8"))
     if _ver(remote["version"]) <= _ver(local["version"]):
         return None
-    if arg is not None:
-        opening(f"Getting {app_name(arg)} {remote['version']}\u2026", arg)
-    # download everything first, check it, and only then swap files in
-    staged = {}
-    for name in remote["files"]:
+    names = list(remote["files"])
+    for name in names:
         if "/" in name or "\\" in name or name.startswith("."):
             raise ValueError(f"unexpected file name {name}")
-        with urllib.request.urlopen(RAW + name, timeout=20) as r:
-            data = r.read()
+    ver = remote["version"]
+
+    def say(n):
+        if arg is not None:
+            opening(f"{UPDATING} {app_name(arg)} to {ver}\u2026 ({n} of {len(names)})", arg)
+    say(0)
+    # download everything first, check it, and only then swap files in; several at a time, each
+    # tried twice, and all of it within UPDATE_MOST (one after the other, a slow connection to GitHub
+    # kept the opening box waiting for minutes: CleanView 1.18.128, "The handshake operation timed out")
+    import concurrent.futures
+    import time
+
+    def fetch(name):
+        for attempt in (1, 2):
+            try:
+                with urllib.request.urlopen(RAW + name, timeout=20) as r:
+                    data = r.read()
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
         if name.endswith((".py", ".pyw")):
             compile(data, name, "exec")  # refuse a broken download
-        staged[name] = data
+        return data
+    staged = {}
+    pool = concurrent.futures.ThreadPoolExecutor(UPDATE_AT_ONCE)
+    try:
+        jobs = {pool.submit(fetch, n): n for n in names}
+        end = time.time() + UPDATE_MOST
+        for job in concurrent.futures.as_completed(jobs, timeout=max(1, end - time.time())):
+            staged[jobs[job]] = job.result()
+            say(len(staged))
+    except concurrent.futures.TimeoutError:
+        raise TimeoutError(f"the update took over {UPDATE_MOST} s; it's tried again next time")
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     global LAUNCHER_CHANGED
     old = HERE / "launcher.pyw"
     LAUNCHER_CHANGED = "launcher.pyw" in staged and (
@@ -365,6 +393,13 @@ APP_PART = "--app"
 LOCK_PREFIX = os.environ.get("CLEANLISTEN_ONE_PREFIX") or "Local\\"
 RESTART_WAIT = 90
 SPLASH_MOST = 180             # seconds; the box says "Opening" at most this long
+# ... and "Updating" as long as the update takes: it gives up by itself after UPDATE_MOST and the program
+# opens as it is (the owner, 2026-11-17, via CleanView 1.18.128: after an update the box "just sits",
+# "lets fix the initial little box to let people know to wait"; wanted in every app)
+UPDATING_MOST = 600
+UPDATE_MOST = 120             # seconds for all of an update's files, else it waits for next time
+UPDATE_AT_ONCE = 6            # files fetched at a time
+UPDATING = "Updating"         # how the opening note starts while an update is fetched
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CleanListen"
 _held = []                    # locks this process holds until it ends
 
@@ -566,9 +601,49 @@ def start_app(arg=""):
     return None
 
 
+class Running:
+    """A process already started (by an earlier click), for `splash`: its pid and whether it has ended
+    (poll() None while it runs, as subprocess.Popen's)."""
+
+    def __init__(self, pid):
+        self.pid = pid
+
+    def poll(self):
+        if os.name != "nt":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            k = ctypes.WinDLL("kernel32", use_last_error=True)
+            k.OpenProcess.restype = wintypes.HANDLE
+            h = k.OpenProcess(0x1000, False, int(self.pid))   # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return 1
+            code = wintypes.DWORD()
+            ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+            k.CloseHandle(h)
+            return None if ok and code.value == 259 else (code.value or 1)   # 259: STILL_ACTIVE
+        except Exception:
+            return 1
+
+
+def still_opening(arg=""):
+    """The program an earlier click started, while it hasn't got its window up yet (still updating or
+    opening), as a `Running`; else None."""
+    try:
+        pid = int(pid_file(arg).read_text(encoding="utf8").strip())
+    except (OSError, ValueError):
+        return None
+    proc = Running(pid)
+    if proc.poll() is not None or pid == os.getpid():
+        return None
+    return proc
+
+
 def splash(child, arg="", most=SPLASH_MOST):
     """A small "Opening CleanListen..." box until the program's own window is up (or it has
-    stopped, or `most` seconds)."""
+    stopped, or `most` seconds; while an update is fetched, `UPDATING_MOST`). The update says how
+    far it's got ("Updating CleanRead to 1.17.64... (5 of 21)") and that it opens by itself."""
     import time
     import tkinter as tk
     from tkinter import ttk
@@ -581,11 +656,15 @@ def splash(child, arg="", most=SPLASH_MOST):
         pass
     root.configure(bg="#FFFFFF")
     root.resizable(False, False)
-    tk.Label(root, text=f"Opening {name}…", bg="#FFFFFF", fg="#23211F",
+    title = tk.StringVar(value=f"Opening {name}…")
+    tk.Label(root, textvariable=title, bg="#FFFFFF", fg="#23211F",
              font=("Segoe UI", 14, "bold")).pack(padx=40, pady=(22, 4))
     said = tk.StringVar(value="This can take a few seconds.")
     tk.Label(root, textvariable=said, bg="#FFFFFF", fg="#5C5852",
              font=("Segoe UI", 10)).pack(padx=40)
+    wait = tk.StringVar(value="")
+    tk.Label(root, textvariable=wait, bg="#FFFFFF", fg="#2F6F62",
+             font=("Segoe UI", 10, "bold"), wraplength=320).pack(padx=40, pady=(6, 0))
     bar = ttk.Progressbar(root, mode="indeterminate", length=260)
     bar.pack(padx=40, pady=(12, 22))
     bar.start(12)
@@ -609,16 +688,20 @@ def splash(child, arg="", most=SPLASH_MOST):
                 ctypes.WinDLL("user32").SetForegroundWindow(wins[0])
             except Exception:
                 pass
-        if child.poll() is not None or wins or time.time() - start > most:
+        try:
+            text = opening_note(arg).read_text(encoding="utf8").strip()
+        except OSError:
+            text = ""
+        updating = text.startswith(UPDATING)
+        if child.poll() is not None or wins or \
+                time.time() - start > (UPDATING_MOST if updating else most):
             bar.stop()
             root.destroy()
             return
-        try:
-            text = opening_note(arg).read_text(encoding="utf8").strip()
-            if text and text != said.get():
-                said.set(text)
-        except OSError:
-            pass
+        if text and text != said.get():
+            said.set(text)
+            title.set(f"{UPDATING} {name}…" if updating else f"Opening {name}…")
+            wait.set(f"Please wait: {name} opens by itself when it's done." if updating else "")
         root.after(200, check)
     root.after(200, check)
     root.mainloop()
@@ -674,7 +757,15 @@ def clicked(arg=""):
     it forward and stop; otherwise start it and show "Opening ..." until its window is up.
     False: it couldn't be started apart, so run it here as before."""
     if not _restarting() and (exists(one_name(arg)) or not hold(opening_name(arg))):
-        bring_forward(arg)
+        if not bring_forward(arg):
+            # no window yet: the one started before is still updating or opening, so say so again
+            # instead of only a busy cursor (the owner, 2026-11-17, via CleanView 1.18.128)
+            proc = still_opening(arg)
+            if proc is not None:
+                try:
+                    splash(proc, arg)
+                except Exception:
+                    pass
         return True
     try:
         opening_note(arg).unlink(missing_ok=True)
