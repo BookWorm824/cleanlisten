@@ -672,7 +672,10 @@ DICK_INSULT_BEFORE = {"you", "a", "an", "such", "big", "total", "complete", "rea
                       "being", "what", "some", "your"}
 # names (written with a capital) left in an older book, and words left there however written
 OLD_NAMES = {"dick": "Dick", "sissy": "Sissy"}
-OLD_BOOK_LEFT = {"boner", "boners"}
+OLD_BOOK_LEFT = {"boner", "boners",
+                 # a sweetheart in 1913 English ("the trouble with her lover", "who was her lover?":
+                 # Pollyanna, the night run's report, 2026-11-17)
+                 "lover", "lovers"}
 
 
 # Other clear signs of an older book (2026-11-16: by "gay"/"queer" alone, Treasure Island, Heidi and
@@ -814,7 +817,9 @@ def _ref_hit(words, old_style=False, cats=frozenset()):
         return True
     for i, j, _ in E.find_language(words, ["sexual"]):
         if old_style and j == i + 1 and words[i] in OLD_BOOK_LEFT:
-            continue        # "the broken boner" in an older book (Book.dick_name)
+            continue        # "the broken boner", "her lover" in an older book (Book.dick_name)
+        if old_sleep_with_someone(words, i, j, old_style):
+            continue        # a lonely child wanting someone near at night
         if not words[i].startswith("arous"):
             return True
     strong = {w for w in words if any(p.match(w) for p in E.SEX_C[3])}
@@ -922,6 +927,43 @@ _UNMARRIED = Matcher(
              "moved|move|moving in with her|his|my boyfriend|girlfriend"])
 NOT_A_COUPLE = FAMILY | {"girls", "boys", "sisters", "brothers", "friends", "roommates", "family",
                          "families", "children"}
+
+
+# In an older book "love affair", "lovers" and "the affair between" are courtship ("Miss Polly's love
+# affair", "because you were lovers, you know, once": Pollyanna, the night run's report, 2026-11-17):
+# sleeping around there needs more than these words ("adultery", "his mistress", "a secret lover",
+# "an illicit affair", "cheated on" still count).
+COURTSHIP_WORDS = {"an", "the", "their", "his", "her", "my", "your", "love", "affair", "affairs", "lover",
+                   "lovers", "were", "became", "become", "are", "be", "being", "been", "with", "took",
+                   "take", "taking", "taken", "takes", "a", "between"}
+
+
+def old_sleeping_hit(words, old_style):
+    """Sleeping around; in an older book not for courtship words alone."""
+    sp = SLEEPING(words)
+    if old_style:
+        sp = [(i, j) for i, j in sp if not set(words[i:j]) <= COURTSHIP_WORDS]
+    return bool(sp)
+
+
+# A lonely child in an older book: "And when I've so wanted to sleep with someone sometime, someone that
+# belonged to me" (Pollyanna, the night run's report, 2026-11-17)
+SLEEP_SOMEONE = {"someone", "somebody", "anyone", "anybody"}
+
+
+def old_sleep_with_someone(words, i, j, old_style):
+    return old_style and words[i] in E.SLEEP_FORMS and j - i == 3 and words[j - 1] in SLEEP_SOMEONE
+
+
+# A child undressing for bed in an older book: "She undressed, folded her clothes neatly", "she was
+# undressed tenderly and put to bed" (Pollyanna, the night run's report, 2026-11-17)
+BEDTIME = {"bed", "beds", "bedtime", "nightgown", "nightdress", "nightie", "pajamas", "pyjamas", "folded",
+           "asleep", "sleep", "night", "nightcap", "tucked", "candle", "prayers"}
+BED_COMPANY = {"him", "his", "he", "man", "husband", "lover", "lovers", "together", "boyfriend", "beside"}
+
+
+def undressed_for_bed(words, around):
+    return bool(BEDTIME & (set(words) | set(around))) and not BED_COMPANY & set(words)
 
 
 def SLEEPING(words, near=None):
@@ -2849,7 +2891,7 @@ def analyze(book, opts, progress=None, cancel=None):
         q, a, _ = book.words[i]
         if book.words[j - 1][0] != q:
             j = i + 1
-        if cat != "mine" and book.dick_name(i):
+        if cat != "mine" and (book.dick_name(i) or old_sleep_with_someone(book.wn, i, j, book.old_style)):
             continue    # Dick the ploughboy in an older book (the owner, 2026-11-16: "leave all words
             #             except pussy"); "you Dick!" and a modern book's "dick" still count
         doubt = book.doubtful_word(i, j, cat)
@@ -2898,7 +2940,8 @@ def analyze(book, opts, progress=None, cancel=None):
          lambda w: old_kiss_hit(w, kiss_mode, book.old_style) and not E.relationship_hit(w)),
         ("kiss_ss", opts.get("kiss_ss", "keep") in ("passionate", "all"),
          lambda w: old_kiss_ss_hit(w, opts.get("kiss_ss"), book.old_style)),
-        *((k, opts.get(k), lambda w, k=k: E.sentence_hit(k, w)) for k in E.MORE_KINDS),
+        *((k, opts.get(k), (lambda w: old_sleeping_hit(w, book.old_style)) if k == "sleeping" else
+           (lambda w, k=k: E.sentence_hit(k, w))) for k in E.MORE_KINDS),
         *((t, opts.get(t), lambda w, t=t: E.topic_hit(t, w)) for t in E.TOPICS),
     ]
     taken = set()
@@ -2936,6 +2979,10 @@ def analyze(book, opts, progress=None, cancel=None):
         return [w for k in (c.get("sents") or []) for w in book.sent_words(k)]
     cuts = [c for c in cuts if not (c["kind"] == "violence" and kill_told_before(_words(c), _before(c)))]
     cuts = [c for c in cuts if not (c["kind"] == "ref" and pet_in_bed(_words(c), _around(c)))]
+    if book.old_style:      # a child undressing for bed (Pollyanna)
+        def _cut_words(c):      # just the part cut, when only part of the sentence goes
+            return [w for w in (nrm(t) for t in c["raw"].split()) if w] if c.get("part") else _words(c)
+        cuts = [c for c in cuts if not (c["kind"] == "implied" and undressed_for_bed(_cut_words(c), _around(c)))]
 
     # explicit findings in coroner talk are sexual references, with Medical on or off (the owner,
     # 2026-11-13): the lines the word lists didn't already take ("There was tearing.")
