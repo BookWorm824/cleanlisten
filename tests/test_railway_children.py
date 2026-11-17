@@ -108,3 +108,49 @@ def test_boner_still_marked_in_a_modern_book(tmp_path):
     assert not book.old_style
     an = R.analyze(book, dict(sexual=True))
     assert [m["word_raw"] for m in an["mutes"]] == ["boner"]
+
+
+# --- brief mentions (the owner, 2026-11-16: "Yes, teach it") -------------------------------
+@pytest.mark.parametrize("text", [
+    "She can have grapes now, and beef essence and soda-water and milk, and you'd better get in a bottle of brandy.",
+    "Mrs. Viney was sent to the village to get as much brandy and soda-water and beef tea as she could buy.",
+    "The doctor said to give the invalid a little wine with her dinner.",
+    "Mr. Perks made tea in a beer can, as usual.",
+])
+def test_brandy_for_the_sick_and_a_beer_can_for_tea_are_not_drinking(text):
+    assert not R.DRINKING(words(text)), text
+
+
+@pytest.mark.parametrize("text", [
+    "He poured himself a brandy after the doctor left.", "The doctor was drunk on brandy.",
+    "They drank wine all evening.", "He opened a beer can and drank it.", "Pots of beer were held in midair.",
+    "She sipped her brandy while the patient slept.",
+])
+def test_real_drinking_still_found(text):
+    assert R.DRINKING(words(text)), text
+
+
+@pytest.mark.parametrize("text", [
+    "And everyone would be killed.", "How dreadful if they had all been killed!",
+    "You might have been killed.", "He says his father killed a bear.",
+    "It sounded exactly like a pig being killed a quarter of a mile off.", "The cat killed a mouse.",
+])
+def test_killed_when_nobody_is_hurt_is_not_violence(text):
+    assert not R.VIOLENCE(words(text)), text
+
+
+@pytest.mark.parametrize("text", [
+    "He killed her with a knife.", "They were killed in the war.", "The soldiers killed the prisoners.",
+    "The bear killed the hunter.", "She was killed instantly.",
+])
+def test_real_killing_still_violence(text):
+    assert R.VIOLENCE(words(text)), text
+
+
+def test_brandy_for_the_sick_told_in_the_sentences_around(tmp_path):
+    book = _book(tmp_path, MODERN + [
+        "The doctor came and said Mother had a fever and must have beef tea.",
+        "Bobbie ran to the village.", "Did you get the brandy?", "I've got the brandy, said Bobbie."],
+        "sick_brandy")
+    an = R.analyze(book, dict(drinking=True))
+    assert [c for c in an["cuts"] if c["kind"] == "drinking"] == []

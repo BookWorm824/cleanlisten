@@ -1028,6 +1028,65 @@ class NotOddRum:
 
 
 DRINKING = NotOddRum(DRINKING)
+_DRINK_WORDS = DRINKING          # the drink words alone, before the mention rules below
+
+# Brief mentions that aren't drinking (The Railway Children, the owner, 2026-11-16: "Yes, teach it",
+# about "brandy and port wine bought for their sick mother", "Perks making tea in a beer can"):
+# - brandy or wine got for someone who is ill: the doctor's "you'd better get in a bottle of brandy",
+#   "as much brandy and soda-water and beef tea as she could buy". Only brandy and wine, only with
+#   illness in the sentence (or, in CleanRead, the sentences around it: drinking_for_the_sick), and
+#   never with anyone drunk.
+# - a beer can used for tea ("Mr. Perks made tea in a beer can").
+MEDICINE_DRINKS = {"brandy", "wine", "wines"}
+SICK_WORDS = {"sick", "ill", "illness", "invalid", "invalids", "fever", "feverish", "doctor", "doctors",
+              "nurse", "medicine", "medicines", "beef", "faint", "fainted",
+              "fainting", "swoon", "swooned", "recover", "recovered", "recovering", "recovery",
+              "patient", "convalescent", "influenza", "bronchitis", "pneumonia", "delirious",
+              "sickroom", "sickbed", "physician", "chemist", "chemist's", "remedy", "tonic"}
+DRUNK_WORDS = {"drunk", "drunken", "drunkenly", "drunkard", "drunkards", "tipsy", "sloshed",
+               "hangover", "hungover", "intoxicated", "booze", "boozing", "liquor", "toast", "toasts",
+               "cheers", "pub", "tavern", "inn", "bar", "saloon"}
+CAN_FOR = {"tea", "coffee", "water", "milk", "cocoa"}
+# someone having a drink themselves: still drinking, even with a doctor or illness near ("He poured
+# himself a brandy after the doctor left.")
+DRINK_ACTS = {"poured", "pours", "pouring", "sipped", "sipping", "sips", "drank", "gulped",
+              "downed", "swigged", "swallowed", "tossed", "himself", "herself", "myself",
+              "themselves", "yourself", "nursing", "nursed", "glass", "glasses", "another"}
+
+
+def drink_words(words):
+    return [w for i, j in _DRINK_WORDS(words) for w in words[i:j]]
+
+
+def drinking_for_the_sick(words, around=()):
+    """Is every drink in this sentence brandy or wine got for someone who is ill, with nobody drunk?"""
+    ws = drink_words(words)
+    if not ws or any(w not in MEDICINE_DRINKS for w in ws):
+        return False
+    if (DRUNK_WORDS | DRINK_ACTS) & set(words):
+        return False
+    return bool(SICK_WORDS & (set(words) | set(around)))
+
+
+class NotAMention:
+    """DRINKING without brandy for the sick (in the sentence) or a beer can used for tea."""
+
+    def __init__(self, m):
+        self.m = m
+
+    def __call__(self, words, near=None):
+        out = []
+        for i, j in self.m(words, near):
+            if j == i + 1 and words[i] == "beer" and (words[i + 1] if i + 1 < len(words) else "") in (
+                    "can", "cans") and CAN_FOR & set(words):
+                continue
+            out.append((i, j))
+        if out and drinking_for_the_sick(words):
+            return []
+        return out
+
+
+DRINKING = NotAMention(DRINKING)
 # Not "the price was high enough", "the walls were high", "Grace's head shot up", "Sparks were
 # shooting up", "his hand shot up" (the training run, 2026-11-15): "high" only after someone
 # ("she was high", "they got high", "high as a kite"), and "shooting up" only with a drug word
@@ -1218,11 +1277,41 @@ def beat_up_food(words, i, j):
     return any(w in BEAT_UP_FOOD_AFTER_THE for w in nxt[1:])
 
 
+# "killed" when nobody in the story is hurt (The Railway Children, the owner, 2026-11-16: "Yes, teach
+# it"): what might happen ("And everyone would be killed.", "How dreadful if they had all been
+# killed!", "you might have been killed") or an animal ("He says his father killed a bear.", "It
+# sounded exactly like a pig being killed"). Not "he killed her", "they were killed in the war".
+KILL_IF = {"would", "might", "could", "if", "may", "should", "lest", "nearly", "almost", "wd", "might've",
+           "could've", "would've", "suppose", "supposing", "imagine"}
+ANIMALS = {"bear", "bears", "pig", "pigs", "rat", "rats", "snake", "snakes", "wolf", "wolves", "deer",
+           "fox", "foxes", "rabbit", "rabbits", "hare", "hares", "bird", "birds", "chicken", "chickens",
+           "hen", "hens", "fly", "flies", "mouse", "mice", "wasp", "wasps", "spider", "spiders", "fish",
+           "lion", "lions", "tiger", "tigers", "duck", "ducks", "goose", "geese", "sheep", "lamb", "ox",
+           "calf", "beetle", "beetles", "moth", "moths", "mosquito", "mosquitoes", "slug", "slugs",
+           "worm", "worms", "pheasant", "pheasants", "partridge", "grouse", "boar", "buffalo", "elk",
+           "moose", "bull", "cow", "turkey", "game"}
+
+
+def kill_not_violence(words, i):
+    """Is the kill word at words[i] something that might happen, or an animal killed?"""
+    if not words[i].startswith("kill"):
+        return False
+    if KILL_IF & set(words[max(0, i - 5):i]):
+        return True
+    after = [w for w in words[i + 1:i + 4] if w not in ("a", "an", "the", "his", "her", "their", "that",
+                                                       "this", "some", "two", "three", "every")]
+    if after and after[0] in ANIMALS:
+        return True
+    return any(w in ANIMALS for w in words[max(0, i - 3):i]) and "being" in words[max(0, i - 2):i]
+
+
 class ViolenceMatcher(Matcher):
     def __call__(self, words, near=None):
         out = []
         for i, j in super().__call__(words, near):
             if beat_up_food(words, i, j):
+                continue
+            if j == i + 1 and kill_not_violence(words, i):
                 continue
             if j == i + 1 and words[i].startswith("punch"):
                 nxt = [w for w in words[i + 1:i + 4] if w not in ("the", "a", "an", "his", "her", "their",
@@ -2702,6 +2791,17 @@ def analyze(book, opts, progress=None, cancel=None):
             taken.update(run_)
             part = sentence_part(book, run_[0], hit) if kind in PART_KINDS and len(run_) == 1 else None
             cuts.append(_part_cut(book, kind, run_[0], part) if part else _sent_cut(book, kind, run_))
+
+    # brandy or wine for someone who is ill, the illness told in the sentences around it ("Did you get
+    # the brandy?" after the doctor's visit): a mention, not drinking (the owner, 2026-11-16)
+    def _around(c):
+        sis = c.get("sents") or []
+        if not sis:
+            return []
+        lo, hi = max(0, min(sis) - 3), min(len(book.sents), max(sis) + 4)
+        return [w for k in range(lo, hi) for w in book.sent_words(k)]
+    cuts = [c for c in cuts if not (c["kind"] == "drinking" and drinking_for_the_sick(
+        [w for k in (c.get("sents") or []) for w in book.sent_words(k)], _around(c)))]
 
     # explicit findings in coroner talk are sexual references, with Medical on or off (the owner,
     # 2026-11-13): the lines the word lists didn't already take ("There was tearing.")
