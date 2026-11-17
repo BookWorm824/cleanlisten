@@ -989,6 +989,9 @@ def stripper_tool(words, i):
 # Railway Children; "catnip for the pussies", Little Women). Still out: "pussy willow", "such a pussy",
 # "don't be a pussy", and any other use. (In an older book CleanRead also leaves it unless it's said as
 # an insult: Book.dick_name.)
+# a feeling stirred up: "aroused his curiosity", "aroused their suspicions" (INNOCENT_NEXT has the rest)
+AROUSED_FEELINGS = {"suspicion", "suspicions", "curiosity", "interest", "anger", "fear", "fears", "pity",
+                    "attention", "jealousy", "envy", "concern", "alarm", "indignation", "sympathy", "hopes"}
 PUSSY_WORDS = {"pussy", "pussies"}
 PUSSY_CAT_NEXT = {"cat", "cats", "kitten", "kittens"}
 CAT_WORDS = {"cat", "cats", "cat's", "kitten", "kittens", "kitten's", "kitty", "kitties", "kittie",
@@ -1025,6 +1028,13 @@ INNOCENT_NEXT = {**{w: CASE_TALK_NEXT for w in ("sex", "sexual", "sexually")},
                  # turf: "sod houses", "a sod roof" (CleanView 1.18.11, from CleanRead)
                  "sod": {"house", "houses", "roof", "roofs", "hut", "huts", "buster", "busters"},
                  "cum": {"laude"}, "peckers": {"up"}, "pecker": {"up"},
+                 # waking or stirring up a feeling: "So the Lion aroused himself and bounded forward" (The
+                 # Wonderful Wizard of Oz, the night run's report, 2026-11-17), "aroused from sleep",
+                 # "aroused his curiosity"
+                 "aroused": {"himself", "herself", "themselves", "myself", "yourself", "ourselves", "itself",
+                             "from", "suspicion", "suspicions", "curiosity", "interest", "anger", "fear",
+                             "pity", "attention", "jealousy", "envy", "concern", "alarm"},
+                 "arousal": {"from"},
                  "retard": {"the", "its", "their", "growth"},
                  "horny": {"toad", "toads"}, "boob": {"tube", "tubes"},
                  # rude words box: "jerks her up", "fool around", "butt in", "dumb luck"
@@ -1578,6 +1588,7 @@ def _find_language(words, cats, breaks=()):
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w in ("jerk", "jerks") and jerk_motion(words, i) or
                         w in PUSSY_WORDS and pussy_cat(words, i) or
+                        w in ("aroused", "arousal") and AROUSED_FEELINGS & set(words[i + 1:i + 3]) or
                         w == "gay" and gay_happy(words, i) or
                         w in ("sex", "sexes") and sex_means_gender(words, i) or
                         w == "bondage" and bondage_slavery(words, i) or

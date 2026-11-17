@@ -1329,7 +1329,22 @@ ANIMALS = {"bear", "bears", "pig", "pigs", "rat", "rats", "snake", "snakes", "wo
            "lion", "lions", "tiger", "tigers", "duck", "ducks", "goose", "geese", "sheep", "lamb", "ox",
            "calf", "beetle", "beetles", "moth", "moths", "mosquito", "mosquitoes", "slug", "slugs",
            "worm", "worms", "pheasant", "pheasants", "partridge", "grouse", "boar", "buffalo", "elk",
-           "moose", "bull", "cow", "turkey", "game"}
+           "moose", "bull", "cow", "turkey", "game", "wildcat", "wildcats", "cub", "cubs", "vixen",
+           "crow", "crows", "kitten", "kittens", "monkey", "monkeys", "toad", "toads", "frog", "frogs"}
+# nobody killed: "I have not killed anything", "she had never killed anything in all her life"
+KILL_NOT = {"not", "never", "nothing", "didnt", "didn't", "hasnt", "hasn't", "havent", "haven't", "hadnt",
+            "hadn't", "wont", "won't", "cant", "can't", "cannot", "dont", "don't", "doesnt", "doesn't",
+            "neither", "nor"}
+KILL_AUX = {"have", "has", "had", "be", "been", "ever", "really", "actually", "i", "he", "she", "they", "we",
+            "you", "did", "do", "does", "yet", "so", "much", "as"}
+# what's killed is the animal named earlier ("a beetle ... killed the poor little thing"), not "the hunter"
+KILL_THE_CREATURE = {"thing", "things", "creature", "creatures", "it", "beast", "beasts", "animal", "animals"}
+# the poppies: "The smell of the flowers is killing us all"
+KILL_BY_SMELL = {"smell", "smells", "scent", "scents", "perfume", "odor", "odour", "fumes", "flowers",
+                 "poppies", "poppy"}
+# an animal killed in a fight is still violence ("he fought the wolf with his axe and killed it")
+KILL_FIGHT = {"fought", "fight", "fighting", "axe", "ax", "sword", "gun", "rifle", "spear", "arrow", "knife",
+              "stabbed", "shot", "chopped", "slashed", "battle", "attacked", "attack"}
 
 
 SLAP_THING_HOW = {"open", "shut", "closed", "down", "onto", "on", "aside", "away", "together", "into",
@@ -1352,10 +1367,24 @@ def kill_not_violence(words, i):
         return True
     if "its" in words[max(0, i - 4):i]:
         return True             # "Its mother had been killed nearby" (an animal's)
+    # The Wonderful Wizard of Oz (the night run's report, 2026-11-17): "I have not killed anything.", "I
+    # never killed anything, willingly" (nobody); "The smell of the flowers is killing us all.", "such
+    # little things as flowers came near to killing me" (the poppies' sleep); "killed the Wildcat";
+    # "stepped upon a beetle ... and killed the poor little thing"
+    k = i - 1
+    while k >= 0 and words[k] in KILL_AUX:
+        k -= 1
+    if k >= 0 and words[k] in KILL_NOT:
+        return True             # "have not killed", "had never killed" (not "never stopped; they killed him")
+    if KILL_BY_SMELL & set(words[max(0, i - 6):i]):
+        return True
     after = [w for w in words[i + 1:i + 4] if w not in ("a", "an", "the", "his", "her", "their", "that",
                                                        "this", "some", "two", "three", "every")]
     if after and after[0] in ANIMALS:
         return True
+    if any(w in ANIMALS for w in words[max(0, i - 12):i]) and KILL_THE_CREATURE & set(words[i + 1:i + 5]) \
+            and not KILL_FIGHT & set(words):
+        return True             # the animal earlier in the sentence ("a beetle ... killed the poor little thing")
     return any(w in ANIMALS for w in words[max(0, i - 3):i]) and "being" in words[max(0, i - 2):i]
 
 
