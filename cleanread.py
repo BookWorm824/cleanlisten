@@ -1711,11 +1711,24 @@ KILLED_PERSON = {"hunter", "hunters", "man", "men", "woman", "women", "brother",
                  "soldiers", "king", "queen", "prisoner", "prisoners", "baby", "abel", "cain", "human", "humans"}
 
 
+# A death can stay in a story, but not the gory part (the owner, 2026-11-17: "i dont mind the idea of
+# death", "that is part of life", "just gory depictions"; of The Swiss Family Robinson's hunting: "only the
+# bloody"): a kill with blood, wounds laid open or skinning in the sentence stays marked
+GORY = {"bled", "gash", "gashed", "gashes", "entrails", "guts", "gore", "gored", "gory", "mangled", "brains",
+        "skinned", "skinning", "flayed", "flaying", "disembowelled", "disemboweled"}
+
+
+def gory(words):
+    """Blood or gruesome detail in these words ("the blood flowed in abundance", "its bloody head")?"""
+    return any(w.startswith(("blood", "bleed")) or w in GORY for w in words)
+
+
 def animal_killed(words, around):
     """Is every kill word here an animal killed (an animal named in the sentence or the ones around it,
-    no person in the sentence, and "him/it/them/one" or nothing after the word)?"""
+    no person in the sentence, and "him/it/them/one" or nothing after the word)? Never with blood or
+    gruesome detail in the sentence (gory())."""
     ks = [i for i, w in enumerate(words) if w.startswith(("kill", "slaughter", "murder"))]
-    if not ks:
+    if not ks or gory(words):
         return False
     if not (ANIMALS | {"animal", "animals", "creature", "creatures", "game", "prey", "beast", "beasts"}) & \
             (set(words) | set(around)):
@@ -1730,7 +1743,7 @@ def kill_told_before(words, before):
     """Is every kill word in this sentence an animal killed, or sorrow that killed someone, as the
     sentences just before tell?"""
     ks = [i for i, w in enumerate(words) if w.startswith("kill")]
-    if not ks:
+    if not ks or gory(words):
         return False
     for i in ks:
         prev = words[i - 1] if i else ""

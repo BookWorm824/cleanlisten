@@ -76,3 +76,14 @@ def test_hunting_for_food(tmp_path):
                                   "Cain killed his brother in the field."], "hunting")
     an = R.analyze(book, dict(violence=True))
     assert [c["raw"] for c in an["cuts"] if c["kind"] == "violence"] == ["Cain killed his brother in the field."]
+
+
+def test_a_bloody_kill_stays_marked():
+    # "only the bloody" (the owner, 2026-11-17): the hunt can stay, the blood can't
+    def w(s):
+        return [E.norm(x) for x in s.split()]
+    assert R.animal_killed(w("I killed him with a single blow with my stick"), w("the porcupine ran"))
+    assert not R.animal_killed(w("the blood flowed in abundance and I killed him"), w("the porcupine ran"))
+    assert not R.animal_killed(w("we killed the jackall and the dogs came back with bloody noses"), w("jackall"))
+    assert not R.kill_told_before(w("He killed the one in the skin and the blood ran down"),
+                                  w("he's killed tigers before"))
