@@ -1411,11 +1411,14 @@ _MEDICAL = Matcher(
              # coroner and doctor case talk (CleanView 1.18.72's list); not "a tox screen", "he'll be
              # fine", "time to go home", "a wound to my pride"
              "sexual|sexually assault|assaults|assaulted", "sex|sexual offender|offenders",
-             "rape kit|kits", "was|been|were|being|is raped", "cause|time of death",
+             "rape kit|kits", "cause|time of death",
              "stab|gunshot|exit|entry|defensive wound|wounds", "blunt force trauma|injury|injuries",
              "ligature mark|marks", "rigor mortis", "post mortem", "postmortem",
              "single|fatal|massive|single blow|wound|wounds to the head|chest|back|neck|throat"],
-    words=[r"syringes?", r"hypodermics?", r"novocaine?", r"lidocaine", r"scalpels?", r"incisions?",
+    # rape, raped, rapist, raping in case talk (CleanView 1.18.125, Criminal Minds; was only "was raped").
+    # Whole words: not therapist, grape, rapeseed or rapier
+    words=[r"rapes?", r"raped", r"rapists?", r"raping",
+           r"syringes?", r"hypodermics?", r"novocaine?", r"lidocaine", r"scalpels?", r"incisions?",
            r"sutur(e|es|ed|ing)", r"autops(y|ies)", r"postmortems?", r"lividity", r"gsw"])
 DRUG_NEEDLE = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", "dope", "smack", "meth",
                "crack", "cocaine", "speedball", "overdose", "overdosed", "high"}
