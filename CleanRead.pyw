@@ -691,6 +691,9 @@ class App(tk.Tk):
                                                  if opts["ai"] else ""))
         threading.Thread(target=self._analyze_thread, args=(self.job, self.book_path, opts),
                          daemon=True).start()
+        # the scan has its own copy of the ticks (opts): Young kids and Kids back to standard (the owner,
+        # via CleanView 1.18.134)
+        F.fresh_young_ages(getattr(self, "filter_card", None))
 
     def _book_name(self):
         if self.book is not None and str(self.book.path) == str(Path(self.book_path or "")):

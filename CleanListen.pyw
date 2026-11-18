@@ -2382,6 +2382,8 @@ class App(tk.Tk):
                                 "it to finish (or press Cancel on it), then try again.")
             self.show_queue()
             return
+        # the scan has its own copy of the ticks now: Young kids and Kids back to standard (CleanView 1.18.134)
+        F.fresh_young_ages(getattr(self, "filter_card", None))
         # the book becomes a row on "Your books"; the start page is free for the next one
         self.audio, self.ebook, self.outdir, self.analysis = [], None, None, None
         self.cover_pick, self.author = None, ""

@@ -198,6 +198,28 @@ def save(d):
         pass
 
 
+# Young kids and Kids go back to their standard ticks after every scan; Teens and Adults keep what was
+# changed (the owner, via CleanView 1.18.134: "if someone scan an adult movie and had it on kids and
+# unchecked something it stays unticked for kids movie next time", "can we make it so teen and adult
+# remember their ticks, but after every scan kids and young kids go back to defaault")
+FRESH_AGES = ("young", "kids")
+
+
+def fresh_young_ages(panel=None):
+    """After a scan has taken its own copy of the ticks: Young kids and Kids back to their standard
+    ticks (saved), and the start page's boxes too when one of them is chosen."""
+    d = load()
+    for p in FRESH_AGES:
+        d["ticks"].pop(p, None)
+    save(d)
+    if panel is not None:
+        try:
+            panel.fresh(d)
+        except Exception:
+            pass
+    return d
+
+
 def ticks(d=None, profile=None):
     """The ticks for one age: its saved ones over its standard ones."""
     d = d or load()
@@ -548,8 +570,8 @@ class FilterPanel:
         look.Segmented(row, PROFILES, self.profile, command=self._profile_changed).pack(side="left")
         self.std = look.link(row, "Reset to standard", self.standard, size=9)
         self.std.pack(side="right", padx=(0, X(10)))
-        tk.Label(parent, text="Each age remembers its own choices. CleanListen and CleanRead share "
-                 "them.", bg=bg, fg=MUTED, font=(FONT, 9), wraplength=X(wrap),
+        tk.Label(parent, text="Teens and Adults remember your changes; Young kids and Kids go back to "
+                 "their standard ticks after each scan. CleanListen and CleanRead share them.", bg=bg, fg=MUTED, font=(FONT, 9), wraplength=X(wrap),
                  justify="left").pack(anchor="w", pady=(X(8), 0))
         self.wrap = wrap
         self.body = tk.Frame(parent, bg=bg)
@@ -592,6 +614,13 @@ class FilterPanel:
         save(self.d)
         self._build()
         self.on_change()
+
+    def fresh(self, d):
+        """The saved settings changed under it (Young kids and Kids back to standard after a scan):
+        keep them, and show them when one of those ages is chosen."""
+        self.d = d
+        if d["profile"] in FRESH_AGES and getattr(self, "body", None) is not None and self.body.winfo_exists():
+            self._build()
 
     def standard(self):
         std = PRESETS[self.d["profile"]]
