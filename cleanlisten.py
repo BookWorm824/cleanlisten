@@ -4706,6 +4706,10 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     # last of all: the hard-rule words (fart, condom, semen) whatever the AI, Claude or learning said
     apply_hard_rule(st, asr)
     apply_explicit_findings(st, asr)     # explicit coroner findings stay cut (2026-11-13)
+    try:
+        st["heads_up"] = listen_heads_up(st)
+    except Exception:
+        st["heads_up"] = []
     write_safely(work / "analysis.json", json.dumps(st, indent=1))
     say(1.0, "Done listening.")
     return st
@@ -5822,6 +5826,89 @@ def book_title_guess(parts):
     return p.stem if len(parts) == 1 else p.parent.name
 
 
+# A heads-up when a book probably won't be enjoyable cleaned (the owner, 2026-11-18: "flag a book that more
+# then likely will not be a enjoyable book because of all the content", "if I uploaded the book twilight,
+# CleanListen would clean up the book, but the whole book is about Vampires - thats the main story line -
+# CleanListen would still give the option to continue with the save but have a heads up flag"). A kind of
+# content found all through the book (in most of its ten stretches), or taking up a good share of it, or
+# swearing on nearly every page. What an AI said is fine doesn't count; saving still works as always.
+HEADS_UP_STRETCHES = 7        # found in at least this many of the book's 10 stretches...
+HEADS_UP_SPREAD_SHARE = 0.05  # ... and taking up this much of it (a few dozen brief mentions don't),
+HEADS_UP_SHARE = 0.10         # or this much of the book wherever it is
+HEADS_UP_TOPIC_ITEMS = 30     # vampires, magic...: or found this often all through it
+HEADS_UP_WORDS_PER_HOUR = 30  # or this many words to mute in every hour of listening
+
+
+def kind_label(kind):
+    """A kind of content, as people say it ("Vampires & werewolves", "Sexual references")."""
+    labels = {"sex": "Explicit scenes", "gore": "Gory descriptions", "ref": "Sexual references",
+              "religion": "Religious content", "relationship": "Same-sex relationships",
+              "crude": "Crude humor", "bully": "Bullying", "disrespect": "Disrespect", "kiss": "Kissing",
+              "kiss_ss": "Same-sex kissing", "flirt": "Flirting",
+              **{k: v[:1].upper() + v[1:] for k, v in MORE_LABELS.items()},
+              **{tp: TOPIC_LABELS[tp] for tp in TOPICS}}
+    return labels.get(kind, (kind or "Content").capitalize())
+
+
+def heads_up(items, hours=0.0, words=0):
+    """items: [(kind, where it starts 0..1, how much of the book it is 0..1)] of what was found. The kinds
+    that run all through the book, most first: [{"kind", "label", "stretches", "count", "share", "text"}]."""
+    by = {}
+    for kind, at, size in items:
+        b = by.setdefault(kind, [set(), 0, 0.0])
+        b[0].add(min(9, max(0, int(float(at) * 10))))
+        b[1] += 1
+        b[2] += max(0.0, float(size))
+    out = []
+    for kind, (stretches, n, share) in by.items():
+        if kind in ("added", "mine", None):
+            continue
+        # vampires, magic, a holiday...: mentions more than long passages, so how often counts too
+        topic_all_through = kind in TOPICS and len(stretches) >= HEADS_UP_STRETCHES and n >= HEADS_UP_TOPIC_ITEMS
+        if (len(stretches) >= HEADS_UP_STRETCHES and share >= HEADS_UP_SPREAD_SHARE) or share >= HEADS_UP_SHARE                 or topic_all_through:
+            label = kind_label(kind)
+            out.append({"kind": kind, "label": label, "stretches": len(stretches), "count": n,
+                        "share": round(share, 3),
+                        "text": f"{label} run all through this book: found in {len(stretches)} of its 10 "
+                                f"parts, {n} times" + (f", about {share * 100:.0f}% of it" if share >= 0.02
+                                                         else "") + "."})
+    out.sort(key=lambda h: (-h["stretches"], -h["share"]))
+    if hours >= 0.5 and words / hours >= HEADS_UP_WORDS_PER_HOUR:
+        out.append({"kind": "words", "label": "Bad language", "stretches": 10, "count": words, "share": 0.0,
+                    "text": f"Bad language all through this book: about {words / hours:.0f} words to mute "
+                            "in every hour."})
+    return out
+
+
+HEADS_UP_SO = ("Cleaning can take it out, but when it's the main story, what's left may be hard to follow "
+               "or enjoy. You can still clean and save it.")
+
+
+def listen_heads_up(st):
+    """The heads-up for a scanned audiobook (its scenes by where they are in the whole book)."""
+    parts = list(st.get("parts") or [])
+    total = float(st.get("duration") or 0)
+    durs = []
+    for p in parts:
+        try:
+            durs.append(probe_duration(p) if Path(p).exists() else 0.0)
+        except Exception:
+            durs.append(0.0)
+    if parts and (not all(durs) or abs(sum(durs) - total) > max(60.0, total * 0.05)):
+        durs = [total / len(parts)] * len(parts)
+    start = [sum(durs[:k]) for k in range(len(durs))]
+    total = total or sum(durs) or 1.0
+    items = []
+    for s in st.get("scenes") or []:
+        if s.get("claude_verdict") == "keep" or not s.get("cut", True):
+            continue                          # only what's ticked to come out (not an AI's suggestion)
+        k = int(s.get("part") or 0)
+        at = (start[k] if k < len(start) else 0.0) + float(s.get("s") or 0)
+        items.append((s.get("kind"), at / total, max(0.0, float(s.get("e", 0)) - float(s.get("s", 0))) / total))
+    words = sum(1 for m in st.get("mutes") or [] if m.get("on", True))
+    return heads_up(items, hours=total / 3600, words=words)
+
+
 # What the report counts, by kind, for a content warning (the owner, 2026-11-17: "I also want the reports
 # laid out for easy view of how many profanity words removed, crude words etc, so that when I post content
 # warning I have exact amounts")
@@ -6110,6 +6197,9 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     if lang != "en":
         head.append(f"Cleaned as a {cvlang.name(lang)} audiobook, with the {cvlang.name(lang)} "
                     "word lists.")
+    hu = st.get("heads_up") or []
+    if hu:
+        head += ["", "Heads up", "--------"] + [f"  {h['text']}" for h in hu] + [f"  {HEADS_UP_SO}"]
     head += [""] + report_counts(st["mutes"], cuts) + ["", "Everything, in order", "--------------------"]
     # with the cleaned M4B (the owner, 2026-11-17: "cleanlisten reports need to be put with the cleaned
     # m4b"), else with the Yoto files, else in the clean folder

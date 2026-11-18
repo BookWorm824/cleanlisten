@@ -395,7 +395,7 @@ class App(tk.Tk):
             return ai
         if n == 3:
             card = getattr(self, "filter_card", None)
-            return dict(F.PROFILES).get(card.profile.get(), "") if card else ""
+            return F.profile_name(card.profile.get()) if card else ""
         if n == 4:
             return ai
         if self.outdir:
@@ -1158,6 +1158,18 @@ class App(tk.Tk):
                "Everything ticked below will be taken out. Untick anything you want to keep: "
                "CleanRead remembers it next time.")
         p = self._new_page("Review before saving", sub, name=a.get("title", ""))
+        # a heads-up when content runs all through the book; saving still works (the owner, 2026-11-18)
+        hu = a.get("heads_up") or []
+        if hu:
+            box = tk.Frame(p, bg=YELLOW, padx=12, pady=8)
+            box.pack(fill="x", pady=(0, 8))
+            tk.Label(box, text="\u26a0 Heads up: this book may not be enjoyable once it's cleaned", bg=YELLOW,
+                     fg=YELLOW_INK, font=(FONT, 11, "bold"), anchor="w").pack(anchor="w")
+            for h in hu:
+                tk.Label(box, text="\u2022 " + h["text"], bg=YELLOW, fg=YELLOW_INK, font=(FONT, 10), anchor="w",
+                         justify="left", wraplength=F.wrap(700)).pack(anchor="w")
+            tk.Label(box, text=engine.E.HEADS_UP_SO, bg=YELLOW, fg=YELLOW_INK, font=(FONT, 9), anchor="w",
+                     justify="left", wraplength=F.wrap(700)).pack(anchor="w", pady=(2, 0))
         for note in (a.get("ai_note"), a.get("learn_note")):
             if note:
                 tk.Label(p, text=note, bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(740),

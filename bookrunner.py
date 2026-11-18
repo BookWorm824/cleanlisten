@@ -103,7 +103,9 @@ def found_counts(st):
                          sum(1 for s in scenes if not s.get("cut", True))),
             "claude_note": st.get("claude_note", ""),
             "claude_checked": bool(st.get("claude_checked")),
-            "claude_wanted": bool(st.get("claude_wanted") or st.get("claude_note"))}
+            "claude_wanted": bool(st.get("claude_wanted") or st.get("claude_note")),
+            # a kind of content all through the book (2026-11-18)
+            "heads_up": [h.get("text", "") for h in st.get("heads_up") or []]}
 
 
 def prepare(engine, spec, stop, say, log):
@@ -128,6 +130,10 @@ def check(engine, spec, stop, say, log):
     asr = engine.load_asr(spec["workdir"], st["parts"])
     cc.review(st, asr, progress=say, cancel=stop.is_set)
     st["claude_wanted"] = True
+    try:                    # what Claude called fine doesn't count towards the heads-up
+        st["heads_up"] = engine.listen_heads_up(st)
+    except Exception:
+        pass
     engine.write_safely(path, json.dumps(st, indent=1))
     log(st.get("claude_note", ""))
     send(done="ready", found=found_counts(st))

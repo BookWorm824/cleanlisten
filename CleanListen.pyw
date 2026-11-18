@@ -639,7 +639,7 @@ class App(tk.Tk):
                         "" if lang == "en" else " \u00b7 " + engine.cvlang.name(lang))
         if n == 2:
             card = getattr(self, "filter_card", None)
-            return dict(F.PROFILES).get(card.profile.get(), "") if card else ""
+            return F.profile_name(card.profile.get()) if card else ""
         if n == 3:
             ai = getattr(self, "ai_var", None) is not None and self.ai_var.get()
             final = getattr(self, "claude_var", None) is not None and self.claude_var.get()
@@ -1748,7 +1748,7 @@ class App(tk.Tk):
         self._phone_book = dict(
             title=a.get("title") or book_title(a.get("parts", [])),
             author=getattr(self, "author", "") or "",
-            profile=dict(F.PROFILES).get(opts.get("profile"), ""),
+            profile=F.profile_name(opts.get("profile")),
             summary=F.summary(opts) if F.anything_on(opts) else "",
             made_by=f"CleanListen {app_version()}")
         w = self._phone_win = tk.Toplevel(self)
@@ -2373,7 +2373,7 @@ class App(tk.Tk):
                 "cover": getattr(self, "cover_pick", None) or self._online_file(),
                 "author": self.author or None, **self._places_for_job(),
                 "opts": dict(self.saved_opts), "summary": F.summary(ticks, mywords),
-                "profile": dict(F.PROFILES).get(self.saved_opts.get("profile"), ""),
+                "profile": F.profile_name(self.saved_opts.get("profile")),
                 "heard": heard, "length": dur}
         try:
             self.books.add(spec)
@@ -2547,6 +2547,8 @@ class App(tk.Tk):
             w, n = f.get("words", 0), f.get("passages", 0)
             said = (f"Ready to review · {w} word{'s' if w != 1 else ''} to mute, "
                     f"{n} passage{'s' if n != 1 else ''} to cut")
+            if f.get("heads_up"):        # a kind of content all through the book (2026-11-18)
+                said += "\n⚠ Heads up: " + f["heads_up"][0]
             if f.get("check_failed"):
                 said += f"\n{self._provider()} couldn't check it. Press More to see why."
             elif self._not_checked(job):
@@ -2904,7 +2906,7 @@ class App(tk.Tk):
                     "cover": getattr(self, "cover_pick", None),
                     "author": getattr(self, "author", "") or None, **self._places_for_job(),
                     "summary": F.summary(opts) if F.anything_on(opts) else "",
-                    "profile": dict(F.PROFILES).get(opts.get("profile"), ""),
+                    "profile": F.profile_name(opts.get("profile")),
                     "length": a.get("duration", 0), "task": "save"}
             job = self.books.add_ready(spec)
             self.review_key = job["key"]
@@ -3002,6 +3004,24 @@ class App(tk.Tk):
                 p, text="✓ " + note, bg=TINT, fg=ACCENT_DK, font=(FONT, 10), padx=10, pady=6,
                 anchor="w"))
             self.updated_note.pack(fill="x", pady=(0, 8))
+        # a heads-up when content runs all through the book (the owner, 2026-11-18: "have a heads up
+        # flag", "would still give the option to continue with the save")
+        hu = a.get("heads_up")
+        if hu is None:
+            try:
+                hu = a["heads_up"] = engine.listen_heads_up(a)
+            except Exception:
+                hu = []
+        if hu:
+            box = tk.Frame(p, bg=YELLOW, padx=12, pady=8)
+            box.pack(fill="x", pady=(0, 8))
+            tk.Label(box, text="⚠ Heads up: this book may not be enjoyable once it's cleaned", bg=YELLOW,
+                     fg=YELLOW_INK, font=(FONT, 11, "bold"), anchor="w").pack(anchor="w")
+            for h in hu:
+                tk.Label(box, text="• " + h["text"], bg=YELLOW, fg=YELLOW_INK, font=(FONT, 10),
+                         anchor="w", justify="left", wraplength=F.wrap(700)).pack(anchor="w")
+            tk.Label(box, text=engine.HEADS_UP_SO, bg=YELLOW, fg=YELLOW_INK, font=(FONT, 9), anchor="w",
+                     justify="left", wraplength=F.wrap(700)).pack(anchor="w", pady=(2, 0))
         # what the checks said, folded to one line ("More" shows all of it)
         unchecked = (not a.get("claude_checked") and self._cc() is not None
                      and bool(a.get("claude_wanted") or a.get("claude_note")

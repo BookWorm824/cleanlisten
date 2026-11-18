@@ -3429,7 +3429,32 @@ def analyze(book, opts, progress=None, cancel=None):
     learn_note = f"Left {known} thing(s) unticked that were kept before." if known else ""
     say(1.0, "Done")
     return {"cuts": cuts, "mutes": mutes, "ai_note": ai_note, "learn_note": learn_note,
-            "title": book.title, "opts": opts}
+            "title": book.title, "opts": opts, "heads_up": read_heads_up(book, cuts, mutes)}
+
+
+WORDS_PER_HOUR = 9000          # reading at about 150 words a minute
+
+
+def read_heads_up(book, cuts, mutes):
+    """A heads-up when a kind of content runs all through the book (the owner, 2026-11-18: "flag a book
+    that more then likely will not be a enjoyable book because of all the content"): CleanListen's rule
+    (heads_up), by where each passage is among the book's paragraphs and how many of its words it has."""
+    try:
+        n_paras = max(1, len(book.paras))
+        total = max(1, len(book.wn))
+        items = []
+        for c in cuts:
+            if not c.get("cut"):
+                continue                      # only what's ticked to come out (not an AI's suggestion)
+            ps = c.get("paras") or ([c["para"]] if "para" in c else [])
+            if not ps:
+                continue
+            size = len((c.get("raw") or c.get("text") or "").split())
+            items.append((c.get("kind"), min(ps) / n_paras, size / total))
+        words = sum(1 for m in mutes if m.get("on", True))
+        return E.heads_up(items, hours=total / WORDS_PER_HOUR, words=words)
+    except Exception:
+        return []
 
 
 def _mute(book, q, a, b, cat, doubt=""):

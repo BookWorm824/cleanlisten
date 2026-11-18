@@ -132,7 +132,9 @@ def load():
         except Exception:
             pass
     d.setdefault("profile", "adults")
-    if d["profile"] not in PRESETS:
+    d.setdefault("names", {})
+    d["custom"] = [c for c in d.get("custom") or [] if isinstance(c, dict) and c.get("id") and c.get("name")]
+    if d["profile"] not in PRESETS and d["profile"] not in {c["id"] for c in d["custom"]}:
         d["profile"] = "adults"
     d.setdefault("ticks", {})
     d["mywords"] = [str(w) for w in d.get("mywords") or [] if str(w).strip()]
@@ -224,7 +226,55 @@ def ticks(d=None, profile=None):
     """The ticks for one age: its saved ones over its standard ones."""
     d = d or load()
     profile = profile or d["profile"]
-    return dict(PRESETS[profile], **_upgrade(d["ticks"].get(profile, {})))
+    return dict(standard_of(d, profile), **_upgrade(d["ticks"].get(profile, {})))
+
+
+# Your own names and presets (the owner, 2026-11-18: "have it where user can change the name, and add new
+# filter presets that they can save", "I may want to change the kids to my youngest nieces name, and teen to
+# my oldest niece name - so if I'm cleaning a book for their age bracket, I can personalize the filters
+# easily"). An age keeps its rules when it's renamed (Young kids and Kids still go back to standard after
+# each scan); a preset you save keeps its own ticks, and its "standard" is what it was saved with.
+def profiles(d=None):
+    """[(key, name)]: the four ages (by your names for them), then your own presets."""
+    d = d or load()
+    names = d.get("names") or {}
+    return ([(k, (names.get(k) or label).strip() or label) for k, label in PROFILES] +
+            [(c["id"], c["name"]) for c in d.get("custom") or []])
+
+
+def profile_name(key, d=None):
+    """The name shown for an age or a preset ("Kids", "Lily", "Grandma's car")."""
+    return dict(profiles(d)).get(key, dict(PROFILES).get(key, key or ""))
+
+
+def standard_of(d, key):
+    """An age's standard ticks, or a saved preset's (what it was saved with)."""
+    if key in PRESETS:
+        return dict(PRESETS[key])
+    for c in d.get("custom") or []:
+        if c["id"] == key:
+            return dict(PRESETS.get(c.get("base"), PRESETS["adults"]), **_upgrade(c.get("standard") or {}))
+    return dict(PRESETS["adults"])
+
+
+def add_preset(d, name, ticks_now, base):
+    """Save ticks_now as a new preset called name; its key."""
+    n = 1
+    ids = {c["id"] for c in d.get("custom") or []}
+    while f"mine{n}" in ids:
+        n += 1
+    key = f"mine{n}"
+    d.setdefault("custom", []).append({"id": key, "name": name.strip(), "base": base if base in PRESETS
+                                       else "adults", "standard": dict(ticks_now)})
+    d["ticks"][key] = dict(ticks_now)
+    return key
+
+
+def remove_preset(d, key):
+    d["custom"] = [c for c in d.get("custom") or [] if c["id"] != key]
+    d["ticks"].pop(key, None)
+    if d.get("profile") == key:
+        d["profile"] = "adults"
 
 
 def anything_on(t):
@@ -297,7 +347,7 @@ class FilterCard:
         row.pack(fill="x")
         tk.Label(row, text="Filtering for:", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
         self.profile = tk.StringVar(value=self.d["profile"])
-        for key, label in PROFILES:
+        for key, label in profiles(self.d):
             tk.Radiobutton(row, text=label, value=key, variable=self.profile, bg=CARD,
                            activebackground=CARD, font=(FONT, 10),
                            command=self._profile_changed).pack(side="left", padx=(8, 0))
@@ -567,9 +617,14 @@ class FilterPanel:
         row = tk.Frame(parent, bg=bg)
         row.pack(fill="x")
         self.profile = tk.StringVar(value=self.d["profile"])
-        look.Segmented(row, PROFILES, self.profile, command=self._profile_changed).pack(side="left")
+        self.row = row
+        self.seg = look.Segmented(row, profiles(self.d), self.profile, command=self._profile_changed)
+        self.seg.pack(side="left")
         self.std = look.link(row, "Reset to standard", self.standard, size=9)
         self.std.pack(side="right", padx=(0, X(10)))
+        # your names for the ages, and your own presets (the owner, 2026-11-18)
+        self.names_link = look.link(row, "Names & presets\u2026", self.names_and_presets, size=9)
+        self.names_link.pack(side="right", padx=(0, X(10)))
         tk.Label(parent, text="Teens and Adults remember your changes; Young kids and Kids go back to "
                  "their standard ticks after each scan. CleanListen and CleanRead share them.", bg=bg, fg=MUTED, font=(FONT, 9), wraplength=X(wrap),
                  justify="left").pack(anchor="w", pady=(X(8), 0))
@@ -622,8 +677,25 @@ class FilterPanel:
         if d["profile"] in FRESH_AGES and getattr(self, "body", None) is not None and self.body.winfo_exists():
             self._build()
 
+    def names_and_presets(self):
+        """Rename the ages, save what's ticked as a new preset, rename or remove presets."""
+        NamesWindow(self.seg.winfo_toplevel(), self.d, self.ticks(), self._names_done)
+
+    def _names_done(self):
+        save(self.d)
+        try:
+            self.seg.destroy()
+        except Exception:
+            pass
+        self.seg = look.Segmented(self.row, profiles(self.d), self.profile, command=self._profile_changed)
+        self.seg.pack(side="left")
+        if self.profile.get() != self.d["profile"]:
+            self.profile.set(self.d["profile"])
+        self._build()
+        self.on_change()
+
     def standard(self):
-        std = PRESETS[self.d["profile"]]
+        std = standard_of(self.d, self.d["profile"])
         self._quiet = True
         for k, v in self.vars.items():
             v.set(dict(KISS_LEVELS)[std[k]] if k in LEVELS else bool(std[k]))
@@ -645,7 +717,7 @@ class FiltersWindow(tk.Toplevel):
     def __init__(self, master, d, on_done):
         super().__init__(master)
         self.d, self.on_done = d, on_done
-        name = dict(PROFILES)[d["profile"]]
+        name = profile_name(d["profile"], d)
         self.title(f"Choose filters — {name}")
         self.configure(bg=BG)
         try:
@@ -698,13 +770,118 @@ class FiltersWindow(tk.Toplevel):
         return inner
 
     def _standard(self):
-        std = PRESETS[self.d["profile"]]
+        std = standard_of(self.d, self.d["profile"])
         for k, v in self.vars.items():
             v.set(dict(KISS_LEVELS)[std[k]] if k in LEVELS else bool(std[k]))
 
     def _done(self):
         self.d["ticks"][self.d["profile"]], self.d["mywords"] = read_boxes(self.vars, self.words)
         self.d["open_sections"] = sorted(self._open)
+        self.grab_release()
+        self.destroy()
+        self.on_done()
+
+
+class NamesWindow(tk.Toplevel):
+    """Your names for the ages, and your own presets: rename one, save what's ticked now as a new preset
+    ("Lily", "Emma"), or remove a preset. on_done() runs after OK (d is changed in place)."""
+
+    def __init__(self, master, d, ticks_now, on_done):
+        super().__init__(master)
+        self.d, self.ticks_now, self.on_done = d, dict(ticks_now), on_done
+        self.title("Names & presets")
+        self.configure(bg=BG)
+        self.transient(master)
+        box = tk.Frame(self, bg=BG, padx=16, pady=12)
+        box.pack(fill="both", expand=True)
+        tk.Label(box, text="Names & presets", bg=BG, fg=INK, font=(FONT, 14, "bold")).pack(anchor="w")
+        tk.Label(box, text="Give the ages your own names (say, your nieces' names). Young kids and Kids "
+                 "still go back to their standard ticks after each scan; a preset you save keeps its "
+                 "own ticks.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=wrap(460),
+                 justify="left").pack(anchor="w", pady=(2, 8))
+        self.vars = {}
+        self.rows = tk.Frame(box, bg=BG)
+        self.rows.pack(fill="x")
+        self.removed = set()
+        self._rows()
+        add = tk.Frame(box, bg=BG)
+        add.pack(fill="x", pady=(12, 0))
+        tk.Label(add, text="Save what's ticked now as a new preset called:", bg=BG, fg=INK,
+                 font=(FONT, 10)).pack(anchor="w")
+        row = tk.Frame(add, bg=BG)
+        row.pack(fill="x", pady=(4, 0))
+        self.new_var = tk.StringVar()
+        entry = ttk.Entry(row, textvariable=self.new_var, width=28)
+        entry.pack(side="left")
+        ttk.Button(row, text="Save preset", style="Plain.TButton", command=self._add).pack(side="left",
+                                                                                         padx=(8, 0))
+        entry.bind("<Return>", lambda e: self._add())
+        self.said = tk.Label(add, text="", bg=BG, fg=MUTED, font=(FONT, 9))
+        self.said.pack(anchor="w", pady=(4, 0))
+        foot = tk.Frame(box, bg=BG)
+        foot.pack(fill="x", pady=(14, 0))
+        ttk.Button(foot, text="OK", style="Main.TButton", command=self._ok).pack(side="right")
+        ttk.Button(foot, text="Cancel", style="Plain.TButton", command=self.destroy).pack(side="right",
+                                                                                         padx=(0, 8))
+        self.grab_set()
+
+    def _rows(self):
+        for w in self.rows.winfo_children():
+            w.destroy()
+        names = self.d.get("names") or {}
+        for key, usual in PROFILES:
+            v = self.vars.get(key) or tk.StringVar(value=names.get(key) or usual)
+            self.vars[key] = v
+            row = tk.Frame(self.rows, bg=BG)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=f"{usual}:", bg=BG, fg=MUTED, font=(FONT, 10), width=12,
+                     anchor="w").pack(side="left")
+            ttk.Entry(row, textvariable=v, width=28).pack(side="left")
+            ttk.Button(row, text="Usual name", style="Plain.TButton",
+                       command=lambda v=v, usual=usual: v.set(usual)).pack(side="left", padx=(8, 0))
+        for c in self.d.get("custom") or []:
+            if c["id"] in self.removed:
+                continue
+            v = self.vars.get(c["id"]) or tk.StringVar(value=c["name"])
+            self.vars[c["id"]] = v
+            row = tk.Frame(self.rows, bg=BG)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text="Your preset:", bg=BG, fg=MUTED, font=(FONT, 10), width=12,
+                     anchor="w").pack(side="left")
+            ttk.Entry(row, textvariable=v, width=28).pack(side="left")
+            ttk.Button(row, text="Remove", style="Plain.TButton",
+                       command=lambda k=c["id"]: self._remove(k)).pack(side="left", padx=(8, 0))
+
+    def _add(self):
+        name = " ".join(self.new_var.get().split())
+        if not name:
+            return
+        if name.lower() in {n.lower() for _, n in profiles(self.d)}:
+            self.said.config(text=f"There's already one called \u201c{name}\u201d.")
+            return
+        key = add_preset(self.d, name, self.ticks_now, self.d.get("profile"))
+        self.d["profile"] = key
+        self.new_var.set("")
+        self.said.config(text=f"Saved \u201c{name}\u201d with what's ticked now. It's chosen now.")
+        self._rows()
+
+    def _remove(self, key):
+        self.removed.add(key)
+        self._rows()
+
+    def _ok(self):
+        names = {}
+        for key, usual in PROFILES:
+            v = " ".join(self.vars[key].get().split())
+            if v and v != usual:
+                names[key] = v
+        self.d["names"] = names
+        for c in self.d.get("custom") or []:
+            v = self.vars.get(c["id"])
+            if v is not None and " ".join(v.get().split()):
+                c["name"] = " ".join(v.get().split())
+        for key in self.removed:
+            remove_preset(self.d, key)
         self.grab_release()
         self.destroy()
         self.on_done()
