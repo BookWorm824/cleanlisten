@@ -729,7 +729,9 @@ OLD_BOOK_LEFT = {"boner", "boners",
                  # beginning" (a drinking party: The Prince and the Pauper)
                  "ejaculate", "ejaculated", "ejaculates", "ejaculating", "ejaculation", "ejaculations",
                  "boff", "boffs", "boffed", "boffing", "cum", "cums", "lovemaking", "trollop", "trollops",
-                 "orgy", "orgies"}
+                 "orgy", "orgies",
+                 # "the impotent man" healed (lame, powerless: older books, the Bible)
+                 "impotent", "impotence"}
 # ... and phrases: "knocked up" (woken by a knock, or worn out), a "peep-show" (a fairground box of
 # pictures), a "French letter" (a letter in French), a "glory-hole" (a lumber cupboard), "a bit of
 # crumpet" (tea), "intimate relations" (close dealings)
@@ -1119,8 +1121,10 @@ def undressed_for_bed(words, around):
 
 def SLEEPING(words, near=None):
     """Sleeping around: casual sex, affairs, cheating (and CleanView 1.18.127's researched words:
-    womanizer, philanderer, wife-swapping, a booty call...)."""
-    sp = _CASUAL(words) + E.term_spans(words, E.CASUAL_TERMS_RX)
+    womanizer, philanderer, wife-swapping, a booty call...). Not "hooked up with ATF" (teamed up)."""
+    sp = [(i, j) for i, j in _CASUAL(words)
+          if not (words[j - 2:j] == ["up", "with"] and E.hookup_teamed(words, j))]
+    sp += E.term_spans(words, E.CASUAL_TERMS_RX)
     return sp if sp and not NOT_A_COUPLE & set(words) else []
 
 

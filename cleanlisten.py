@@ -545,7 +545,7 @@ SEXUAL_PHRASES = [
     ("make", "love"), ("making", "love"), ("made", "love"), ("makes", "love"),
     ("get", "laid"), ("got", "laid"), ("getting", "laid"),
     ("one", "night", "stand"), ("one", "night", "stands"), ("hook", "up", "with"),
-    ("hooked", "up", "with"), ("hooking", "up", "with"),
+    ("hooked", "up", "with"), ("hooking", "up", "with"),   # not with ATF, the police...: HOOKUP_NOT
     # slang for touching yourself ("beat off", "whack off", "yank it" are left out: everyday too)
     ("rub", "one", "out"), ("rubbing", "one", "out"), ("rubbed", "one", "out"),
     ("spank", "the", "monkey"), ("spanking", "the", "monkey"),
@@ -1403,11 +1403,38 @@ SEX_TALK_NEXT = {"life", "lives", "appeal", "drive", "scene", "scenes", "symbol"
                  "god", "goddess", "dream", "dreams", "pot", "machine", "position", "positions"}
 
 
+# The raccoon (CleanView 1.18.133; Christy's pilot: a pet that washes everything before it eats): a raccoon
+# word within COON_REACH words, and not said at someone ("you ...", "dirty ...")
+COON_WORDS = {"raccoon", "raccoons", "racoon", "racoons", "pet", "pets", "wash", "washes", "washed", "washing",
+              "tree", "trees", "treed", "trap", "traps", "trapped", "hound", "hounds", "possum", "possums",
+              "opossum", "opossums", "skunk", "skunks", "squirrel", "squirrels", "critter", "critters", "varmint",
+              "varmints", "pelt", "pelts", "fur", "furs", "tail", "tails", "paws", "den", "cage"}
+COON_INSULT_BEFORE = {"you", "ya", "dirty", "damn", "damned", "lazy", "filthy", "stupid", "dumb", "black",
+                      "ignorant", "uppity", "little", "big"}
+COON_REACH = 30
+
+
+def coon_animal(words, i):
+    """Is "coon"/"coons" at words[i] the animal: raccoon words close by, not said at someone?"""
+    if (words[i - 1] if i else "") in COON_INSULT_BEFORE:
+        return False
+    near = words[max(0, i - COON_REACH):i] + words[i + 1:i + 1 + COON_REACH]
+    return any(w in COON_WORDS for w in near)
+
+
+# "sex" meaning boys or girls (CleanView 1.18.133, Christy: "each grade together regardless of sex")
+SEX_GENDER_BEFORE2 = {("regardless", "of"), ("irrespective", "of"), ("of", "either"), ("of", "each"),
+                      ("age", "and"), ("age", "or"), ("race", "and")}
+SEX_GENDER_AFTER2 = {("and", "age"), ("or", "age"), ("and", "race")}
+
+
 def sex_means_gender(words, i):
     """Is words[i] ("sex", "sexes") about men or women, not sex? ("the opposite sex", "my own
     sex", "both sexes"; not "her sex life".)"""
     prev = words[i - 1] if i else ""
     nxt = words[i + 1] if i + 1 < len(words) else ""
+    if tuple(words[max(0, i - 2):i]) in SEX_GENDER_BEFORE2 or tuple(words[i + 1:i + 3]) in SEX_GENDER_AFTER2:
+        return True
     if nxt in SEX_TALK_NEXT:
         return False
     if words[i] == "sexes":
@@ -1732,7 +1759,9 @@ SEXUAL_TERMS = [
     r"soft-?ons?", r"reach-?arounds?", r"s ?& ?m", r"cock and ball torture", r"cucks?",
     r"pillow princess(?:es)?", r"bit of crumpet", r"totty", r"your place or mine",
     r"good in bed", r"rogering", r"girl on top", r"mattress dancing",
-    r"bedroom (?:athletics|gymnastics|antics)", r"girls gone wild", r"baby[- ]making",
+    r"bedroom (?:athletics|gymnastics|antics)",
+    # CleanView 1.18.133 (Criminal Minds: "he's impotent"); not "impotent against it", "impotent rage"
+    r"impoten(?:t|ce|cy)(?! (?:against|rage|fury|anger|frustration|in the face|to stop|to do)\b)", r"girls gone wild", r"baby[- ]making",
     r"shaved beaver", r"beaver shots?", r"escort (?:services?|agenc(?:y|ies))",
     r"lead in (?:his|your|my) pencil", r"intimate (?:areas?|parts)",
 ]
@@ -1775,6 +1804,18 @@ TERM_NOT_NEXT = {"orgy": {"of"}, "orgies": {"of"}, "party": {"to", "in", "of", "
 TERM_NOT_BEFORE_DOWN = {"sun", "night", "darkness", "dark", "dusk", "twilight", "evening", "storm", "curtain"}
 # "Anne suddenly went down on her knees", "going down on her hands and knees" (The Railway Children)
 DOWN_ON_NOT_NEXT = {"knees", "knee", "hands", "hand", "face", "back", "side", "stomach", "belly", "all", "haunches"}
+
+
+# "hooked up with" an agency or a group is teaming up (CleanView 1.18.133, HOOKUP_NOT)
+HOOKUP_NOT_RX = re.compile(
+    r"(?:atf|fbi|cia|dea|nsa|dhs|ice|irs|nypd|lapd|interpol|homeland|the (?:atf|fbi|cia|dea|nsa|dhs|police|"
+    r"cops|team|rest|others|group|band|unit|squad|bureau|agency|department|feds|crew|lab|locals|local pd|press)|"
+    r"(?:the )?local (?:pd|police|cops)|cops|police|us later|a lawyer|an agent|an attorney)\b")
+
+
+def hookup_teamed(words, j):
+    """Do the words from j on ("... hooked up with" + these) name an agency or a group?"""
+    return bool(HOOKUP_NOT_RX.match(" ".join(words[j:j + 3])))
 
 
 def term_spans(words, rx):
@@ -1902,6 +1943,8 @@ def _find_language(words, cats, breaks=()):
                              len(ph) == 4 and ph[1:3] == ("out", "on")) and
                             nxt not in SLEEP_HER_NEXT and (i + len(ph)) not in breaks):
                         continue  # "she slept with her teddy bear", "stepped out on her porch"
+                    if cat == "sexual" and ph[-2:] == ("up", "with") and hookup_teamed(words, i + len(ph)):
+                        continue  # "Morgan hooked up with ATF" (teamed up: CleanView 1.18.133)
                     if ph[-1] == "off" and cat == "sexual" and nxt in OFF_SAFE_NEXT:
                         continue  # "the car jerked off the road"
                     if cat == "sexual" and len(ph) == 3 and ph[0] in SLEEP_FORMS and ph[1] == "with" and \
@@ -1986,6 +2029,7 @@ def _find_language(words, cats, breaks=()):
                         w in PUSSY_WORDS and pussy_cat(words, i) or
                         w in ("ass", "asses") and ass_animal(words, i) or
                         w in ("faggot", "faggots") and FAGGOT_WOOD & set(words[max(0, i - 10):i + 11]) or
+                        w in ("coon", "coons") and coon_animal(words, i) or
                         w in ("boobies", "booby") and BOOBY_BIRDS & set(words[max(0, i - 10):i + 11]) or
                         w in ("stupid",) and stupid_dazed(words, i) or
                         w in ("aroused", "arousal") and AROUSED_FEELINGS & set(words[i + 1:i + 3]) or
@@ -2092,7 +2136,13 @@ def prayer(words, i, ph):
         return True                       # "Please, dear God, let him live"
     if ph == ("my", "god") and (prev in MY_GOD_AFTER or (two, prev) in CALL_YOU):
         return True                       # "that I call You my God"
+    if ph[-2:] in (("thank", "god"), ("the", "lord")) and after[:1] == ["and"] and len(after) > 1 and \
+            after[1] in THANK_GOD_AND:
+        return True                       # "Thank God and seek faith." (Christy: CleanView 1.18.133)
     return False
+
+
+THANK_GOD_AND = {"seek", "pray", "praise", "trust", "ask", "keep", "give", "worship"}
 DICKENS_NOT_NEXT = {"novel", "book", "story", "stories", "museum", "fan"}
 FREAK_WORDS = {"freaking", "freakin"}
 
