@@ -1414,6 +1414,28 @@ COON_INSULT_BEFORE = {"you", "ya", "dirty", "damn", "damned", "lazy", "filthy", 
 COON_REACH = 30
 
 
+# A dam heard as the swear (CleanView 1.18.134; When Calls the Heart: "doing everything in my power to
+# hold the dam back"): "hold/keep the ... back", "the ... burst/broke/gave way", "a beaver ...". Speech
+# recognition writes the dam as the swear; a book spells it "dam".
+DAM_HOLD = {"hold", "holds", "held", "holding", "keep", "keeps", "kept", "keeping"}
+DAM_NEXT = {"burst", "bursts", "bursting", "broke", "breaks", "breaking", "collapsed", "overflowed",
+            "overflowing", "gave"}
+DAM_BEFORE = {"beaver", "beavers", "hoover", "hydroelectric", "concrete", "earthen"}
+
+
+def dam_water(words, i):
+    """Is the swear at words[i] a dam: "hold the ... back", "the ... burst", "a beaver ..."?"""
+    prev = words[i - 1] if i else ""
+    nxt = words[i + 1] if i + 1 < len(words) else ""
+    if prev in DAM_BEFORE:
+        return True
+    if prev not in ("the", "a", "that", "this"):
+        return False
+    if nxt == "back" and i >= 2 and words[i - 2] in DAM_HOLD:
+        return True
+    return nxt in DAM_NEXT
+
+
 def coon_animal(words, i):
     """Is "coon"/"coons" at words[i] the animal: raccoon words close by, not said at someone?"""
     if (words[i - 1] if i else "") in COON_INSULT_BEFORE:
@@ -2030,6 +2052,7 @@ def _find_language(words, cats, breaks=()):
                         w in ("ass", "asses") and ass_animal(words, i) or
                         w in ("faggot", "faggots") and FAGGOT_WOOD & set(words[max(0, i - 10):i + 11]) or
                         w in ("coon", "coons") and coon_animal(words, i) or
+                        w == "damn" and dam_water(words, i) or
                         w in ("boobies", "booby") and BOOBY_BIRDS & set(words[max(0, i - 10):i + 11]) or
                         w in ("stupid",) and stupid_dazed(words, i) or
                         w in ("aroused", "arousal") and AROUSED_FEELINGS & set(words[i + 1:i + 3]) or
@@ -2134,6 +2157,8 @@ def prayer(words, i, ph):
         return True                       # "Oh God. Help me know what to do."
     if ph in (("dear", "god"), ("dear", "lord")) and prev == "please":
         return True                       # "Please, dear God, let him live"
+    if ph in (("dear", "god"), ("dear", "lord")) and after[:1] and after[0] in DEAR_PRAYER_NEXT:
+        return True                       # "Dear Lord, please help us." (CleanView 1.18.134)
     if ph == ("my", "god") and (prev in MY_GOD_AFTER or (two, prev) in CALL_YOU):
         return True                       # "that I call You my God"
     if ph[-2:] in (("thank", "god"), ("the", "lord")) and after[:1] == ["and"] and len(after) > 1 and \
@@ -2143,6 +2168,9 @@ def prayer(words, i, ph):
 
 
 THANK_GOD_AND = {"seek", "pray", "praise", "trust", "ask", "keep", "give", "worship"}
+# "Dear Lord, please help us." said to God (When Calls the Heart: CleanView 1.18.134); "Dear God, when I
+# came here..." can't be told from an oath and stays
+DEAR_PRAYER_NEXT = {"please", "thank", "forgive", "bless", "grant", "hear", "watch", "protect", "guide"}
 DICKENS_NOT_NEXT = {"novel", "book", "story", "stories", "museum", "fan"}
 FREAK_WORDS = {"freaking", "freakin"}
 
