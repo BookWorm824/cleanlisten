@@ -3301,7 +3301,7 @@ def analyze(book, opts, progress=None, cancel=None):
     say = progress or (lambda f, m: None)
     E.use_language(getattr(book, "language", "en"))     # as the book was read
     opts = _upgrade(opts)
-    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude") if opts.get(g)
+    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
             for c in E.GROUPS[g]]
     # religion in parts, as in CleanListen (Jason): preaching, anger at God, prayers & verses
     rparts = religion_parts(opts)
@@ -3686,7 +3686,7 @@ def kinds_on(opts):
 def chat_filters(opts):
     """The ticks in the form CleanListen's Claude rules (rules_text) read."""
     opts = _upgrade(opts)
-    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude") if opts.get(g)
+    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
             for c in E.GROUPS[g]] + (["orientation"] if opts.get("samesexwords") else [])
     return {"kinds": kinds_on(opts), "cats": cats, "religion_parts": religion_parts(opts),
             "kiss": opts.get("kiss", "keep"), "kiss_ss": opts.get("kiss_ss", "keep")}

@@ -72,7 +72,7 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
-             "mine": "the family's own word",
+             "crude": "drunk (crude humor)", "mine": "the family's own word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
 
 # What the family wants, filter by filter (from Lauren's own rules for CleanListen)
@@ -245,6 +245,9 @@ CAT_RULES = {
             "up' / 'you suck' / 'this sucks' - mute the word or phrase. The same words in an "
             "everyday sense are fine ('he jerked the door open', 'shut up in the attic', "
             "'cigarette butts', 'deaf and dumb').",
+    "crude": "Drunk words (with crude humor): drunk, drunks, drunken, drunkenly, drunkenness, "
+             "drunkard - mute just the word. 'Drunk' meaning what was drunk is fine ('he had drunk his "
+             "tea', 'drunk from the well').",
     "sexual": "Sexual words: sex, sexual, sexually, sexy, horny, aroused, orgasm and crude words for "
               "body parts - mute the word every time.",
     "orientation": "Orientation words: gay, lesbian, homosexual, bisexual, queer and slurs - mute "

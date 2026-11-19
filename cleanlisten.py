@@ -1610,6 +1610,9 @@ SEXUAL_TERMS = [
     r"horizontal (?:mambo|tango|hula|jogging|dancing|bop|refreshments?)",
     r"ugandan (?:discussions|affairs)", r"discuss(?:ing)? uganda", r"(?:hot )?beef injection",
     r"poon(?:tang)?", r"poo?nann?[iy]", r"punann?[iy]", r"punaani",
+    # the owner, 2026-11-18 (CleanView 1.18.137): "little wiener when it doesn't mean a dog" (nor food:
+    # wiener_dog), and "rubbing his ball" (not a pitcher's baseball or a crystal ball: ball_game)
+    r"little (?:wiener|weiner|weenie|weeny)s?", r"(?:rub|rubs|rubbed|rubbing) (?:his|your|my|their|ur) balls?",
     r"sexual (?:intercourse|relations|congress|favou?rs?|tension|partners?|activit(?:y|ies)|releases?|"
     r"encounters?|experiences?|desires?|fantas(?:y|ies)|innuendos?|positions?|healing|prowess)",
     r"sexually (?:active|frustrated|attracted|aroused|explicit|charged|suggestive|experienced)",
@@ -1840,6 +1843,36 @@ def hookup_teamed(words, j):
     return bool(HOOKUP_NOT_RX.match(" ".join(words[j:j + 3])))
 
 
+# "little wiener" said of a dachshund or of food isn't sexual (CleanView 1.18.137)
+WIENER_DOG = {"dog", "dogs", "doggy", "doggie", "puppy", "puppies", "pup", "pups", "dachshund",
+              "dachshunds", "leash", "bark", "barks", "barking", "woof", "paws", "fetch", "pet",
+              "breed", "kennel", "vet", "collar", "tail", "hot", "sausage", "sausages",
+              "cocktail", "blanket", "blankets", "bun", "buns", "ketchup", "mustard", "grill",
+              "roast", "schnitzel", "beans", "franks", "frank", "eat", "eating", "ate"}
+# "rubbing his ball" said of a game or a thing isn't sexual (CleanView 1.18.137); "balls" always counts
+BALL_GAME = {"baseball", "pitcher", "pitch", "pitches", "pitching", "mound", "throw", "throws",
+             "throwing", "glove", "mitt", "bat", "catcher", "inning", "innings", "umpire", "ump",
+             "game", "bowling", "bowl", "bowler", "lane", "lanes", "golf", "golfer", "putt",
+             "tee", "crystal", "fortune", "football", "basketball", "soccer", "tennis",
+             "cricket", "mud", "dirt", "seams", "lucky", "kick", "team", "coach", "field",
+             "court", "shot", "spin", "magic", "genie", "lamp"}
+
+
+def _near8(words, i, j):
+    return set(words[max(0, i - 8):i] + words[j:j + 8])
+
+
+def wiener_dog(words, i, j):
+    """Is this "little wiener" (words[i:j]) a dog or food (dog or food words within 8 words)?"""
+    return words[i] == "little" and j > i + 1 and words[i + 1].startswith("w") and \
+        bool(WIENER_DOG & _near8(words, i, j))
+
+
+def ball_game(words, i, j):
+    """Is this "rubbing his ball" (one ball) a game's ball or a thing (game words within 8 words)?"""
+    return words[i].startswith("rub") and words[j - 1] == "ball" and bool(BALL_GAME & _near8(words, i, j))
+
+
 def term_spans(words, rx):
     """(i, j) word spans of the words that a term list's pattern finds (the words joined by spaces)."""
     if not words:
@@ -1861,6 +1894,8 @@ def term_spans(words, rx):
             continue
         if words[j - 1] == "off" and nxt in OFF_SAFE_NEXT:
             continue
+        if wiener_dog(words, i, j) or ball_game(words, i, j):
+            continue
         if words[i] in ("go", "goes", "going", "went", "gone") and words[i + 1:i + 2] == ["down"] and                 ((words[i - 1] if i else "") in TERM_NOT_BEFORE_DOWN or nxt in DOWN_ON_NOT_NEXT):
             continue
         out.append((i, j))
@@ -1871,6 +1906,59 @@ GROUPS["orientation"] = ["orientation"]
 # which CleanRead uses for that)
 KID_CATS = {"rude": _c(RUDE)}
 GROUPS["rude"] = ["rude"]
+# "drunk" on crude humor, just the word (CleanView 1.18.137; the owner, in the CleanStream chat: "add drunk
+# to crude humor"). Not what was drunk: "had drunk his tea", "drunk from the well" (drunk_drink).
+KID_CATS["crude"] = _c([r"drunk", r"drunks", r"drunken", r"drunkenly", r"drunkenness", r"drunkards?"])
+GROUPS["crude"] = ["crude"]
+DRUNK_BEFORE = {"have", "has", "had", "having", "i've", "you've", "we've", "they've", "i'd",
+                "you'd", "he'd", "she'd", "we'd", "they'd", "he's", "she's",
+                "hast", "hath", "thou'st", "thou'dst"}        # "till thou'st drunk to the Prince of Wales"
+DRUNK_NEXT = {"from", "of", "deep", "deeply"}
+# older books' "drunk with the joy of it" (Freckles), "drunk with delight": a feeling, not drink
+DRUNK_FEELING = {"joy", "delight", "happiness", "pleasure", "excitement", "success", "power", "pride",
+                 "glory", "triumph", "wonder", "beauty", "love", "hope", "relief", "sunshine", "freedom",
+                 "victory", "fear", "rage", "sleep", "fatigue", "weariness"}
+DRUNK_BY_NOT = {"time", "noon", "midnight", "morning", "evening", "night", "afternoon", "then", "now",
+                "lunch", "lunchtime", "dinner", "supper", "ten", "nine", "eleven", "twelve", "eight"}
+DRUNK_ADVERB = {"always", "then", "all", "soon", "never", "duly", "first", "quietly", "solemnly", "gladly",
+                "often", "usually", "once", "afterwards", "now"}
+DRUNK_WHAT = {"the", "a", "an", "his", "her", "my", "your", "their", "our", "it", "all", "some", "that",
+              "this", "too", "enough", "every"}
+DRUNK_PASSIVE = {"was", "were", "been", "is", "are", "be", "being"}
+DRUNK_THING = {"toast", "toasts", "health", "healths", "tea", "coffee", "cocoa", "wine", "milk", "water",
+               "cup", "cups", "glass", "glasses", "bowl", "potion", "medicine", "soup", "beer", "ale",
+               "punch", "lemonade", "cider", "draught", "dose", "drink", "drinks", "bottle", "mug"}
+
+
+def drunk_drink(words, i, breaks=()):
+    """Is this "drunk" the past of drink (what was drunk), not being drunk? breaks: indexes of words
+    that start a sentence (nothing comes after a "drunk" that ends one)."""
+    if words[i] != "drunk":
+        return False
+    before = words[i - 1] if i else ""
+    after = words[i + 1] if i + 1 < len(words) and (i + 1) not in breaks else ""
+    if after in DRUNK_NEXT:
+        return True
+    if after == "with" and DRUNK_FEELING & set(words[i + 2:i + 5]):
+        return True
+    # "the nectar drunk by the gods", "quietly drunk by the boys" (Little Women); not "drunk by noon",
+    # "drunk by the time we got there"
+    if after == "by" and (words[i + 2] if i + 2 < len(words) else "") in ("the", "all", "everyone", "everybody") \
+            and not DRUNK_BY_NOT & set(words[i + 2:i + 4]):
+        return True
+    if before in DRUNK_BEFORE:
+        # "she's drunk" alone is being drunk; "she's drunk the water" is what she drank
+        return before not in ("he's", "she's") or after in DRUNK_WHAT
+    if before in DRUNK_ADVERB and i > 1 and words[i - 2] in DRUNK_PASSIVE:
+        before, i_pass = words[i - 2], i - 2      # "which was always drunk at such times"
+    else:
+        i_pass = i - 1
+    if before in DRUNK_PASSIVE:
+        # "the toast was drunk in ginger wine" (The Railway Children), "the health of the Earl was drunk"
+        return bool(DRUNK_THING & set(words[max(0, i_pass - 5):i_pass]))
+    return False
+
+
 SEX_C = {w: _c(p) for w, p in SEX_TERMS.items()}
 
 
@@ -2060,6 +2148,7 @@ def _find_language(words, cats, breaks=()):
                         w in ("sex", "sexes") and sex_means_gender(words, i) or
                         w == "bondage" and bondage_slavery(words, i) or
                         w.startswith("stripper") and stripper_tool(words, i) or
+                        w == "drunk" and drunk_drink(words, i, breaks) or
                         w.startswith("safeword") and (words[i + 1] if i + 1 < n else "") in SAFE_WORD_NOT_NEXT or
                         w in ("jesus", "christ") and reverent(words, i)):
                     break     # "a coon dog", "Moby Dick", "summa cum laude", "the love of Christ"
@@ -3386,6 +3475,8 @@ LANGUAGE_DEFS = {
                    "('gay' meaning cheerful or bright is NOT this)",
     "rude": "a rude word kids copy such as stupid, dumb, idiot, moron, loser, jerk or butt, or "
             "'shut up' / 'you suck' said to someone",
+    "crude": "drunk, drunken, drunkenly, drunkenness or drunkard (being drunk; 'he had drunk his tea' "
+             "is NOT this)",
 }
 
 
@@ -4253,6 +4344,8 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     lang = use_language(language)       # English, or another one's word lists and listening
     parts = [str(Path(p).resolve()) for p in parts]
     cats = [c for g in groups for c in GROUPS[g]]
+    if find_crude and "crude" not in cats:      # "drunk", just the word (CleanView 1.18.137)
+        cats.append("crude")
     say = progress or (lambda f, m: None)
 
     tfile = work / lang_file("transcript.json")
