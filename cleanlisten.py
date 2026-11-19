@@ -761,6 +761,32 @@ def screw_over(words, i):
             words[i + 1] not in SCREW_OVER_NOT and not (words[i] == "screw" and screw_noun(words, i)))
 
 
+# "Screw the government." (Criminal Minds S1E9, CleanView 1.18.139; the owner: "Yes, fix both"), as
+# "screw you". Not fixing something: "screw the lid on", "screw the bulb back in"
+SCREW_THE_THINGS = [re.compile(p + r"$") for p in [
+    r"lids?", r"caps?", r"tops?", r"bulbs?", r"light", r"bolts?", r"nuts?", r"screws?",
+                       r"hinges?", r"pieces?", r"panels?", r"plates?", r"handles?", r"knobs?", r"legs?",
+                       r"base", r"shelf", r"shelves", r"hooks?", r"lens", r"nozzle", r"hose", r"filter",
+                       r"batter(y|ies)", r"covers?", r"door", r"frame", r"thing", r"lock", r"jar",
+                       r"bottle", r"pipe", r"ends?", r"back", r"two", r"other", r"wires?", r"board"]]
+SCREW_THE_NOT_NEXT = {"in", "into", "on", "onto", "back", "down", "together", "tight", "tightly", "up",
+                      "off", "out", "shut", "to"}
+
+
+def screw_the(words, i, breaks=()):
+    """"Screw the government", "screw the show": "screw the" + a word, not a thing being fixed and not
+    followed by in/on/back/tight... ("screw the courage to the sticking place")."""
+    n = len(words)
+    if words[i] != "screw" or i + 2 >= n or words[i + 1] != "the" or screw_noun(words, i):
+        return False
+    if (i + 1) in breaks or (i + 2) in breaks:
+        return False
+    w = words[i + 2]
+    if any(p.match(w) for p in SCREW_THE_THINGS):
+        return False
+    return not (i + 3 < n and (i + 3) not in breaks and words[i + 3] in SCREW_THE_NOT_NEXT)
+
+
 SCREW_SAFE_NEXT = {"in", "into", "on", "onto", "to", "back", "down", "tight", "tightly", "shut",
                    "together", "up", "through", "firmly", "securely", "loose", "around", "the",
                    "a", "an", "lid", "cap", "bolt", "hinge", "panel", "plate", "bracket"} | SCREW_FACE
@@ -2104,6 +2130,10 @@ def _find_language(words, cats, breaks=()):
             i += 2
             continue
         if "mild" in cats and screw_over(words, i):                     # "screw Max over"
+            hits.append((i, i + 3, "mild"))
+            i += 3
+            continue
+        if "mild" in cats and screw_the(words, i, breaks):              # "screw the government"
             hits.append((i, i + 3, "mild"))
             i += 3
             continue
