@@ -93,3 +93,23 @@ def test_a_person_after_the_drink_is_drunk(text):
 def test_what_was_drunk_still_left(text):
     ws = [w for w in (E.norm(t) for t in text.split()) if w]
     assert not E.find_language(ws, ["crude"]), text
+
+
+# the free classics re-check (2026-11-19): what was drunk, in older books
+@pytest.mark.parametrize("text", [
+    "the loving-cup has always been drunk at English banquets",
+    "currant wine was not meant to be drunk three tumblerfuls at a time",
+    "a most surprising number of the bottles had been drunk out",
+])
+def test_classics_what_was_drunk(text):
+    ws = [w for w in (E.norm(t) for t in text.split()) if w]
+    assert not E.find_language(ws, ["crude"]), text
+
+
+@pytest.mark.parametrize("text", [
+    "Set Diana drunk!", "They got drunk whenever they could.", "the men were lying drunk below",
+    "The wine was gone, but she was drunk.", "The beer was cold and he was drunk.",
+])
+def test_classics_still_drunk(text):
+    ws = [w for w in (E.norm(t) for t in text.split()) if w]
+    assert E.find_language(ws, ["crude"]), text

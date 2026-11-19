@@ -35,10 +35,13 @@ def test_old_book_words(tmp_path):
         "He keeps his grandson shut up, when he isn't riding.",
         "I've been sick with this cold so long, and shut up, I'm dying for some fun.",
         "the once smiling lips quite dumb", "Plumfield overrun with Toms, Dicks, and Harrys!",
-        "Shut up, said Jo.", "Sit down and shut up."], "old_women")
+        "Shut up, said Jo.", "Sit down and shut up.",
+        # The Story of the Treasure Seekers (re-check, 2026-11-19): said to someone, and not
+        "But we told her to shut up and come on.", "And the house is shut up.",
+        "They kept him shut up in the attic.", "They had to shut up the house."], "old_women")
     assert book.old_style
     an = R.analyze(book, dict(rude=True, swearing=True))
-    assert [m["word_raw"] for m in an["mutes"]] == ["Shut up", "shut up"]
+    assert [m["word_raw"] for m in an["mutes"]] == ["Shut up", "shut up", "shut up"]
 
 
 @pytest.mark.parametrize("text", ["feeling as if she had murdered some innocent thing",

@@ -1957,11 +1957,41 @@ DRUNK_WHOSE = {"of", "to"}
 DRUNK_THING = {"toast", "toasts", "health", "healths", "tea", "coffee", "cocoa", "wine", "milk", "water",
                "cup", "cups", "glass", "glasses", "bowl", "potion", "medicine", "soup", "beer", "ale",
                "punch", "lemonade", "cider", "draught", "dose", "drink", "drinks", "bottle", "mug",
-               "whisky", "whiskey", "brandy", "champagne", "nectar", "rum", "liquor", "sherry", "juice"}
+               "whisky", "whiskey", "brandy", "champagne", "nectar", "rum", "liquor", "sherry", "juice",
+               # the free classics re-check, 2026-11-19: "the loving-cup has always been drunk", "the bottles
+               # had been drunk out" (Treasure Island), "currant wine wasn't meant to be drunk" (Anne)
+               "lovingcup", "bottles", "bowls", "mugs", "tumbler", "tumblers", "cordial", "goblet", "goblets",
+               "flagon", "flagons", "potions", "draughts", "wines", "ales", "liquors", "spirits"}
+# only these may come between the drink and "was/been/be drunk" in the same clause ("the wine was not meant
+# to be drunk", "the bottles had been drunk")
+DRUNK_AUX = {"had", "has", "have", "was", "were", "is", "are", "not", "never", "always", "all", "then", "to",
+             "meant", "ought", "wasn't", "weren't", "isn't", "hadn't", "must", "should", "would", "could",
+             "might", "may", "will", "can", "be", "been", "soon", "already", "quickly", "slowly"}
 # a person in the sentence means someone is drunk, not the drink (CleanView 1.18.140): "the guy who drank
 # the whiskey was drunk", "the beer was cold and he was drunk"
 DRUNK_SOMEONE = {"he", "she", "they", "i", "we", "you", "who", "drank", "drinking", "guy", "man", "woman",
                  "girl", "boy", "everyone", "everybody", "someone", "somebody"}
+
+
+SAID_VERBS = {"said", "says", "cried", "exploded", "shouted", "muttered", "growled", "snapped", "yelled", "roared",
+              "exclaimed", "grumbled", "screamed", "howled", "sputtered", "fumed", "stormed", "hissed"}
+
+
+def darn_oath(words, i, breaks=()):
+    """"Darn her," exploded Davy (Anne of the Island): "darn her/him/it" with nothing darned after it is the
+    oath, not "darn her stockings"."""
+    if words[i] not in ("darn", "dern", "durn"):
+        return False
+    k = i + 2
+    return k >= len(words) or k in breaks or words[k] in SAID_VERBS
+
+
+def hen_sound(words, i):
+    """A hen's "Cuck-cuck-cuck-cur-r-r!" (The Tale of Jemima Puddle-Duck): "cuck" next to another "cuck",
+    or next to a clucking sound, is the noise, not the slang."""
+    near = set(words[max(0, i - 2):i] + words[i + 1:i + 3])
+    return bool(near & {"cuck", "cucks", "cur", "k", "cluck", "clucked", "clucking", "cackle", "cackled",
+                        "cock-a-doodle-doo", "doodle", "doo", "hen", "hens", "chicken", "chickens"})
 
 
 def drunk_drink(words, i, breaks=()):
@@ -1998,7 +2028,8 @@ def drunk_drink(words, i, breaks=()):
         # between the drink and "was": not "the beer was cold, and he was drunk", "the owner of the wine
         # shop was drunk" (CleanView 1.18.142, DRUNK_WHOSE)
         between = subject[things[-1] + 1:]          # "the first toast, which was always drunk" too
-        return not between or between[0] in DRUNK_WHOSE or between in (["which"], ["that"])
+        return (not between or between[0] in DRUNK_WHOSE or between in (["which"], ["that"])
+                or all(w in DRUNK_AUX for w in between))
     return False
 
 
@@ -2126,7 +2157,7 @@ def _find_language(words, cats, breaks=()):
             hits.append((i, i + len(found[0]), found[1]))
             i += len(found[0])
             continue
-        if i in terms:                                                  # CleanView 1.18.127's research
+        if i in terms and not (words[i] in ("cuck", "cucks") and hen_sound(words, i)):   # a hen's "cuck-cuck"
             hits.append((i, terms[i], "sexual"))
             i = terms[i]
             continue
@@ -2179,7 +2210,8 @@ def _find_language(words, cats, breaks=()):
                     break     # "you're freaking me out", "she's freaking out"
                 if ((words[i + 1] if i + 1 < n else "") in INNOCENT_NEXT.get(w, ()) and
                         not fool_called(w, words[i - 1] if i else "", words[i + 1] if i + 1 < n else "") and
-                        not dumb_called(w, words[i - 1] if i else "") or
+                        not dumb_called(w, words[i - 1] if i else "") and
+                        not darn_oath(words, i, breaks) or
                         (words[i - 1] if i else "") in INNOCENT_PREV.get(w, ()) or
                         w == "dumb" and words[max(0, i - 2):i] == ["deaf", "and"] or
                         w in ("jerk", "jerks") and jerk_motion(words, i) or

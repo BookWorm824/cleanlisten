@@ -510,6 +510,12 @@ class Book:
         q, a, _ = self.words[i]
         between = self.paras[q].text[self.words[i - 1][2]:a]
         prev = self.wn[i - 1]
+        # "told her to shut up", "we made him shut up, because..." (The Treasure Seekers), with nothing shut
+        # after it: not "the house is shut up", "to shut up the house", "kept him shut up in the attic"
+        if prev in ("to", "him", "her", "them", "me", "us"):
+            k = i + 2
+            return k >= len(self.wn) or k in self.breaks or self.wn[k] in (
+                "and", "but", "or", "so", "for", "because", "till", "until", "now", "then", "please")
         if prev == "and":       # "sit down and shut up", not "sick with this cold so long, and shut up"
             return i >= 2 and self.wn[i - 2] in ("down", "sit", "here", "listen", "quiet", "still", "back", "go",
                                                   "come", "now", "in", "out")

@@ -21,12 +21,17 @@ def found(text, cats):
     "There's near a hundred rooms in it, nearly all shut up and with their doors locked.",
     "the garden which was shut up", "since it was shut up ten year'", "that poor lad lyin' shut up",
     "most of them's shut up and locked",
+    "And the house is shut up.", "They had to shut up the house.", "They kept him shut up in the attic.",
 ])
 def test_shut_up_meaning_closed(text):
     assert "shut up" not in found(text, CATS), text
 
 
-@pytest.mark.parametrize("text", ["Shut up, said Peter.", "You shut up!", "Oh, shut up and listen."])
+@pytest.mark.parametrize("text", ["Shut up, said Peter.", "You shut up!", "Oh, shut up and listen.",
+                                  # The Story of the Treasure Seekers (re-check, 2026-11-19)
+                                  "But we told her to shut up and come on, and she did.",
+                                  "So Oswald thumped her on the back and told her to shut up.",
+                                  "we made him shut up, because we knew well enough"])
 def test_shut_up_said_to_someone_still_found(text):
     assert "shut up" in found(text, CATS), text
 
