@@ -1386,7 +1386,9 @@ _DRUGS = Matcher(
              "high as a kite", "high on drugs|pot|weed|cocaine|heroin|meth|crack|ecstasy|glue|something",
              "smoked|smoking|smoke|smokes pot|weed",
              "smoked|smoking|smoke|smokes a joint",
-             "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line"])
+             "did|doing|do|take|took|taking|takes drugs", "on drugs", "snorted|snorting a line",
+             # cocaine (the owner, 2026-11-18: "also add \"booger sugar\"")
+             "booger sugar"])
 _SHOOT_UP = Phrases(["shot|shooting|shoot|shoots up"])
 SHOOT_UP_NEAR = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", "dope", "smack",
                  "meth", "cocaine", "speedball", "drugs", "drug", "needle", "needles", "syringe",

@@ -21,3 +21,8 @@ def test_not_drugs():
     assert not R.DRUGS(words("The doctor prescribed Percocet for her back."))
     assert not R.DRUGS(words("She took two Percocets after the surgery."))
     assert R.DRUGS(words("He bought Percocet off a guy at the gas station."))
+
+
+def test_booger_sugar():
+    # the owner, 2026-11-18: "also add \"booger sugar\""
+    assert R.DRUGS(words("He did a little booger sugar before the show."))
