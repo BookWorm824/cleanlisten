@@ -52,6 +52,9 @@ def test_what_was_drunk_left(text):
 @pytest.mark.parametrize("text", [
     "He was drunk by noon.", "They were drunk by the time we got there.", "He was always drunk.",
     "They got drunk with their friends.",
+    # CleanView 1.18.140: a person in the sentence means someone is drunk
+    "The beer was cold and he was drunk.", "The guy who drank the whiskey was drunk.",
+    "The wine was gone, but she was drunk.",
 ])
 def test_still_being_drunk(text):
     assert found(text, ["crude"]) == ["drunk"], text
@@ -65,3 +68,8 @@ def test_drunk_ending_a_sentence_in_a_book():
 def test_crude_humor_ticked_brings_the_drunk_words():
     assert "crude" in R.chat_filters({"crude": True})["cats"]
     assert "crude" not in R.chat_filters({"crude": False})["cats"]
+
+
+def test_drink_in_the_last_sentence_does_not_count():
+    ws = [w for w in (E.norm(t) for t in "We had tea. He was drunk.".split()) if w]
+    assert E.find_language(ws, ["crude"], breaks={3}) == [(5, 6, "crude")]

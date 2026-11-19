@@ -1953,7 +1953,12 @@ DRUNK_WHAT = {"the", "a", "an", "his", "her", "my", "your", "their", "our", "it"
 DRUNK_PASSIVE = {"was", "were", "been", "is", "are", "be", "being"}
 DRUNK_THING = {"toast", "toasts", "health", "healths", "tea", "coffee", "cocoa", "wine", "milk", "water",
                "cup", "cups", "glass", "glasses", "bowl", "potion", "medicine", "soup", "beer", "ale",
-               "punch", "lemonade", "cider", "draught", "dose", "drink", "drinks", "bottle", "mug"}
+               "punch", "lemonade", "cider", "draught", "dose", "drink", "drinks", "bottle", "mug",
+               "whisky", "whiskey", "brandy", "champagne", "nectar", "rum", "liquor", "sherry", "juice"}
+# a person in the sentence means someone is drunk, not the drink (CleanView 1.18.140): "the guy who drank
+# the whiskey was drunk", "the beer was cold and he was drunk"
+DRUNK_SOMEONE = {"he", "she", "they", "i", "we", "you", "who", "drank", "drinking", "guy", "man", "woman",
+                 "girl", "boy", "everyone", "everybody", "someone", "somebody"}
 
 
 def drunk_drink(words, i, breaks=()):
@@ -1981,7 +1986,13 @@ def drunk_drink(words, i, breaks=()):
         i_pass = i - 1
     if before in DRUNK_PASSIVE:
         # "the toast was drunk in ginger wine" (The Railway Children), "the health of the Earl was drunk"
-        return bool(DRUNK_THING & set(words[max(0, i_pass - 5):i_pass]))
+        start = max([max(0, i_pass - 5)] + [b for b in breaks if b <= i_pass])     # this sentence only
+        subject = words[start:i_pass]
+        things = [k for k, w in enumerate(subject) if w in DRUNK_THING]
+        if not things or DRUNK_SOMEONE & set(subject):
+            return False
+        # "...the beer was cold, and he was drunk": a new part after the drink ("and the toast" is fine)
+        return not {"and", "but"} & set(subject[things[-1] + 1:])
     return False
 
 
