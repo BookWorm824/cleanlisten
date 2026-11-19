@@ -26,3 +26,20 @@ def test_not_drugs():
 def test_booger_sugar():
     # the owner, 2026-11-18: "also add \"booger sugar\""
     assert R.DRUGS(words("He did a little booger sugar before the show."))
+
+
+# CleanView 1.18.137: the drug slang she chose ("group 1 only"), with its guards
+@pytest.mark.parametrize("text", ["He was a total pothead.", "They passed the spliff around.", "smoking kush",
+                                  "She had track marks up her arm.", "he was strung out on pills",
+                                  "jonesing for a fix", "a few Xanax bars", "he was selling OxyContin on the street",
+                                  "a line of nose candy", "magic mushrooms", "He was tripping balls.",
+                                  "Somebody gave her ruffies.", "a crackhead on the corner"])
+def test_drug_slang(text):
+    assert R.DRUGS(words(text)), text
+
+
+@pytest.mark.parametrize("text", ["The wagon left track marks in the mud.", "the Hindu Kush mountains",
+                                  "the riders were strung out along the road", "I've been jonesing for you",
+                                  "Doc prescribed OxyContin after surgery"])
+def test_drug_slang_other_meanings(text):
+    assert not R.DRUGS(words(text)), text

@@ -1418,19 +1418,61 @@ def ecstasy_joy(words, i):
     return words[i] == "ecstasy" and not ECSTASY_DRUG_NEAR & set(words)
 
 
-# Percocet only when it's misused (the owner, 2026-11-18: "only misusing"): popping it, buying or selling it,
-# getting high, hooked on it... not a doctor's prescription or talk of a bad back. Roofies count every time.
-PERCOCET = {"percocet", "percocets", "perkaset", "perkasets"}
-PILL_MISUSE = {"pop", "pops", "popped", "popping", "buy", "buys", "bought", "buying", "sell", "sells", "sold",
-               "selling", "dealer", "dealers", "dealing", "high", "hooked", "addicted", "addict", "addicts",
-               "addiction", "score", "scored", "scoring", "stole", "steal", "stealing", "stolen", "snort", "snorted",
-               "snorting", "crushed", "crush", "overdose", "overdosed", "od", "od'd", "habit", "fix", "street",
-               "stash", "dope", "junkie", "withdrawal", "binge", "wasted", "abuse", "abusing", "misuse", "misusing"}
+# Percocet (and OxyContin, also a medicine) only when it's misused (the owner, 2026-11-18: "only misusing"):
+# popping it, buying or selling it, getting high, hooked on it... within PILL_REACH words, as CleanView
+# 1.18.137; not a doctor's prescription or talk of a bad back. Roofies count every time.
+PERCOCET = {"percocet", "percocets", "perkaset", "perkasets", "oxycontin", "oxycotton"}
+PILL_MISUSE = {"pop", "pops", "popped", "popping", "popper", "poppers", "buy", "buys", "bought", "buying", "sell",
+               "sells", "sold", "selling", "deal", "deals", "dealt", "dealer", "dealers", "dealing", "high", "hooked",
+               "addicted", "addict", "addicts", "addiction", "score", "scored", "scoring", "stole", "steal",
+               "stealing", "stolen", "snort", "snorted", "snorting", "crushed", "crush", "crushing", "overdose",
+               "overdosed", "od", "od'd", "habit", "fix", "street", "stash", "dope", "doped", "junkie", "junkies",
+               "withdrawal", "binge", "wasted", "abuse", "abused", "abusing", "misuse", "misusing", "strung", "candy",
+               "party", "recreational", "fiend"}
+PILL_REACH = 10
 
 
 def pill_misused(words, i):
-    """Is the Percocet at words[i] being misused (misuse words in the sentence)?"""
-    return bool(PILL_MISUSE & set(words))
+    """Is the Percocet / OxyContin at words[i] being misused (misuse words within PILL_REACH words)?"""
+    return bool(PILL_MISUSE & set(words[max(0, i - PILL_REACH):i] + words[i + 1:i + 1 + PILL_REACH]))
+
+
+# Drug slang the owner chose (CleanView 1.18.137; "do a search on common drug reference and slang", then
+# "group 1 only"): slang that only means drugs, not everyday words (pot, joint, rock, snow, high). Getting
+# high, high as a kite, shooting up, junkie and LSD were already in the list above.
+DRUG_SLANG = [
+    r"reefers?", r"ganja", r"spliffs?", r"bong (?:hits?|rips?)", r"kush", r"stoners?", r"pot ?heads?",
+    r"tok(?:e|es|ed|ing)", r"wake and bake", r"nose candy", r"crack ?heads?", r"coke ?heads?",
+    r"freebas(?:e|ed|es|ing)", r"lines? of (?:coke|cocaine|blow)", r"dope ?fiends?", r"oxys?", r"oxies",
+    r"oxycontin", r"oxycotton", r"percs", r"hillbilly heroin", r"black tar heroin", r"sizzurp", r"purple drank",
+    r"speedball(?:s|ing)?", r"track marks", r"crystal meth", r"meth ?heads?", r"tweakers?",
+    r"(?:xanax|xan|z) ?bars", r"xannies", r"zannies", r"ludes", r"quaaludes?", r"ruffies", r"shrooms",
+    r"magic mushrooms", r"angel dust", r"k ?holes?", r"trip(?:ping)? balls", r"strung out",
+    r"jones(?:ing|in)"]
+DRUG_SLANG_RX = E._terms_rx(DRUG_SLANG)
+# "the Hindu Kush", "strung out along the road", "jonesing for you", the wagon's track marks
+STRUNG_NOT_NEXT = {"along", "across", "over", "between", "behind", "like", "around", "in", "through", "from"}
+TRACK_MARKS_NEAR = {"arm", "arms", "vein", "veins", "needle", "needles", "heroin", "junkie", "junkies", "user",
+                    "users", "addict", "addicts", "shooting", "shoot", "inject", "injecting", "elbow", "wrist"}
+
+
+def drug_slang_innocent(words, i, j):
+    """Is this drug-slang find another meaning where it stands (CleanView's drug_slang_innocent)?"""
+    w = words[i]
+    prev = words[i - 1] if i else ""
+    nxt = words[j] if j < len(words) else ""
+    if w == "kush":
+        return prev == "hindu"
+    if words[i:j] == ["strung", "out"]:
+        return nxt in STRUNG_NOT_NEXT
+    if w.startswith("jones"):
+        return nxt == "for" and (words[j + 1] if j + 1 < len(words) else "") in {"you", "me", "him", "her",
+                                                                               "them", "us"}
+    if words[i:j] == ["track", "marks"]:      # a book's wagon tracks: only near an arm, a needle...
+        return not TRACK_MARKS_NEAR & set(words[max(0, i - 10):j + 10])
+    if w in ("oxycontin", "oxycotton"):
+        return not pill_misused(words, i)
+    return False
 
 
 def DRUGS(words, near=None):
@@ -1439,6 +1481,7 @@ def DRUGS(words, near=None):
     sp = [(i, j) for i, j in _DRUGS(words, near)
           if not (j == i + 1 and (bong_not_drug(words, i) or ecstasy_joy(words, i) or
                                   words[i] in PERCOCET and not pill_misused(words, i)))]
+    sp += [(i, j) for i, j in E.term_spans(words, DRUG_SLANG_RX) if not drug_slang_innocent(words, i, j)]
     if SHOOT_UP_NEAR & set(words):
         sp = sp + _SHOOT_UP.spans(words)
     return sp
