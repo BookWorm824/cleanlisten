@@ -451,6 +451,8 @@ DEITY_PHRASES = [
     ("good", "god", "almighty"), ("oh", "my", "lord"), ("lord", "have", "mercy"),
     ("lord", "knows"), ("god", "help", "us"), ("god", "help", "me"), ("lord", "help", "us"),
     ("lord", "help", "me"), ("god", "forbid"), ("swear", "to", "god"), ("in", "god's", "name"),
+    # "I WISH TO GOD HE'D NEVER SPOKEN TO YOU!" (Criminal Minds S1E11, CleanView 1.18.141); "pray to God" stays
+    ("wish", "to", "god"), ("wished", "to", "god"), ("hope", "to", "god"), ("hoped", "to", "god"),
     ("in", "gods", "name"), ("for", "the", "love", "of", "god"), ("christ", "on", "a", "bike"),
     ("god", "in", "heaven"), ("so", "help", "me", "god"), ("holy", "lord"),
     ("for", "the", "love", "of", "christ"), ("oh", "hallelujah"),    # not "the choir sang hallelujah"
