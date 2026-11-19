@@ -151,7 +151,7 @@ try {
     }
     $vpy = Join-Path $Venv 'Scripts\python.exe'
     & $vpy -m pip install --upgrade pip --quiet --disable-pip-version-check
-    & $vpy -m pip install --quiet --disable-pip-version-check sherpa-onnx numpy beautifulsoup4 pypdf
+    & $vpy -m pip install --quiet --disable-pip-version-check sherpa-onnx numpy beautifulsoup4 pypdf pypdfium2
     if ($LASTEXITCODE -ne 0) { Fail "Installing libraries failed. Check your internet connection and run setup again." }
     & $vpy -c "import sherpa_onnx, numpy, bs4, tkinter"
     if ($LASTEXITCODE -ne 0) { Fail "Libraries installed but won't load." }

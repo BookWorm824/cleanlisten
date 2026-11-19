@@ -1,5 +1,5 @@
 {
- "version": "1.17.73",
+ "version": "1.17.74",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -25,6 +25,7 @@
   "bookqueue.py",
   "shortcuts.py",
   "cleanread.py",
+  "pdfbook.py",
   "CleanRead.pyw",
   "cleanread.ico",
   "cleanlisten_logo.png",

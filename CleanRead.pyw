@@ -458,6 +458,11 @@ class App(tk.Tk):
         self.book_lbl = tk.Label(sp.pane(1), text="No book chosen yet", bg=BG, fg=MUTED,
                                  font=(FONT, 10), wraplength=X(560), justify="left", anchor="w")
         self.book_lbl.pack(anchor="w", pady=(X(12), 0))
+        # an old book as a PDF -> an ebook (1.17.74; the owner, 2026-11-19: "I have some old books
+        # that are pdfs but its more just like images saved in a pdf"): offered when a PDF is chosen,
+        # or on its own from the link
+        self.pdf_box = tk.Frame(sp.pane(1), bg=BG)
+        self.pdf_box.pack(fill="x", pady=(X(8), 0))
         # the language the book is written in (1.17.30, as CleanView's "Language spoken in the
         # video"; the owner, 2026-11-13: "ask clean view about the language", "update"):
         # English as always, or another one, with its own word lists
@@ -601,6 +606,7 @@ class App(tk.Tk):
         if self.book_path:
             self.book_lbl.config(text=Path(self.book_path).name, fg=INK)
             self.start_btn.config(state="normal")
+        self._pdf_note()
         # the same words as CleanView and CleanListen (Jason, 2026-11-06: "The other 2 say
         # start cleaning"); checking only makes a report, so it says that
         self.start_btn.config(text="Start checking" if self.mode.get() == "check" else "Start cleaning")
@@ -638,6 +644,8 @@ class App(tk.Tk):
             # a newly chosen book is English, or the language its own words show, so Spanish
             # left from the last book is never used on an English one by accident
             self._set_language(engine.E.guess_language(f) or "en")
+            if f.lower().endswith(".pdf") and f not in self._pdf_kinds():
+                self._check_pdf(f)
             self._refresh()
 
     def pick_out(self):
@@ -669,7 +677,7 @@ class App(tk.Tk):
         mode = self.mode.get()
         if mode == "check":
             self._save_opts()
-            self.show_working("Checking the book…", "Reading every sentence. " + (
+            self.show_working("Checking the book…", self._pdf_first() + "Reading every sentence. " + (
                 "The AI helper is on, so the check will take longer. You can leave it running."
                 if self.ai_var.get() else "This takes under a minute."))
             threading.Thread(target=self._scan_thread, args=(self.job, self.book_path, self.ai_var.get()),
@@ -686,7 +694,7 @@ class App(tk.Tk):
         self.style = STYLE[self.style_box.current()][0]
         self.marker = self.marker_var.get()
         self._save_opts()
-        self.show_working("Finding what to remove…", "Nothing is changed yet — you'll see "
+        self.show_working("Finding what to remove…", self._pdf_first() + "Nothing is changed yet — you'll see "
                           "everything first." + (" The AI helper is on, so the check will take longer."
                                                  if opts["ai"] else ""))
         threading.Thread(target=self._analyze_thread, args=(self.job, self.book_path, opts),
@@ -778,7 +786,10 @@ class App(tk.Tk):
 
     def _scan(self, job, path, use_ai):
         send = lambda msg: self._send(job, msg)   # noqa: E731
+        import pdfbook
         try:
+            if str(path).lower().endswith(".pdf"):     # pictures of pages: made an ebook first
+                path = self._as_ebook(job, path, send)
             book = self._load_book(job, path)
             res = engine.scan(book, use_ai=use_ai, progress=lambda f, m: send(("progress", f, m)),
                               cancel=lambda: self._stop_or_wait(job))
@@ -792,9 +803,9 @@ class App(tk.Tk):
                 rpath.write_text(html, encoding="utf8")
             res["report_path"] = str(rpath)
             send(("scanned", res))
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, pdfbook.Stopped):
             pass                    # cancelled: the start page is already showing
-        except engine.BookError as ex:
+        except (engine.BookError, pdfbook.ConvertError) as ex:
             send(("error", str(ex), ""))
         except Exception as ex:
             send(("error", str(ex), traceback.format_exc()))
@@ -805,14 +816,17 @@ class App(tk.Tk):
 
     def _analyze(self, job, path, opts):
         send = lambda msg: self._send(job, msg)   # noqa: E731
+        import pdfbook
         try:
+            if str(path).lower().endswith(".pdf"):     # pictures of pages: made an ebook first
+                path = self._as_ebook(job, path, send)
             book = self._load_book(job, path)
             an = engine.analyze(book, opts, progress=lambda f, m: send(("progress", f, m)),
                                 cancel=lambda: self._stop_or_wait(job))
             send(("analyzed", an))
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, pdfbook.Stopped):
             pass                    # cancelled: the start page is already showing
-        except engine.BookError as ex:
+        except (engine.BookError, pdfbook.ConvertError) as ex:
             send(("error", str(ex), ""))
         except Exception as ex:
             send(("error", str(ex), traceback.format_exc()))
@@ -868,6 +882,16 @@ class App(tk.Tk):
                 self.status.config(text=msg[2])
         elif kind == "named" and getattr(self, "name_lbl", None) and self.name_lbl.winfo_exists():
             self.name_lbl.config(text=msg[1])
+        elif kind == "pdf_kind":
+            self._pdf_kinds()[msg[1]] = msg[2]
+            if msg[1] == self.book_path:
+                self._pdf_note()
+        elif kind == "converted":           # a PDF of page pictures, now an ebook: carry on with that
+            self.book_path, self.book = msg[1]["out"], None
+            if getattr(self, "name_lbl", None) and self.name_lbl.winfo_exists():
+                self.name_lbl.config(text=msg[1]["title"])
+        elif kind == "ebook_made":
+            self.show_ebook_done(msg[1])
         elif kind == "chat_reply":
             self._chat_reply(*msg[1:])
         elif kind == "scanned":
@@ -1598,6 +1622,151 @@ class App(tk.Tk):
             an = self.analysis
             self._link(p, "Help CleanRead get better: send what you changed…",
                        lambda: self.send_marks(an, "clean")).pack(anchor="w", pady=(18, 0))
+        LOGO.put_logo(p, "cleanread.ico", BG)
+
+    # ---------- a PDF -> an ebook (1.17.74) ----------
+    def _pdf_kinds(self):
+        """{pdf path: "pictures" / "text" / None}, as pdfbook.kind found it."""
+        if not hasattr(self, "pdf_kinds"):
+            self.pdf_kinds = {}
+        return self.pdf_kinds
+
+    def _check_pdf(self, path):
+        def run():
+            try:
+                import pdfbook
+                k = pdfbook.kind(path)
+            except Exception:
+                k = None
+            self.q.put(("pdf_kind", path, k))
+        threading.Thread(target=run, daemon=True).start()
+
+    def _pdf_note(self):
+        """Under the chosen book: for a PDF, "Make an ebook"; otherwise a link to make one."""
+        box = getattr(self, "pdf_box", None)
+        if box is None or not box.winfo_exists():
+            return
+        for w in box.winfo_children():
+            w.destroy()
+        X = self._px
+        path = self.book_path
+        if path and path.lower().endswith(".pdf"):
+            pictures = self._pdf_kinds().get(path) == "pictures"
+            card = look.Card(box, fill=SOFT, edge=SOFT_EDGE, radius=14, pad=(16, 12))
+            card.pack(fill="x", padx=(0, X(4)))
+            look.Pill(card.body, "Make an ebook", lambda: self.make_ebook(path), kind="secondary", size=10,
+                      pad=(16, 8)).pack(side="right")
+            words = tk.Frame(card.body, bg=SOFT)
+            words.pack(side="left", fill="x", expand=True, padx=(0, X(12)))
+            head = ("This PDF is pictures of pages" if pictures else "Read it on a phone or e-reader")
+            sub = ("CleanRead reads the words on each page first (on this PC, a few minutes) and makes an "
+                   "ebook from them. It does that by itself when you start, or press Make an ebook."
+                   if pictures else "Make an ebook (EPUB) from this PDF: the words flow to fit the screen, "
+                   "with its chapters and cover. The PDF isn't changed.")
+            tk.Label(words, text=head, bg=SOFT, fg=INK, font=(HEAD, 10), anchor="w").pack(anchor="w")
+            tk.Label(words, text=sub, bg=SOFT, fg=MUTED, font=(FONT, 9), wraplength=X(340),
+                     justify="left", anchor="w").pack(anchor="w", pady=(X(2), 0))
+        else:
+            self._link(box, "Have an old book as a PDF? Make it an ebook…",
+                       self.pick_pdf_for_ebook).pack(anchor="w")
+
+    def _pdf_first(self):
+        """What the working page says first when the PDF has to be read from its pictures."""
+        p = self.book_path or ""
+        if p.lower().endswith(".pdf") and self._pdf_kinds().get(p) == "pictures":
+            return ("This PDF is pictures of pages, so CleanRead reads the words first and saves them as an "
+                    "ebook next to it (a few minutes). ")
+        return ""
+
+    def _as_ebook(self, job, path, send):
+        """A PDF of page pictures is read and saved as an EPUB first, and that is checked or cleaned
+        (a PDF with text is read as it always was). Returns the path to use."""
+        if not str(path).lower().endswith(".pdf"):
+            return path
+        import pdfbook
+        kinds = self._pdf_kinds()
+        if str(path) not in kinds:
+            kinds[str(path)] = pdfbook.kind(path)
+        if kinds[str(path)] != "pictures":
+            return path
+        res = pdfbook.convert(path, progress=lambda f, m: send(("progress", f, m)),
+                              cancel=lambda: self._stop_or_wait(job), language=getattr(self, "language", "en"))
+        send(("converted", res))
+        return res["out"]
+
+    def pick_pdf_for_ebook(self):
+        f = filedialog.askopenfilename(title="Choose the PDF to make into an ebook",
+                                       filetypes=[("PDF", "*.pdf"), ("All files", "*.*")])
+        if f:
+            self.book_path, self.book, self.outdir = f, None, None
+            self._set_language(engine.E.guess_language(f) or "en")
+            self.make_ebook(f)
+
+    def make_ebook(self, path=None):
+        path = path or self.book_path
+        if not path:
+            return
+        self._save_opts()
+        self.show_working("Making an ebook…", "CleanRead reads every page and saves an EPUB next to "
+                          "the PDF. Pages that are pictures are read by your PC, which takes a few "
+                          "minutes for a long book. The PDF isn't changed.")
+        threading.Thread(target=self._ebook_thread, args=(self.job, path), daemon=True).start()
+
+    def _ebook_thread(self, job, path):
+        send = lambda msg: self._send(job, msg)   # noqa: E731
+        import pdfbook
+        with freezes.awake():      # the PC doesn't go to sleep meanwhile
+            try:
+                res = pdfbook.convert(path, progress=lambda f, m: send(("progress", f, m)),
+                                      cancel=lambda: self._stop_or_wait(job),
+                                      language=getattr(self, "language", "en"))
+                send(("ebook_made", res))
+            except pdfbook.Stopped:
+                pass                # cancelled: the start page is already showing
+            except pdfbook.ConvertError as ex:
+                send(("error", str(ex), ""))
+            except Exception:
+                send(("error", "Couldn't make an ebook from this PDF. It may be damaged, or Windows "
+                      "stopped the reading. Try again, or try another copy of the book.",
+                      traceback.format_exc()))
+
+    def show_ebook_done(self, res):
+        """The new ebook: where it is, a taste of how it reads, and on to checking or cleaning it."""
+        self.book_path, self.book, self.outdir = res["out"], None, None
+        X = self._px
+        p = self._new_page("Your ebook is ready", "The PDF wasn't changed.", name=res.get("title", ""))
+        stats = tk.Frame(p, bg=BG)
+        stats.pack(fill="x", pady=(X(10), X(12)))
+        for big, small in [(str(res["pages"]), "pages"), (str(res["chapters"]), "chapters"),
+                           (str(res["read_pages"]), "read from pictures")]:
+            rc = CL.card(stats, radius=14, pad=(18, 10), width=180)
+            rc.pack(side="left", padx=(0, 12))
+            tk.Label(rc.body, text=big, bg=CARD, fg=ACCENT, font=(HEAD, 22)).pack()
+            tk.Label(rc.body, text=small, bg=CARD, fg=MUTED, font=(FONT, 10)).pack()
+        tk.Label(p, text=f"Saved as:  {os.path.normpath(res['out'])}", bg=BG, fg=INK, font=(FONT, 10),
+                 wraplength=F.wrap(740), justify="left").pack(anchor="w", pady=(0, X(8)))
+        if res.get("sample"):
+            card = look.Card(p, radius=14, pad=(20, 14))
+            card.pack(fill="x", pady=(0, X(8)))
+            first = res.get("first_chapter") or ""
+            tk.Label(card.body, text="How it reads" + (f"  ·  {first}" if first else ""), bg=CARD,
+                     fg=MUTED, font=(FONT, 9)).pack(anchor="w")
+            text = "\n\n".join(res["sample"][:2])
+            if len(text) > 650:
+                text = text[:650].rsplit(" ", 1)[0] + " …"
+            tk.Label(card.body, text=text, bg=CARD, fg=INK, font=("Georgia" if os.name == "nt" else FONT, 11),
+                     wraplength=F.wrap(700), justify="left").pack(anchor="w", pady=(X(6), 0))
+        tk.Label(p, text="Phones, Kobo, Apple Books and Google Play Books open EPUB. For a Kindle, send it "
+                 "with Amazon's Send to Kindle.", bg=BG, fg=MUTED, font=(FONT, 9), wraplength=F.wrap(740),
+                 justify="left").pack(anchor="w", pady=(0, X(12)))
+        row = tk.Frame(p, bg=BG)
+        row.pack(anchor="w")
+        ttk.Button(row, text="Check or clean it", style="Main.TButton",
+                   command=lambda: self.show_setup(step=2)).pack(side="left")
+        ttk.Button(row, text="Show in folder", style="Plain.TButton",
+                   command=lambda: show_in_folder(res["out"])).pack(side="left", padx=(14, 0))
+        ttk.Button(row, text="Back to start", style="Plain.TButton",
+                   command=self.reset).pack(side="left", padx=(10, 0))
         LOGO.put_logo(p, "cleanread.ico", BG)
 
     def reset(self):
