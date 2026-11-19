@@ -90,3 +90,8 @@ def test_still_quick():
         E.term_spans(ws, E.SEXUAL_TERMS_RX)
         E.term_spans(ws, E.CASUAL_TERMS_RX)
     assert time.perf_counter() - t < 2.0
+
+
+def test_sexual_release_criminal_minds():
+    # CleanView 1.18.136 (Criminal Minds S1E8)
+    assert "sexual release" in found("Is it the only thing that can give you a sexual release?")

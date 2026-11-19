@@ -1610,7 +1610,7 @@ SEXUAL_TERMS = [
     r"horizontal (?:mambo|tango|hula|jogging|dancing|bop|refreshments?)",
     r"ugandan (?:discussions|affairs)", r"discuss(?:ing)? uganda", r"(?:hot )?beef injection",
     r"poon(?:tang)?", r"poo?nann?[iy]", r"punann?[iy]", r"punaani",
-    r"sexual (?:intercourse|relations|congress|favou?rs?|tension|partners?|activit(?:y|ies)|"
+    r"sexual (?:intercourse|relations|congress|favou?rs?|tension|partners?|activit(?:y|ies)|releases?|"
     r"encounters?|experiences?|desires?|fantas(?:y|ies)|innuendos?|positions?|healing|prowess)",
     r"sexually (?:active|frustrated|attracted|aroused|explicit|charged|suggestive|experienced)",
     r"coitus(?: interruptus)?", r"copulat(?:e|es|ed|ing|ion)", r"fornicat(?:e|es|ed|ing|ion|or|ors)",
