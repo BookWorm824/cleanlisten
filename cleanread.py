@@ -1376,7 +1376,10 @@ HIGH_NOT_NEXT = ("enough|up|above|over|ground|school|schools|tide|noon|marks|gra
 _DRUGS = Matcher(
     words=[r"marijuana", r"cocaine", r"heroin", r"meth", r"methamphetamine", r"opioids?",
            r"overdos(e|ed|es|ing)", r"bong", r"stoned", r"ecstasy", r"lsd",
-           r"junkie", r"junkies", r"narcotics?"],
+           r"junkie", r"junkies", r"narcotics?",
+           # the owner, 2026-11-18 (via the Play chat): "out these under drugs", "perkaset", "roofie",
+           # "roofies" (Percocet, as she spelled it too, and the date-rape drug)
+           r"percocets?", r"perkasets?", r"roofies?", r"roofied", r"rohypnol"],
     phrases=["got|getting|get|gets high !" + HIGH_NOT_NEXT,
              "he|she|i|they|we|you|who|everyone|everybody was|were|is|are|am|got high !" + HIGH_NOT_NEXT,
              "he's|she's|i'm|they're|we're|you're high !" + HIGH_NOT_NEXT,
