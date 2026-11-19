@@ -1416,10 +1416,27 @@ def ecstasy_joy(words, i):
     return words[i] == "ecstasy" and not ECSTASY_DRUG_NEAR & set(words)
 
 
+# Percocet only when it's misused (the owner, 2026-11-18: "only misusing"): popping it, buying or selling it,
+# getting high, hooked on it... not a doctor's prescription or talk of a bad back. Roofies count every time.
+PERCOCET = {"percocet", "percocets", "perkaset", "perkasets"}
+PILL_MISUSE = {"pop", "pops", "popped", "popping", "buy", "buys", "bought", "buying", "sell", "sells", "sold",
+               "selling", "dealer", "dealers", "dealing", "high", "hooked", "addicted", "addict", "addicts",
+               "addiction", "score", "scored", "scoring", "stole", "steal", "stealing", "stolen", "snort", "snorted",
+               "snorting", "crushed", "crush", "overdose", "overdosed", "od", "od'd", "habit", "fix", "street",
+               "stash", "dope", "junkie", "withdrawal", "binge", "wasted", "abuse", "abusing", "misuse", "misusing"}
+
+
+def pill_misused(words, i):
+    """Is the Percocet at words[i] being misused (misuse words in the sentence)?"""
+    return bool(PILL_MISUSE & set(words))
+
+
 def DRUGS(words, near=None):
-    """Drug use by the word lists; "shooting up" only when a drug word is in the sentence."""
+    """Drug use by the word lists; "shooting up" only when a drug word is in the sentence; Percocet only
+    when it's misused."""
     sp = [(i, j) for i, j in _DRUGS(words, near)
-          if not (j == i + 1 and (bong_not_drug(words, i) or ecstasy_joy(words, i)))]
+          if not (j == i + 1 and (bong_not_drug(words, i) or ecstasy_joy(words, i) or
+                                  words[i] in PERCOCET and not pill_misused(words, i)))]
     if SHOOT_UP_NEAR & set(words):
         sp = sp + _SHOOT_UP.spans(words)
     return sp
