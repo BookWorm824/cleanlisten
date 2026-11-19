@@ -69,7 +69,15 @@ def chip(rating):
             "a lot": CHIP_LOT}[rating]
 
 
-BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt"), ("All files", "*.*")]
+BOOK_TYPES = [("Ebooks, or pictures of a book's pages", "*.epub *.pdf *.txt *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.heic"),
+              ("Ebooks", "*.epub *.pdf *.txt"), ("Pictures of pages", "*.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.heic"), ("All files", "*.*")]
+# page pictures (1.17.75; the owner, 2026-11-19: "it needs to be able to do the same with jpegs or
+# pngs...I have some old books I scanned and would like to turn them into a nice format for ereading")
+PICTURE_ENDS = (".jpg", ".jpeg", ".jfif", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".heic")
+
+
+def is_picture(path):
+    return str(path or "").lower().endswith(PICTURE_ENDS)
 
 STYLE = [("dash", "Replace with a dash  ( — )"), ("stars", "First letter and stars  (d***)"),
          ("remove", "Take the word out completely")]
@@ -449,7 +457,8 @@ class App(tk.Tk):
         words.pack(side="left", fill="x", expand=True, padx=(X(16), X(12)))
         tk.Label(words, text="Choose an ebook", bg=SOFT, fg=INK, font=(HEAD, 13),
                  anchor="w").pack(anchor="w")
-        tk.Label(words, text="EPUB, PDF or TXT \u2014 not copy-protected.", bg=SOFT, fg=MUTED,
+        tk.Label(words, text="EPUB, PDF or TXT \u2014 not copy-protected. Or pictures of a book's "
+                 "pages.", bg=SOFT, fg=MUTED,
                  font=(FONT, 9), anchor="w", wraplength=X(260), justify="left").pack(
                      anchor="w", pady=(X(2), 0))
         self.choose_btn = look.Pill(drop.body, "Choose ebook\u2026", self.pick_book, size=12,
@@ -706,6 +715,8 @@ class App(tk.Tk):
     def _book_name(self):
         if self.book is not None and str(self.book.path) == str(Path(self.book_path or "")):
             return self.book.title
+        if is_picture(self.book_path):          # pictures of pages: the folder they're in
+            return Path(self.book_path).parent.name
         return Path(self.book_path).stem if self.book_path else ""
 
     def show_working(self, title, sub=""):
@@ -788,7 +799,7 @@ class App(tk.Tk):
         send = lambda msg: self._send(job, msg)   # noqa: E731
         import pdfbook
         try:
-            if str(path).lower().endswith(".pdf"):     # pictures of pages: made an ebook first
+            if str(path).lower().endswith(".pdf") or is_picture(path):     # pictures of pages: an ebook first
                 path = self._as_ebook(job, path, send)
             book = self._load_book(job, path)
             res = engine.scan(book, use_ai=use_ai, progress=lambda f, m: send(("progress", f, m)),
@@ -818,7 +829,7 @@ class App(tk.Tk):
         send = lambda msg: self._send(job, msg)   # noqa: E731
         import pdfbook
         try:
-            if str(path).lower().endswith(".pdf"):     # pictures of pages: made an ebook first
+            if str(path).lower().endswith(".pdf") or is_picture(path):     # pictures of pages: an ebook first
                 path = self._as_ebook(job, path, send)
             book = self._load_book(job, path)
             an = engine.analyze(book, opts, progress=lambda f, m: send(("progress", f, m)),
@@ -1650,7 +1661,21 @@ class App(tk.Tk):
             w.destroy()
         X = self._px
         path = self.book_path
-        if path and path.lower().endswith(".pdf"):
+        if is_picture(path):
+            n = self._pictures_count(path)
+            card = look.Card(box, fill=SOFT, edge=SOFT_EDGE, radius=14, pad=(16, 12))
+            card.pack(fill="x", padx=(0, X(4)))
+            look.Pill(card.body, "Make an ebook", lambda: self.make_ebook(path), kind="secondary", size=10,
+                      pad=(16, 8)).pack(side="right")
+            words = tk.Frame(card.body, bg=SOFT)
+            words.pack(side="left", fill="x", expand=True, padx=(0, X(12)))
+            tk.Label(words, text=f"Pictures of a book's pages ({n} in this folder)", bg=SOFT, fg=INK,
+                     font=(HEAD, 10), anchor="w").pack(anchor="w")
+            tk.Label(words, text="CleanRead reads the words on every picture in the folder, in name order, "
+                     "and makes an ebook from them. It does that by itself when you start, or press Make "
+                     "an ebook.", bg=SOFT, fg=MUTED, font=(FONT, 9), wraplength=X(340), justify="left",
+                     anchor="w").pack(anchor="w", pady=(X(2), 0))
+        elif path and path.lower().endswith(".pdf"):
             pictures = self._pdf_kinds().get(path) == "pictures"
             card = look.Card(box, fill=SOFT, edge=SOFT_EDGE, radius=14, pad=(16, 12))
             card.pack(fill="x", padx=(0, X(4)))
@@ -1667,12 +1692,22 @@ class App(tk.Tk):
             tk.Label(words, text=sub, bg=SOFT, fg=MUTED, font=(FONT, 9), wraplength=X(340),
                      justify="left", anchor="w").pack(anchor="w", pady=(X(2), 0))
         else:
-            self._link(box, "Have an old book as a PDF? Make it an ebook…",
+            self._link(box, "Have an old book as a PDF, or as pictures of its pages? Make it an ebook\u2026",
                        self.pick_pdf_for_ebook).pack(anchor="w")
+
+    def _pictures_count(self, path):
+        try:
+            import pdfbook
+            return len(pdfbook.pictures_in(Path(path).parent))
+        except Exception:
+            return 0
 
     def _pdf_first(self):
         """What the working page says first when the PDF has to be read from its pictures."""
         p = self.book_path or ""
+        if is_picture(p):
+            return ("These are pictures of pages, so CleanRead reads the words first and saves them as an "
+                    "ebook in the same folder (a few minutes). ")
         if p.lower().endswith(".pdf") and self._pdf_kinds().get(p) == "pictures":
             return ("This PDF is pictures of pages, so CleanRead reads the words first and saves them as an "
                     "ebook next to it (a few minutes). ")
@@ -1681,9 +1716,15 @@ class App(tk.Tk):
     def _as_ebook(self, job, path, send):
         """A PDF of page pictures is read and saved as an EPUB first, and that is checked or cleaned
         (a PDF with text is read as it always was). Returns the path to use."""
+        import pdfbook
+        if is_picture(path):           # every picture in its folder, in name order
+            res = pdfbook.convert(path, progress=lambda f, m: send(("progress", f, m)),
+                                  cancel=lambda: self._stop_or_wait(job),
+                                  language=getattr(self, "language", "en"))
+            send(("converted", res))
+            return res["out"]
         if not str(path).lower().endswith(".pdf"):
             return path
-        import pdfbook
         kinds = self._pdf_kinds()
         if str(path) not in kinds:
             kinds[str(path)] = pdfbook.kind(path)
@@ -1695,21 +1736,32 @@ class App(tk.Tk):
         return res["out"]
 
     def pick_pdf_for_ebook(self):
-        f = filedialog.askopenfilename(title="Choose the PDF to make into an ebook",
-                                       filetypes=[("PDF", "*.pdf"), ("All files", "*.*")])
-        if f:
-            self.book_path, self.book, self.outdir = f, None, None
-            self._set_language(engine.E.guess_language(f) or "en")
-            self.make_ebook(f)
+        """A PDF, or pictures of the pages: one picture means every picture in its folder."""
+        fs = filedialog.askopenfilenames(
+            title="Choose the PDF, or the pictures of the pages (Ctrl+A picks them all)",
+            filetypes=[("PDF or pictures of pages", "*.pdf *.jpg *.jpeg *.png *.tif *.tiff *.bmp *.webp *.heic"), ("All files", "*.*")])
+        fs = [f for f in (fs or ()) if f.lower().endswith(".pdf") or is_picture(f)]
+        if not fs:
+            return
+        pics = [f for f in fs if is_picture(f)]
+        src = (pics if len(pics) > 1 else pics[0]) if pics else fs[0]
+        self.book_path, self.book, self.outdir = fs[0] if not pics else pics[0], None, None
+        self._set_language("en" if pics else (engine.E.guess_language(fs[0]) or "en"))
+        self.make_ebook(src)
 
     def make_ebook(self, path=None):
+        """`path`: a PDF, a picture (every picture in its folder), or a list of pictures."""
         path = path or self.book_path
         if not path:
             return
         self._save_opts()
-        self.show_working("Making an ebook…", "CleanRead reads every page and saves an EPUB next to "
-                          "the PDF. Pages that are pictures are read by your PC, which takes a few "
-                          "minutes for a long book. The PDF isn't changed.")
+        if isinstance(path, (list, tuple)) or is_picture(path):
+            sub = ("CleanRead reads the words on each picture and saves an EPUB in the same folder. It "
+                   "takes a few minutes for a long book. The pictures aren't changed.")
+        else:
+            sub = ("CleanRead reads every page and saves an EPUB next to the PDF. Pages that are pictures "
+                   "are read by your PC, which takes a few minutes for a long book. The PDF isn't changed.")
+        self.show_working("Making an ebook\u2026", sub)
         threading.Thread(target=self._ebook_thread, args=(self.job, path), daemon=True).start()
 
     def _ebook_thread(self, job, path):
@@ -1726,7 +1778,7 @@ class App(tk.Tk):
             except pdfbook.ConvertError as ex:
                 send(("error", str(ex), ""))
             except Exception:
-                send(("error", "Couldn't make an ebook from this PDF. It may be damaged, or Windows "
+                send(("error", "Couldn't make an ebook from this. A file may be damaged, or Windows "
                       "stopped the reading. Try again, or try another copy of the book.",
                       traceback.format_exc()))
 
@@ -1734,7 +1786,8 @@ class App(tk.Tk):
         """The new ebook: where it is, a taste of how it reads, and on to checking or cleaning it."""
         self.book_path, self.book, self.outdir = res["out"], None, None
         X = self._px
-        p = self._new_page("Your ebook is ready", "The PDF wasn't changed.", name=res.get("title", ""))
+        p = self._new_page("Your ebook is ready", "The PDF or pictures weren't changed.",
+                           name=res.get("title", ""))
         stats = tk.Frame(p, bg=BG)
         stats.pack(fill="x", pady=(X(10), X(12)))
         for big, small in [(str(res["pages"]), "pages"), (str(res["chapters"]), "chapters"),

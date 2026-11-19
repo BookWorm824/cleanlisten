@@ -159,27 +159,42 @@ try {
   if (-not $engine) { Out1 @{ error = 'no-language' }; exit 2 }
   Out1 @{ ready = $engine.RecognizerLanguage.LanguageTag; max = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension }
 } catch { Out1 @{ error = $_.Exception.Message }; exit 3 }
-function Bitmap($path) {
+$null = [Windows.Graphics.Imaging.BitmapTransform, Windows.Foundation, ContentType = WindowsRuntime]
+function Bitmap($path, $rot, $max) {
   $f = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($path)) ([Windows.Storage.StorageFile])
   $s = Await ($f.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
   $d = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($s)) ([Windows.Graphics.Imaging.BitmapDecoder])
-  $b = Await ($d.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+  $t = New-Object Windows.Graphics.Imaging.BitmapTransform
+  $big = [Math]::Max($d.PixelWidth, $d.PixelHeight)
+  if ([int]$max -gt 0 -and $big -gt [int]$max) {
+    $k = [int]$max / $big
+    $t.ScaledWidth = [uint32][Math]::Max(1, [Math]::Floor($d.PixelWidth * $k))
+    $t.ScaledHeight = [uint32][Math]::Max(1, [Math]::Floor($d.PixelHeight * $k))
+    $t.InterpolationMode = [Windows.Graphics.Imaging.BitmapInterpolationMode]::Fant }
+  if ([int]$rot -eq 90) { $t.Rotation = [Windows.Graphics.Imaging.BitmapRotation]::Clockwise90Degrees }
+  elseif ([int]$rot -eq 180) { $t.Rotation = [Windows.Graphics.Imaging.BitmapRotation]::Clockwise180Degrees }
+  elseif ([int]$rot -eq 270) { $t.Rotation = [Windows.Graphics.Imaging.BitmapRotation]::Clockwise270Degrees }
+  $b = Await ($d.GetSoftwareBitmapAsync([Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8,
+        [Windows.Graphics.Imaging.BitmapAlphaMode]::Ignore, $t,
+        [Windows.Graphics.Imaging.ExifOrientationMode]::RespectExifOrientation,
+        [Windows.Graphics.Imaging.ColorManagementMode]::DoNotColorManage)) ([Windows.Graphics.Imaging.SoftwareBitmap])
   $s.Dispose(); $b }
 while ($null -ne ($cmd = [Console]::In.ReadLine())) {
   if (-not $cmd) { continue }
   $part = $cmd.Split('|')
   try {
     if ($part[0] -eq 'ocr') {
-      $b = Bitmap $part[1]
+      $b = Bitmap $part[1] $part[2] $part[3]
       $r = Await ($engine.RecognizeAsync($b)) ([Windows.Media.Ocr.OcrResult])
       $lines = @()
       foreach ($l in $r.Lines) { $ws = @()
         foreach ($w in $l.Words) { $q = $w.BoundingRect; $ws += ,@($w.Text, [int]$q.X, [int]$q.Y, [int]$q.Width, [int]$q.Height) }
         $lines += ,$ws }
+      $pw = $b.PixelWidth; $ph = $b.PixelHeight
       $b.Dispose()
-      Out1 @{ lines = $lines; angle = $r.TextAngle }
+      Out1 @{ lines = $lines; angle = $r.TextAngle; w = $pw; h = $ph }
     } elseif ($part[0] -eq 'jpeg') {
-      $b = Bitmap $part[1]
+      $b = Bitmap $part[1] $part[3] $part[4]
       $folder = Split-Path -Parent $part[2]
       $null = [Windows.Storage.StorageFolder, Windows.Storage, ContentType = WindowsRuntime]
       $fo = Await ([Windows.Storage.StorageFolder]::GetFolderFromPathAsync($folder)) ([Windows.Storage.StorageFolder])
@@ -266,14 +281,17 @@ class WinOcr:
         except (OSError, ValueError):
             raise ConvertError("Windows' text reader stopped. Try again.")
 
-    def read(self, png):
-        self.ask(f"ocr|{png}")
+    def read(self, png, turn=0, max_side=0):
+        """The picture's lines of words; `turn` (0/90/180/270) turns it clockwise first, and
+        `size` is then the picture's (width, height) as read (upright, as its camera said)."""
+        self.ask(f"ocr|{png}|{turn}|{max_side or self.max_px}")
         return self.answer_lines()
 
     def answer_lines(self):
         a = self._answer()
         if a is None:
             raise ConvertError("Windows' text reader stopped. Try again.")
+        self.size = (a.get("w"), a.get("h"))
         if "fail" in a:
             return []
         lines = a.get("lines") or []
@@ -287,8 +305,8 @@ class WinOcr:
             out.append([tuple(w) for w in ln if len(w) == 5 and str(w[0]).strip()])
         return [ln for ln in out if ln]
 
-    def jpeg(self, src, dst):
-        self.ask(f"jpeg|{src}|{dst}")
+    def jpeg(self, src, dst, turn=0, max_side=0):
+        self.ask(f"jpeg|{src}|{dst}|{turn}|{max_side}")
         a = self._answer(timeout=60)
         return bool(a and a.get("done"))
 
@@ -569,6 +587,93 @@ def read_pages(path, progress=None, cancel=None, language="en", workdir=None):
             ocr.close()
         _tidy(work)
     return doc, [done[i] for i in range(n)]
+
+
+PICTURES = (".jpg", ".jpeg", ".jfif", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".heic")
+PLAIN_FOLDERS = {"downloads", "pictures", "documents", "desktop", "scans", "scanned documents", "dcim",
+                 "camera", "camera roll", "screenshots", "images", "photos", "new folder", "onedrive"}
+
+
+def is_picture(path):
+    return Path(path).suffix.lower() in PICTURES
+
+
+def _natural(path):
+    """"page2.jpg" before "page10.jpg"."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", Path(path).name)]
+
+
+def pictures_in(folder):
+    """The page pictures in a folder, in page order."""
+    return sorted((f for f in Path(folder).iterdir() if f.is_file() and is_picture(f)), key=_natural)
+
+
+def _score(lines):
+    """How much real reading a page gave (sideways print reads as specks)."""
+    return sum(len(re.findall(r"[^\W\d_]", " ".join(w[0] for w in ln))) for ln in lines
+               if not _junk(" ".join(w[0] for w in ln)))
+
+
+def read_pictures(files, progress=None, cancel=None, language="en", workdir=None):
+    """Pages from page pictures (scans or photos), each read by Windows: turned upright by what the
+    camera noted, or by trying a quarter turn when it reads as nothing (a page scanned sideways)."""
+    say = progress or (lambda f, m: None)
+    stop = cancel or (lambda: False)
+    files = [Path(f) for f in files]
+    work = Path(workdir)
+    work.mkdir(parents=True, exist_ok=True)
+    store = work / "pages.jsonl"
+    done = {}
+    if store.exists():
+        for line in store.read_text("utf8", "ignore").splitlines():
+            try:
+                d = json.loads(line)
+                done[d["i"]] = d
+            except (ValueError, KeyError):
+                pass
+    n = len(files)
+    ocr = None
+    turn = 0                    # the way the last page read best: the next ones are likely the same
+    t0, timed = time.time(), 0
+    try:
+        with open(store, "a", encoding="utf8") as out:
+            for i, f in enumerate(files):
+                if stop():
+                    raise Stopped()
+                if i in done:
+                    continue
+                if ocr is None:
+                    say(0.0, "Starting Windows' text reader\u2026")
+                    ocr = WinOcr(language, stop)
+                best = None
+                for t in [turn] + [x for x in (0, 90, 270, 180) if x != turn]:
+                    lines = ocr.read(str(f), t)
+                    got = (_score(lines), t, lines, ocr.size)
+                    # another turn wins only by a lot (a drawing read sideways gives a few letters)
+                    if best is None or got[0] > max(40, 2 * best[0]):
+                        best = got
+                    if best[0] >= 150:          # a page of print: read the right way up
+                        break
+                score, t, lines, (W, H) = best
+                if score >= 150:
+                    turn = t
+                W, H = float(W or 1000), float(H or 1400)
+                lines = [[(w[0], w[1], w[2], w[1] + w[3], w[2] + w[4]) for w in ln] for ln in lines]
+                d = {"i": i, "w": W, "h": H, "src": "ocr", "pic": True, "turn": t, "file": f.name,
+                     "rows": _page_rows(lines, W, from_lines=True)}
+                done[i] = d
+                out.write(json.dumps(d, ensure_ascii=False) + "\n")
+                out.flush()
+                timed += 1
+                left = n - i - 1
+                msg = f"Reading the words on page {i + 1} of {n}"
+                if timed >= 4 and left:
+                    msg += " \u00b7 " + _fmt_left((time.time() - t0) / timed * left)
+                say((i + 1) / n * 0.92, msg)
+    finally:
+        if ocr is not None:
+            ocr.close()
+    return [done[i] for i in range(n)]
 
 
 def _tidy(work, keep=None):
@@ -1268,7 +1373,104 @@ def out_path(pdf, folder=None):
     return (Path(folder) if folder else pdf.parent) / (pdf.stem + ".epub")
 
 
+def _picture_cover(first, page, work, ocr_open):
+    """The first picture as the cover (a JPEG, upright, not too big), unless it's a page of text."""
+    if sum(1 for r in page["rows"] if len(r["t"]) >= 25) >= 6:
+        return None, None
+    try:
+        o = ocr_open()
+        try:
+            jpg = Path(work) / "cover.jpg"
+            if o.jpeg(str(first), str(jpg), page.get("turn", 0), 1600) and jpg.exists() and jpg.stat().st_size > 1000:
+                return jpg.read_bytes(), "jpg"
+        finally:
+            o.close()
+    except Exception:
+        pass
+    if Path(first).suffix.lower() in (".jpg", ".jpeg", ".jfif"):
+        return Path(first).read_bytes(), "jpg"
+    if Path(first).suffix.lower() == ".png":
+        return Path(first).read_bytes(), "png"
+    return None, None
+
+
+def _pictures_title(files):
+    """A name for a book of page pictures: its folder's, unless that's just "Downloads" or such."""
+    folder = Path(files[0]).parent.name
+    if folder and folder.lower() not in PLAIN_FOLDERS:
+        return _clean_title("", folder + ".pdf")
+    stem = re.sub(r"[\s_.-]*(page|pg|p|scan|img|image)?[\s_.-]*\d+$", "", Path(files[0]).stem, flags=re.I)
+    return _clean_title("", (stem or "Scanned book") + ".pdf")
+
+
+def convert_pictures(files, out=None, progress=None, cancel=None, language="en"):
+    """Page pictures (in page order: see pictures_in) -> an EPUB in their folder."""
+    say = progress or (lambda f, m: None)
+    started = time.time()
+    files = [Path(f) for f in files if is_picture(f)]
+    if not files:
+        raise ConvertError("No page pictures were chosen (JPEG, PNG, TIFF...).")
+    missing = [f for f in files if not f.exists()]
+    if missing:
+        raise ConvertError(f"A picture wasn't found ({missing[0].name}). Was it moved or renamed?")
+    key = hashlib.sha1("|".join(f"{f.resolve()}|{f.stat().st_size}|{int(f.stat().st_mtime)}" for f in files)
+                       .encode("utf8") + f"|{FORMAT}".encode()).hexdigest()[:16]
+    work = WORK / key
+    try:
+        pages = read_pictures(files, say, cancel, language, work)
+    except MemoryError:
+        raise ConvertError("The computer ran out of memory. Close other programs and try again.")
+    say(0.93, "Putting the pages together into chapters\u2026")
+    if not any(p["rows"] for p in pages):
+        raise ConvertError("No words could be read in these pictures. Are they pictures of book pages, "
+                           "the right way up and in focus?")
+    cover, cover_ext = _picture_cover(files[0], pages[0], work, lambda: WinOcr(language, cancel))
+    info = {}
+    sections = build(pages, cover_page=0 if cover else None, info=info)
+    if not sections:
+        raise ConvertError("No words could be read in these pictures.")
+    page_title, page_author = _from_pages(pages, info, files[0])
+    title = page_title or _pictures_title(files)
+    safe = re.sub(r'[<>:"/\\|?*]+', "", title).strip(" .") or "Scanned book"
+    target = Path(out) if out else files[0].parent / (safe + ".epub")
+    return _finish(target, title, page_author, sections, cover, cover_ext, language, info, pages, started, say)
+
+
+def _finish(target, title, author, sections, cover, cover_ext, language, info, pages, started, say):
+    say(0.97, "Saving the ebook\u2026")
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_epub(target, title, author, sections, cover, cover_ext or "jpg", language,
+                   info.get("description", ""))
+    except OSError:
+        target = Path.home() / "Documents" / target.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_epub(target, title, author, sections, cover, cover_ext or "jpg", language,
+                   info.get("description", ""))
+    body = [s for s in sections if not s.get("front")] or sections
+    sample = [t for k, t in body[0]["paras"] if k == "p"][:3]
+    say(1.0, "Done")
+    return {"out": str(target), "title": title, "author": author, "pages": len(pages),
+            "read_pages": sum(1 for p in pages if p["src"] == "ocr"),
+            "chapters": sum(1 for s in sections if not s.get("front")),
+            "paras": sum(len(s["paras"]) for s in sections),
+            "first_chapter": body[0]["title"], "sample": sample,
+            "seconds": round(time.time() - started)}
+
+
 def convert(pdf, out=None, progress=None, cancel=None, language="en"):
+    """A PDF, page pictures (a list, or one picture: every picture in its folder), or a folder of
+    them -> an EPUB."""
+    if isinstance(pdf, (list, tuple)):
+        if len(pdf) == 1 and is_picture(pdf[0]):
+            pdf = pdf[0]
+        else:
+            return convert_pictures(pdf, out, progress, cancel, language)
+    if Path(pdf).is_dir():
+        return convert_pictures(pictures_in(pdf), out, progress, cancel, language)
+    if is_picture(pdf):
+        return convert_pictures(pictures_in(Path(pdf).parent) if Path(pdf).exists() else [pdf],
+                                out, progress, cancel, language)
     say = progress or (lambda f, m: None)
     started = time.time()
     pdf = Path(pdf)
@@ -1302,36 +1504,18 @@ def convert(pdf, out=None, progress=None, cancel=None, language="en"):
             doc.close()
         except Exception:
             pass
-    say(0.97, "Saving the ebook…")
     target = Path(out) if out else out_path(pdf)
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        write_epub(target, title, author, sections, cover, cover_ext or "jpg", language,
-                   info.get("description", ""))
-    except OSError:
-        target = Path.home() / "Documents" / target.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        write_epub(target, title, author, sections, cover, cover_ext or "jpg", language,
-                   info.get("description", ""))
-    body = [s for s in sections if not s.get("front")] or sections
-    sample = [t for k, t in body[0]["paras"] if k == "p"][:3]
-    say(1.0, "Done")
-    return {"out": str(target), "title": title, "author": author, "pages": len(pages),
-            "read_pages": sum(1 for p in pages if p["src"] == "ocr"),
-            "chapters": sum(1 for s in sections if not s.get("front")),
-            "paras": sum(len(s["paras"]) for s in sections),
-            "first_chapter": body[0]["title"], "sample": sample,
-            "seconds": round(time.time() - started)}
+    return _finish(target, title, author, sections, cover, cover_ext, language, info, pages, started, say)
 
 
 def _cli():
     import argparse
-    ap = argparse.ArgumentParser(description="Turn a PDF book into an EPUB")
-    ap.add_argument("pdf")
+    ap = argparse.ArgumentParser(description="Turn a PDF book, or page pictures, into an EPUB")
+    ap.add_argument("pdf", nargs="+", help="a PDF, a folder of page pictures, or the pictures")
     ap.add_argument("--out")
     ap.add_argument("--lang", default="en")
     a = ap.parse_args()
-    res = convert(a.pdf, a.out, lambda f, m: print(f"  {f * 100:5.1f}%  {m}", file=sys.stderr, flush=True),
+    res = convert(a.pdf if len(a.pdf) > 1 else a.pdf[0], a.out, lambda f, m: print(f"  {f * 100:5.1f}%  {m}", file=sys.stderr, flush=True),
                   language=a.lang)
     print(json.dumps(res, ensure_ascii=False, indent=1))
 

@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -336,3 +337,83 @@ def test_a_pdf_with_text_is_checked_as_before(app, monkeypatch, tmp_path):
 def test_version_lists_the_new_file():
     files = json.loads((REPO / "version.json").read_text())["files"]
     assert "pdfbook.py" in files
+
+
+# ---------------------------------------------------------------------------------------------
+# pictures of the pages (1.17.75; the owner: "it needs to be able to do the same with jpegs or
+# pngs...I have some old books I scanned")
+# ---------------------------------------------------------------------------------------------
+def _page_pictures(folder, turn_second=True):
+    """The typed pages as PNG pictures named "Page 9", "Page 10", "Page 11" (name order isn't
+    letter order), the second one scanned sideways."""
+    import numpy as np
+    pdfium = pytest.importorskip("pypdfium2")
+    typed = folder.parent / "typed_for_pictures.pdf"
+    _text_pdf(typed, TEXT_PAGES)
+    doc = pdfium.PdfDocument(str(typed))
+    folder.mkdir()
+    for n in range(len(doc)):
+        a = doc[n].render(scale=4, grayscale=True).to_numpy()
+        a = a[:, :, 0] if a.ndim == 3 else a
+        if n == 1 and turn_second:
+            a = np.rot90(a)                        # a quarter turn left
+        pdfbook.write_png(folder / f"Page {n + 9}.png", a)
+    return sorted(folder.iterdir())
+
+
+def test_picture_order_and_names(tmp_path):
+    folder = tmp_path / "Grandma's Cows"
+    folder.mkdir()
+    for n in (10, 9, 11):
+        (folder / f"Page {n}.jpg").write_bytes(b"x")
+    (folder / "notes.txt").write_text("not a page")
+    assert [f.name for f in pdfbook.pictures_in(folder)] == ["Page 9.jpg", "Page 10.jpg", "Page 11.jpg"]
+    assert pdfbook._pictures_title(pdfbook.pictures_in(folder)) == "Grandma's Cows"
+    plain = tmp_path / "Downloads"
+    plain.mkdir()
+    (plain / "My Old Book 001.jpg").write_bytes(b"x")
+    assert pdfbook._pictures_title([plain / "My Old Book 001.jpg"]) == "My Old Book"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows' own text recognition")
+def test_page_pictures_become_an_ebook(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdfbook, "WORK", tmp_path / "work")
+    folder = tmp_path / "Mary and the Cows"
+    files = _page_pictures(folder)
+    res = pdfbook.convert(folder / "Page 9.png")           # one picture: every page in its folder
+    assert res["read_pages"] == 3 and res["chapters"] == 2
+    assert Path(res["out"]).parent == folder and res["title"] == "Mary and the Cows"
+    import cleanread
+    book = cleanread.Book(res["out"])
+    text = " ".join(p.text for p in book.paras)
+    # in page order, and the sideways page read the right way up
+    assert text.index("Mary lived in a small white house") < text.index("She ran back up the hill") \
+        < text.index("The meadow was wide and green")
+    assert "MARY AND THE COWS" not in text
+    kept = [json.loads(l) for l in next((tmp_path / "work").glob("*/pages.jsonl")).read_text().splitlines()]
+    assert [k["file"] for k in kept] == ["Page 9.png", "Page 10.png", "Page 11.png"]
+    assert kept[1]["turn"] in (90, 270) and kept[0]["turn"] == 0
+    assert len(files) == 3
+
+
+def test_no_pictures_says_so_plainly(tmp_path):
+    with pytest.raises(pdfbook.ConvertError, match="No page pictures"):
+        pdfbook.convert([tmp_path / "a.txt", tmp_path / "b.txt"])
+
+
+def test_pictures_offer_make_an_ebook(app, tmp_path, monkeypatch):
+    ui, a = app
+    folder = tmp_path / "scans"
+    folder.mkdir()
+    for n in range(1, 4):
+        (folder / f"scan{n}.jpg").write_bytes(b"x")
+    a.book_path = str(folder / "scan1.jpg")
+    a._refresh()
+    assert "Pictures of a book's pages (3 in this folder)" in " ".join(_texts(a.pdf_box))
+    assert a._book_name() == "scans"
+    called = []
+    monkeypatch.setattr(pdfbook, "convert", lambda src, **k: called.append(src) or
+                        {"out": str(folder / "scans.epub"), "title": "Scans"})
+    sent = []
+    assert a._as_ebook(a.job, a.book_path, sent.append) == str(folder / "scans.epub")
+    assert called == [a.book_path] and sent[-1][0] == "converted"
