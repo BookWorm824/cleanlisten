@@ -1953,6 +1953,7 @@ DRUNK_ADVERB = {"always", "then", "all", "soon", "never", "duly", "first", "quie
 DRUNK_WHAT = {"the", "a", "an", "his", "her", "my", "your", "their", "our", "it", "all", "some", "that",
               "this", "too", "enough", "every"}
 DRUNK_PASSIVE = {"was", "were", "been", "is", "are", "be", "being"}
+DRUNK_WHOSE = {"of", "to"}
 DRUNK_THING = {"toast", "toasts", "health", "healths", "tea", "coffee", "cocoa", "wine", "milk", "water",
                "cup", "cups", "glass", "glasses", "bowl", "potion", "medicine", "soup", "beer", "ale",
                "punch", "lemonade", "cider", "draught", "dose", "drink", "drinks", "bottle", "mug",
@@ -1993,8 +1994,11 @@ def drunk_drink(words, i, breaks=()):
         things = [k for k, w in enumerate(subject) if w in DRUNK_THING]
         if not things or DRUNK_SOMEONE & set(subject):
             return False
-        # "...the beer was cold, and he was drunk": a new part after the drink ("and the toast" is fine)
-        return not {"and", "but"} & set(subject[things[-1] + 1:])
+        # only nothing, or whose it was ("the health OF the Earl", "the toast TO the bride"), may come
+        # between the drink and "was": not "the beer was cold, and he was drunk", "the owner of the wine
+        # shop was drunk" (CleanView 1.18.142, DRUNK_WHOSE)
+        between = subject[things[-1] + 1:]          # "the first toast, which was always drunk" too
+        return not between or between[0] in DRUNK_WHOSE or between in (["which"], ["that"])
     return False
 
 

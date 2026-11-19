@@ -73,3 +73,23 @@ def test_crude_humor_ticked_brings_the_drunk_words():
 def test_drink_in_the_last_sentence_does_not_count():
     ws = [w for w in (E.norm(t) for t in "We had tea. He was drunk.".split()) if w]
     assert E.find_language(ws, ["crude"], breaks={3}) == [(5, 6, "crude")]
+
+
+# CleanView 1.18.142 (DRUNK_WHOSE): only nothing, or whose it was ("of"/"to"), between the drink and "was"
+@pytest.mark.parametrize("text", [
+    "The owner of the wine shop was drunk.", "The driver of the beer truck was drunk.",
+    "A glass of wine and Tom was drunk.", "Two drinks and Tom was drunk.",
+])
+def test_a_person_after_the_drink_is_drunk(text):
+    ws = [w for w in (E.norm(t) for t in text.split()) if w]
+    assert E.find_language(ws, ["crude"]), text
+
+
+@pytest.mark.parametrize("text", [
+    "And the toast was drunk in ginger wine.", "The health of his majesty was drunk.",
+    "The toast to the bride was drunk standing.", "The beer and the wine were drunk.",
+    "Her coffee was drunk cold.",
+])
+def test_what_was_drunk_still_left(text):
+    ws = [w for w in (E.norm(t) for t in text.split()) if w]
+    assert not E.find_language(ws, ["crude"]), text
