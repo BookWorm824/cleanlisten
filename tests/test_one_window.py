@@ -219,17 +219,29 @@ def test_the_box_closes_when_it_stops():
 # --- the update: several files at a time, each tried twice, within UPDATE_MOST, and the box told how far
 # it's got (the owner, 2026-11-17, via CleanView 1.18.128: after an update the box "just sits") ---------
 class FakeGitHub:
-    def __init__(self, files, version="9.9.9"):
+    """Serves a release sealed with a made-up key (never the owner's) that lm is told to trust:
+    every update needs the seal since 1.17.81 (test_sealed_updates.py)."""
+    def __init__(self, files, lm, version="9.9.9"):
+        import hashlib
+        import json
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+        import sign_release
         self.files, self.version = files, version
         self.slow, self.fail_once, self.asked = set(), set(), []
+        seed = bytes(range(32))
+        lm.PUBLIC_KEY = sign_release.public_of(seed, lm)
+        self.data = json.dumps({"version": version, "files": list(files),
+                                "sha256": {n: hashlib.sha256(b).hexdigest() for n, b in files.items()}}).encode()
+        self.sig = sign_release.sign(seed, lm.SEAL_FOR.encode() + self.data, lm).hex().encode()
 
     def urlopen(self, url, timeout=None):
         import io
-        import json
         name = url.rsplit("/", 1)[-1]
         self.asked.append(name)
         if name == "version.json":
-            body = json.dumps({"version": self.version, "files": list(self.files)}).encode()
+            body = self.data
+        elif name == "version.sig":
+            body = self.sig
         else:
             if name in self.slow:
                 time.sleep(3)
@@ -247,7 +259,7 @@ def gh(lm, tmp_path, monkeypatch):
     here.mkdir()
     (here / "version.json").write_text('{"version": "1.0.0", "files": []}')
     monkeypatch.setattr(lm, "HERE", here)
-    g = FakeGitHub({"a.py": b"x = 1\n", "b.txt": b"hello", "CleanRead.pyw": b"y = 2\n"})
+    g = FakeGitHub({"a.py": b"x = 1\n", "b.txt": b"hello", "CleanRead.pyw": b"y = 2\n"}, lm)
     monkeypatch.setattr(lm.urllib.request, "urlopen", g.urlopen)
     g.here = here
     return g

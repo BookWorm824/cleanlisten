@@ -317,10 +317,140 @@ def start_again(note):
 LAUNCHER_CHANGED = False      # the update brought a new launcher.pyw
 
 
+# ---------- The owner's seal on every update (1.17.81, as CleanView 1.18.147) ----------
+# The code is public and every copy updates by itself, so whoever got into the GitHub account
+# could have sent anything to everyone (the owner, 2026-11-19: "how safe is the code ... could
+# someone use another ai chat to change it?", then "yes" to signed updates). Each release's
+# version.json lists every file's SHA-256 ("sha256") and version.sig holds an Ed25519
+# signature of version.json's exact bytes, made with the secret key kept only on the owner's
+# PC and in her Google Drive (tools/sign_release.py). An update is installed only when the
+# signature fits PUBLIC_KEY and every file it downloads has the hash listed; anything else is
+# refused and the program opens as it is. Ed25519 is written out here (RFC 8032) because the
+# updater can't install packages, and the launcher must never fail to open the program.
+# CleanListen, CleanRead and ReadAloud are one set of files with one version.json, so they
+# share one seal (and one key); CleanView has its own.
+PUBLIC_KEY = bytes.fromhex("ec59a11c89a57c2356dae044d22b05cad027fa980694bee9b0d7dce3f5592510")
+SEAL_FOR = "CleanListen update\n"       # signed in front of version.json: one app's seal
+SIG_NAME = "version.sig"                 # isn't another's
+
+_P = 2 ** 255 - 19
+_L = 2 ** 252 + 27742317777372353535851937790883648493
+_D = -121665 * pow(121666, _P - 2, _P) % _P
+_SQRT_M1 = pow(2, (_P - 1) // 4, _P)
+
+
+def _ed_add(a, b):
+    x = (a[1] - a[0]) * (b[1] - b[0]) % _P
+    y = (a[1] + a[0]) * (b[1] + b[0]) % _P
+    c = 2 * a[3] * b[3] * _D % _P
+    d = 2 * a[2] * b[2] % _P
+    e, f, g, h = y - x, d - c, d + c, y + x
+    return (e * f % _P, g * h % _P, f * g % _P, e * h % _P)
+
+
+def _ed_mul(s, pt):
+    out = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            out = _ed_add(out, pt)
+        pt = _ed_add(pt, pt)
+        s >>= 1
+    return out
+
+
+def _ed_x(y, sign):
+    if y >= _P:
+        return None
+    x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (_P + 3) // 8, _P)
+    if (x * x - x2) % _P:
+        x = x * _SQRT_M1 % _P
+    if (x * x - x2) % _P:
+        return None
+    if (x & 1) != sign:
+        x = _P - x
+    return x
+
+
+def _ed_point(b):
+    if len(b) != 32:
+        return None
+    y = int.from_bytes(b, "little")
+    sign, y = y >> 255, y & ((1 << 255) - 1)
+    x = _ed_x(y, sign)
+    return None if x is None else (x, y, 1, x * y % _P)
+
+
+def _ed_bytes(pt):
+    zi = pow(pt[2], _P - 2, _P)
+    x, y = pt[0] * zi % _P, pt[1] * zi % _P
+    return (y | ((x & 1) << 255)).to_bytes(32, "little")
+
+
+_GY = 4 * pow(5, _P - 2, _P) % _P
+_G = (_ed_x(_GY, 0), _GY, 1, _ed_x(_GY, 0) * _GY % _P)
+
+
+def _ed_hash(*parts):
+    import hashlib
+    return int.from_bytes(hashlib.sha512(b"".join(parts)).digest(), "little") % _L
+
+
+def ed25519_ok(public, message, sig):
+    """True when sig (64 bytes) is public's Ed25519 signature of message."""
+    if len(public) != 32 or len(sig) != 64:
+        return False
+    a, r = _ed_point(public), _ed_point(sig[:32])
+    s = int.from_bytes(sig[32:], "little")
+    if a is None or r is None or s >= _L:
+        return False
+    h = _ed_hash(sig[:32], public, message)
+    left, right = _ed_mul(s, _G), _ed_add(r, _ed_mul(h, a))
+    return (left[0] * right[2] - right[0] * left[2]) % _P == 0 and \
+        (left[1] * right[2] - right[1] * left[2]) % _P == 0
+
+
+class NotSealed(ValueError):
+    """An update without the owner's seal, or a file that isn't the one it lists."""
+
+
+def sealed(data, sig_text, public=None):
+    """version.json's bytes, checked against version.sig's text: its JSON, or NotSealed."""
+    try:
+        sig = bytes.fromhex(sig_text.strip())
+    except (ValueError, AttributeError):
+        raise NotSealed("the update has no seal")
+    if not ed25519_ok(public or PUBLIC_KEY, SEAL_FOR.encode("utf8") + data, sig):
+        raise NotSealed("the update's seal doesn't match, so it wasn't installed")
+    remote = json.loads(data.decode("utf8"))
+    hashes = remote.get("sha256")
+    if not isinstance(hashes, dict) or any(n not in hashes for n in remote["files"]):
+        raise NotSealed("the update doesn't list every file's fingerprint")
+    return remote
+
+
+def remote_version(timeout=4):
+    """The newest version.json on GitHub, only once its seal is checked (else NotSealed).
+    Just after a release GitHub can still send the old version.sig for a few minutes: that
+    fails and is tried again next time."""
+    with urllib.request.urlopen(RAW + "version.json", timeout=timeout) as r:
+        data = r.read()
+    with urllib.request.urlopen(RAW + SIG_NAME, timeout=timeout) as r:
+        sig = r.read().decode("ascii", "replace")
+    return sealed(data, sig)
+
+
+def file_matches(name, data, remote):
+    import hashlib
+    if hashlib.sha256(data).hexdigest() != str(remote["sha256"].get(name, "")).lower():
+        raise NotSealed(f"{name} isn't the file this update lists, so it wasn't installed")
+
+
 def update(arg=None):
     local = json.loads((HERE / "version.json").read_text())
-    with urllib.request.urlopen(RAW + "version.json", timeout=4) as r:
-        remote = json.loads(r.read().decode("utf8"))
+    remote = remote_version()
     if _ver(remote["version"]) <= _ver(local["version"]):
         return None
     names = list(remote["files"])
@@ -348,6 +478,7 @@ def update(arg=None):
             except Exception:
                 if attempt == 2:
                     raise
+        file_matches(name, data, remote)  # the very file the sealed version.json lists
         if name.endswith((".py", ".pyw")):
             compile(data, name, "exec")  # refuse a broken download
         return data

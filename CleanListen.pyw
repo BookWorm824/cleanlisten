@@ -1452,8 +1452,7 @@ class App(tk.Tk):
             try:
                 L = self._launcher()
                 import urllib.request
-                with urllib.request.urlopen(L.RAW + "version.json", timeout=10) as r:
-                    remote = json.loads(r.read().decode("utf8"))
+                remote = L.remote_version(timeout=10)     # only an update with her seal
                 if L._ver(remote["version"]) <= L._ver(app_version()):
                     self.q.put(("update_none", app_version()))
                     return
