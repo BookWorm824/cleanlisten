@@ -302,3 +302,37 @@ def test_still_opening_finds_the_one_started_before(lm):
         p.kill()
         p.wait()
     assert lm.Running(p.pid).poll() is not None
+
+
+# --- the opening box during an update (as CleanView 1.18.128; the owner, 2026-11-17: after an
+# update the box "just sits", "lets fix the initial little box to let people know to wait")
+def test_the_box_goes_when_the_program_stops(lm):
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1)"], creationflags=0x08000000)
+    t = time.time()
+    lm.splash(child, "read")
+    assert time.time() - t < 4
+
+
+def test_the_box_waits_while_updating(lm):
+    lm.opening(f"{lm.UPDATING} CleanRead to 9.9.9… (3 of 21)", "read")
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2.5)"], creationflags=0x08000000)
+    t = time.time()
+    lm.splash(child, "read", most=0.5)        # not gone at `most` while the update is fetched
+    assert time.time() - t > 2.0
+    child.wait()
+
+
+def test_opening_still_goes_at_most(lm):
+    lm.opening("Opening CleanRead…", "read")
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(6)"], creationflags=0x08000000)
+    t = time.time()
+    lm.splash(child, "read", most=0.5)
+    assert time.time() - t < 3
+    child.kill()
+    child.wait()
+
+
+def test_the_box_says_to_wait():
+    text = (ROOT / "launcher.pyw").read_text(encoding="utf8")
+    assert "Please wait: {name} opens by itself when it's done." in text
+    assert "UPDATING_MOST = 600" in text and "UPDATE_MOST = 120" in text
