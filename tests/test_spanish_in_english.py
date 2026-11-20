@@ -38,11 +38,12 @@ def test_everyday_look_alikes_are_left(line):
     assert E.find_language(words(line), E.ALL_CATS + ["rude"]) == []
 
 
-def test_the_slur_is_with_the_same_sex_words():
+def test_the_slur_is_with_the_slurs():          # (its own box since CleanView 1.18.150)
     w = words("He called him a maricón in front of everyone.")
-    assert [(w[i], cat) for i, j, cat in E.find_language(w, ["orientation"])] == [
-        ("maricn", "orientation")]
-    assert E.find_language(words("Los maricones"), ["orientation"])
+    assert [(w[i], cat) for i, j, cat in E.find_language(w, ["slurs"])] == [
+        ("maricn", "slurs")]
+    assert E.find_language(words("Los maricones"), ["slurs"])
+    assert E.find_language(w, ["orientation"]) == []
     assert E.find_language(w, ["moderate"]) == []
 
 

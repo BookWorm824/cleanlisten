@@ -1,5 +1,5 @@
 {
- "version": "1.17.90",
+ "version": "1.17.91",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -61,9 +61,9 @@
   "readaloud_voices.npz"
  ],
  "sha256": {
-  "cleanlisten.py": "ffd46cf37842e58c7c5c314dcd53759983beef52b6970db26e9868c9de23ec62",
-  "CleanListen.pyw": "dd085a543b0132cab8ffcf0a962257f171b7c50535704b5539a76043d269cfd1",
-  "cleanlisten_claude.py": "e6152c6cb767bc1624b85cd57f68456708928ee558024d9882da3a2f554b202b",
+  "cleanlisten.py": "99d734deea71a873485591a9d410b51085586ebccb528b1c85ad1a3fc4d76b9f",
+  "CleanListen.pyw": "b4dd16bbf558eeaaff4dc53590bb565dd4e91860fe8b4f5285ed5d61e1bbe753",
+  "cleanlisten_claude.py": "c80a668ff188a9e87ab93ab5823fcd1aeb47c2c9fd89b1506adf0391e49bd93b",
   "shared_learned.json": "9eaac90b12aa6a9da8741d0335c6235ecfe29751e224b194eb6f351eaaa565d8",
   "cleanlisten_gpt.py": "d88b9f7d6f77a7a79eba9cb78efdde616e847bc9119c4227b1a2dadf035d2636",
   "cleanlisten_gemini.py": "669d470cbd36cd089297d1416cb3cb4b6273abe08dda6a6c132b1e0be88bb322",
@@ -72,8 +72,8 @@
   "icon.ico": "7c435e53e1f7cd42e43dd664479ab158249750690fcd7e5f455af50633d9df02",
   "cleanview_ai.py": "ecaefc9d222996363744a03de709f923aaef0f17f4d3e190fa473512b3befaa1",
   "CleanView.pyw": "f65ef6d2df533d04828b603120a268a9a338d1d3c9e1ed4bcb7714f899f402c3",
-  "filters.py": "5754f0afb3c72b99414568fe7b65a6a87f623eb21d7d9df99be41df25ddbf7bb",
-  "cllook.py": "daea11679a497ee4596715be1eb25fcbd2147362463814764d2e1afe2a975982",
+  "filters.py": "fca11844088eeea847dcf2a56eba19c536fc18274c424336af9e9ace17b05695",
+  "cllook.py": "e84665a46ddc589bdc44acbb9dfe965f3f07a6f14224fe0836dffc9c76dacc96",
   "cvlook.py": "4c720d1916cbc27191101b74e1a75734695e1b152f0e114ca4f5862dae4b4df4",
   "cvlang.py": "39ff256ea14dfbfaa830149e51feab70e39ab8b444bcde278058725b3d1f18c9",
   "logo.py": "4740dff71a36c79ea72a97faf79e63ddd7b2533cd85cbd3d668dd5221f3af034",
@@ -84,9 +84,9 @@
   "ollama_care.py": "dfb2a7e47f7cf56c4ab19cbce1e6d52eda9e8e3d9768fd46ca5e2fd8f0a66ccc",
   "bookqueue.py": "86067dc7538d40ba817da844f0c8f617ea7a8a2f6306b027977db4919793f881",
   "shortcuts.py": "8b6709fa744169fd2493a3862ff20b18d08d4d4f32057f39db81119250fa40a3",
-  "cleanread.py": "efd1fc31545c0d06bf056a294996b890bdd9e71aef17b1f7d7d3d1dd44254012",
+  "cleanread.py": "436b7b70fc4af7b0adfad6e01e955fa8351053d4aa668ae7ae905f01be3ad48c",
   "pdfbook.py": "487bb95511c6d858e1eb5271c3bf7439d1a0a4e3af15dec115dac080863bc563",
-  "CleanRead.pyw": "7fc8a741a5ce13a04bc4f8eea50c71088d5299539fa0de03afc2ff175799d85c",
+  "CleanRead.pyw": "3da9b19f767fffb18c19fa44bf7f24f19a5f9144914fa98bfcaddabc281b8a8b",
   "cleanread.ico": "07262f5f296d2542d3c1d5d900274f31a1173a72f5824cbc222988d579e32c63",
   "cleanlisten_logo.png": "1b0db5569d32f91cbda43f8ceb6a4ec94442f3ee4c0bcf4a37161dfc6886ce04",
   "cleanread_logo.png": "6b7b20b35fd64b1fa6b7ba7ebc42c99cda783c0e0562ef94681f97ccd6933fa3",

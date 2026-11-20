@@ -205,6 +205,6 @@ def test_the_ticks_reach_both_engines():
     kw = F.listen_kwargs(t, ["dork"])
     assert kw["more"] == ["violence"] and kw["religion_parts"] == ["preach", "anger", "prayers"]
     assert kw["kiss"] == "passionate" and kw["kiss_ss"] == "passionate" and kw["mine"] == [("dork",)]
-    assert F.groups(t) == ["swearing", "mild", "deity", "sexual", "orientation"]
+    assert F.groups(t) == ["swearing", "slurs", "mild", "deity", "sexual", "orientation"]
     assert F.read_opts(t, ["dork"])["mywords"] == ["dork"]
     assert "Taking out: Swearing" in F.summary(t) and "violence" in F.summary(t)

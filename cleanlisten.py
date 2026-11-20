@@ -325,21 +325,35 @@ def probe_duration(path):
 # (most additions after 1.7.3 come from CleanView's lists, which were checked against TV and
 # film dialogue; guards for everyday uses are in INNOCENT_NEXT / INNOCENT_PREV below)
 STRONG = [r".*fuck.*", r"cunts?", r"motherf.*", r"fk", r"effing", r"effin", r"f'?ing",
-          r"mofos?", r"wtf", r"stfu", r"omfg",
-          # racial slurs (the unmistakable ones; "cracker", "chink" etc. have everyday
-          # meanings too, so they're left to the AI and Claude)
-          # (and their possessives: "even a greaseball's got feelings", CleanView 1.18.30)
-          r"nigg(a|as|ah|az|er|ers)", r"kike(s|'s|s')?", r"wetback(s|'s|s')?", r"gook(s|'s|s')?",
-          r"towelhead(s|'s|s')?", r"raghead(s|'s|s')?", r"beaner(s|'s|s')?",
-          # Forest Gump (CleanView 1.18.111; the owner, 2026-11-16, "Add the 2 words"): "Coons are
-          # trying to get into school." went through. Not the raccoon: "a coon dog", "coon
-          # hunting", "in a coon's age", "a Maine Coon" (INNOCENT_NEXT / INNOCENT_PREV);
-          # "coonskin" and "raccoons" are other words
-          r"coon(s|'s|s')?",
-          # West Side Story (CleanView 1.18.30); never fine (not in INNOCENT_WORDS). Guards for
-          # "spic and span" and "doo wop" are in INNOCENT_NEXT / INNOCENT_PREV
-          r"spic(s|'s|s')?", r"spick(s|'s|s')?", r"polack(s|'s|s')?", r"greaseball(s|'s|s')?",
-          r"wop(s|'s|s')?"]
+          r"mofos?", r"wtf", r"stfu", r"omfg"]
+# Slurs: hateful names for groups of people, a box of their own, ticked for every age, so they are
+# muted even with Swearing or the same-sex words unticked (CleanView 1.18.150; the owner, in the
+# CleanStream chat: "when i had the hard language filter on it took out some words that should be in
+# other categories", "organize better by type", "Yes, all of it"). They were in Swearing and the
+# orientation words before. A checker still can't leave one in (none is in INNOCENT_WORDS but "homo").
+SLURS = [
+    # racial slurs (the unmistakable ones; "cracker", "chink" etc. have everyday
+    # meanings too, so they're left to the AI and Claude)
+    # (and their possessives: "even a greaseball's got feelings", CleanView 1.18.30)
+    r"nigg(a|as|ah|az|er|ers)", r"kike(s|'s|s')?", r"wetback(s|'s|s')?", r"gook(s|'s|s')?",
+    r"towelhead(s|'s|s')?", r"raghead(s|'s|s')?", r"beaner(s|'s|s')?",
+    # Forest Gump (CleanView 1.18.111; the owner, 2026-11-16, "Add the 2 words"): "Coons are
+    # trying to get into school." went through. Not the raccoon: "a coon dog", "coon
+    # hunting", "in a coon's age", "a Maine Coon" (INNOCENT_NEXT / INNOCENT_PREV);
+    # "coonskin" and "raccoons" are other words
+    r"coon(s|'s|s')?",
+    # West Side Story (CleanView 1.18.30); never fine (not in INNOCENT_WORDS). Guards for
+    # "spic and span" and "doo wop" are in INNOCENT_NEXT / INNOCENT_PREV
+    r"spic(s|'s|s')?", r"spick(s|'s|s')?", r"polack(s|'s|s')?", r"greaseball(s|'s|s')?",
+    r"wop(s|'s|s')?",
+    # disability ("a severely retarded boy": never fine, see INNOCENT_WORDS)
+    r"retard(s|ed|os?)?", r"retart(s|ed)?", r"(lib)?tards?",
+    # anti-gay (not "gay", "lesbian": those stay the orientation words)
+    r"homos?", r"dykes?", r"fags?", r"faggots?", r"lesbos?", r"lez(z?ie|z?ies|bos?)",
+    r"marico?n(es)?",       # the Spanish slur, as "faggot" is here (CleanView 1.18.86)
+    # Forest Gump (CleanView 1.18.111; the owner, 2026-11-16, "Add the 2 words"): "Get your
+    # faggotty ass on the bus" went through
+    r"fagg?ott?(y|ie|ies)"]
 MODERATE = [
     r".*shit.*", r"bitch.*", r"son(of|ofa|uva|na)?bitch.*", r"sumbitch.*", r"ass", r"asses",
     r"ass(holes?|wipes?|hats?|clowns?|face|faces|heads?|kick(s|ed|er|ers|ing)?|"
@@ -350,14 +364,13 @@ MODERATE = [
     r"lame|weird|broke|punk|wuss|bad|dumb|smart|jack|whole|cold|hot|mean|tough|fine|"
     r"nice|cool|pretty|ugly|old|cute|great|bitch)ass(es|ed)?",
     r"bastard.*", r"piss.*", r"dicks?", r"dickhead.*", r"pricks?", r"bollocks",
-    r"bugger.*", r"wanker.*", r"wank(s|ed|ing|in)?", r"(jerk|jack)offs?", r"twats?", r"sluts?", r"slutty", r"whores?",
-    r"skanks?", r"douche.*", r"tits", r"titties", r"cocksucker.*", r"cojones", r"ca[jh]ones", r"nads",
-    r"(ball|nut)sacks?", r"ballsy", r"balls?bust(er|ers|ing)", r"dbags?",
+    r"bugger.*", r"wanker.*", r"twats?", r"douche.*", r"cocksucker.*", r"dbags?",
+    # (the sexual words are with the sexual words, the crude ones with crude humor, slurs in SLURS
+    # and "skeevy" with the rude words since CleanView 1.18.150's sorting by type)
     # more crude slang heard in TV and films
     r"a-?holes?", r"lardass(es)?", r"bia?y?o?tch(es)?", r"beyotch", r"shat",
     r"dick(wad|weed|face|ish|wit|bag|less)s?", r"numbnuts", r"knobheads?", r"tossers?",
-    r"bellends?", r"feck(ing|in|er|ers)?", r"retard(s|ed|os?)?", r"retart(s|ed)?", r"(lib)?tards?",
-    r"skeez(e|y|ier)", r"skeevy", r"arsed", r"arses",
+    r"bellends?", r"feck(ing|in|er|ers)?", r"arsed", r"arses",
     r"merde", r"scheisse", r"mierda",        # French, German and Spanish for "shit"
     # Spanish swearing in a mostly English book (CleanView 1.18.86; the owner, 2026-11-13: "would
     # loading spanish known swear words into the english filter help without using a separate
@@ -370,13 +383,13 @@ MODERATE = [
     r"ching(a|as|ar|ada|adas|ado|ados|o?n|ona|ones|adera|aderas)",
 ]
 # swearing said as letters or two words ("S.O.B.", "D-bag" heard as "d bag", "eff you")
-MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag"),
-                    ("ball", "buster"), ("ball", "busters"), ("ball", "busting"),
-                    ("balls", "buster")] + [("eff", o) for o in ("you", "off", "me", "him", "her",
+MODERATE_PHRASES = [("s", "o", "b"), ("d", "bag"), ("d", "bags"), ("dee", "bag")] + [("eff", o) for o in ("you", "off", "me", "him", "her",
                                                                   "them", "it", "that", "this")]
 MODERATE_PHRASES += [("what", "the", "f"), ("what", "the", "eff")]
-# "retarded" heard as two words by speech recognition
-MODERATE_PHRASES += [("re", t) for t in ("tard", "tards", "tarded")]
+# "retarded" heard as two words by speech recognition (a slur: CleanView 1.18.150)
+SLUR_PHRASES = [("re", t) for t in ("tard", "tards", "tarded")]
+# "ball buster" heard as two words (crude humor: CleanView 1.18.150)
+CRUDE_WORD_PHRASES = [("ball", "buster"), ("ball", "busters"), ("ball", "busting"), ("balls", "buster")]
 # "yanking your chain" (teasing, with a crude double meaning): the whole phrase goes
 MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "yankin", "pull",
                                           "pulls", "pulled", "pulling", "pullin", "jerk", "jerks",
@@ -425,9 +438,11 @@ MINCED_PHRASES += [("holy", w) for w in ("cow", "cows", "moly", "molly", "moley"
 # ("damning" = incriminating and "damnation" are left alone)
 MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"goddam", r"godd?amm?it",
         r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
-        r"sod", r"sodding", r"bloody", r"turds?", r"hella", r"hussy", r"hussies",
+        r"sod", r"sodding", r"bloody", r"hella",
         r"crap(pier|piest|ped|ping|pers|holes|loads?|tastic|ola)", r"day+um+n?",   # "dayum"
-        r"floozy", r"floozies", r"trollops?", r"strumpets?", r"verdammt"]
+        r"verdammt"]
+# ("turds" is with crude humor; "hussy", "floozy", "trollop", "strumpet" with the sexual words since
+# CleanView 1.18.150)
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
           r"gosh", r"gosh(darn|dang).*",
           # not sewing: "darning", "darns", "a darning-needle" (Little Women, the night run's report, 2026-11-17)
@@ -534,6 +549,11 @@ SEXUAL_WORDS = [
     r"pussy", r"pussies", r"boners?", r"knockers", r"titty", r"peckers?", r"peen", r"jizz",
     r"cum", r"boink(s|ed|ing)?", r"nookie", r"milfs?", r"dilfs?", r"hoochies?",
     r"cockblock(s|ed|er|ing)?", r"schlongs?", r"todgers?", r"dildos?",
+    # from Swearing and Mild words (CleanView 1.18.150; the owner: "organize better by type")
+    r"wank(s|ed|ing|in)?", r"(jerk|jack)offs?", r"sluts?", r"slutty", r"whores?", r"skanks?",
+    r"tits", r"titties", r"(ball|nut)sacks?", r"skeez(e|y|ier)",
+    # the old words for a loose woman (an older book's pert "hussy", idle "trollops": OLD_BOOK_LEFT)
+    r"hussy", r"hussies", r"floozy", r"floozies", r"trollops?", r"strumpets?",
     r"nymphos?", r"nymphomaniacs?",   # 50 First Dates (CleanView 1.18.34); not "nymph" (a water nymph)
     r"bondage", r"safewords?",        # the owner, 2026-11-08 (CleanView 1.18.39); see bondage_slavery()
     # Castle S2E3 (CleanView 1.18.69, the owner, 2026-11-12): "skinny-dipping" is one word once the
@@ -903,16 +923,24 @@ FRUIT_WORDS = {"melons", "cantaloupes", "watermelons", "grapefruits", "coconuts"
                "veg", "banana", "cucumber", "zucchini", "eggplant", "carrot", "pickle", "peach",
                "buns", "jugs", "hooters", "knockers", "bazongas", "bazooms", "bazoombas", "crown",
                "jewels", "package", "junk", "rack", "cock", "cocks"}
+# Kicks in the privates and "freezing my grapes off" go with crude humor, the rest with the sexual
+# words (CleanView 1.18.150's SLANG_CAT)
+FRUIT_CRUDE = [FRUIT_SLANG[6], FRUIT_SLANG[7], FRUIT_SLANG[-1]]
+assert all(" in the " in p.pattern or "beans" in p.pattern or " off" in p.pattern[-8:]
+           for p in FRUIT_CRUDE), [p.pattern[-40:] for p in FRUIT_CRUDE]
 
 
-def fruit_slang(words):
-    """Positions of fruit and vegetable words used for body parts ("those melons")."""
+def fruit_slang(words, kind=None):
+    """Positions of fruit and vegetable words used for body parts ("those melons"); kind "crude"
+    or "sexual": only those phrases."""
     text, starts, pos = " ".join(words), [], 0
     for w in words:
         starts.append(pos)
         pos += len(w) + 1
     out = set()
     for p in FRUIT_SLANG:
+        if kind and (p in FRUIT_CRUDE) != (kind == "crude"):
+            continue
         for m in p.finditer(text):
             a, b = m.span("part")
             out |= {k for k, s in enumerate(starts)
@@ -1322,7 +1350,8 @@ RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?"
         r"wuss(es)?", r"wussy", r"sissy", r"sissies", r"crybab(y|ies)", r"scaredy(cats?)?",
         r"fatsos?", r"putz(es)?", r"schmucks?", r"ignoramus(es)?", r"brats?", r"dumbdumbs?",
         r"dumdums?", r"fatheads?",   # "dum-dum" is joined to "dumdum"
-        r"sucky", r"suckage", r"sucktastic"]
+        r"sucky", r"suckage", r"sucktastic",
+        r"skeevy"]       # creepy (from Swearing, CleanView 1.18.150)
 RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "trap"),
                 ("shut", "your", "face"), ("shut", "it"), ("you", "suck"), ("it", "sucks"),
                 ("this", "sucks"), ("that", "sucks"), ("shut", "your", "pie", "hole"),
@@ -1504,6 +1533,7 @@ SEX_PARA_SCORE = 3     # a single paragraph inside such a stretch must score thi
 GROUPS = {
     "sexual": ["sexual"],
     "swearing": ["strong", "moderate"],
+    "slurs": ["slurs"],          # its own box (CleanView 1.18.150)
     "mild": ["mild"],
     "deity": ["deity"],
     "minced": ["minced"],
@@ -1589,20 +1619,17 @@ def contracted_base(w):
     return None
 
 
-CATS = {"strong": _c(STRONG), "moderate": _c(MODERATE), "mild": _c(MILD),
+CATS = {"strong": _c(STRONG), "moderate": _c(MODERATE), "slurs": _c(SLURS), "mild": _c(MILD),
         "minced": _c(MINCED), "deity": _c(DEITY_WORDS), "sexual": _c(SEXUAL_WORDS)}
 PHRASES["deity"] = DEITY_PHRASES
+PHRASES["slurs"] = SLUR_PHRASES
 # Orientation words, muted one at a time when CleanListen's relationships filter
 # is on. Kept OUT of CATS on purpose: CleanView masks every CATS category in its
 # subtitles, and this list is CleanListen's choice only.
 ORIENTATION_WORDS = [
     r"gays?", r"lesbians?", r"homosexual(s|ity)?", r"bisexual(s|ity)?", r"queers?",
-    r"homos?", r"pansexual(s)?", r"lgbt", r"lgbtq", r"lgbtqia", r"lgbtq\+?", r"throuples?",
-    r"polyamor.*", r"dykes?", r"fags?", r"faggots?", r"lesbos?", r"lez(z?ie|z?ies|bos?)",
-    r"marico?n(es)?",       # the Spanish slur, as "faggot" is here (CleanView 1.18.86)
-    # Forest Gump (CleanView 1.18.111; the owner, 2026-11-16, "Add the 2 words"): "Get your
-    # faggotty ass on the bus" went through
-    r"fagg?ott?(y|ie|ies)",
+    r"pansexual(s)?", r"lgbt", r"lgbtq", r"lgbtqia", r"lgbtq\+?", r"throuples?",
+    r"polyamor.*",          # (the slurs are in SLURS since CleanView 1.18.150)
     r"bicurious", r"twinks?", r"shemales?",     # CleanView 1.18.127
 ]
 EXTRA_CATS = {"orientation": _c(ORIENTATION_WORDS)}
@@ -1943,7 +1970,11 @@ KID_CATS = {"rude": _c(RUDE)}
 GROUPS["rude"] = ["rude"]
 # "drunk" on crude humor, just the word (CleanView 1.18.137; the owner, in the CleanStream chat: "add drunk
 # to crude humor"). Not what was drunk: "had drunk his tea", "drunk from the well" (drunk_drink).
-KID_CATS["crude"] = _c([r"drunk", r"drunks", r"drunken", r"drunkenly", r"drunkenness", r"drunkards?"])
+KID_CATS["crude"] = _c([r"drunk", r"drunks", r"drunken", r"drunkenly", r"drunkenness", r"drunkards?",
+                         # "balls" meaning nerve, the poop word, "nads": from Swearing and Mild words
+                         # (CleanView 1.18.150's sorting by type)
+                         r"cojones", r"ca[jh]ones", r"ballsy", r"balls?bust(er|ers|ing)", r"nads", r"turds?"])
+PHRASES["crude"] = CRUDE_WORD_PHRASES
 GROUPS["crude"] = ["crude"]
 DRUNK_BEFORE = {"have", "has", "had", "having", "i've", "you've", "we've", "they've", "i'd",
                 "you'd", "he'd", "she'd", "we'd", "they'd", "he's", "she's",
@@ -2104,7 +2135,8 @@ def _find_language(words, cats, breaks=()):
         return _other_language(words, cats)
     hits, n, i = [], len(words), 0
     breaks = breaks if isinstance(breaks, (set, frozenset)) else set(breaks)
-    fruit = fruit_slang(words) if "moderate" in cats else set()
+    fruit = fruit_slang(words, "sexual") if "sexual" in cats else set()
+    crude_fruit = fruit_slang(words, "crude") if "crude" in cats else set()
     terms = dict(term_spans(words, SEXUAL_TERMS_RX)) if "sexual" in cats else {}
     while i < n:
         found = None
@@ -2241,8 +2273,12 @@ def _find_language(words, cats, breaks=()):
                 hits.append((i, i + 1, cat))
                 break
         else:
-            if "moderate" in cats and (body_slang(words, i) or i in fruit):
-                hits.append((i, i + 1, "moderate"))
+            # (CleanView 1.18.150: "has the balls to", "kicked him in the nuts" go with crude humor,
+            # "check out those melons", "pop her cherry" with the sexual words)
+            if "crude" in cats and (body_slang(words, i) or i in crude_fruit):
+                hits.append((i, i + 1, "crude"))
+            elif "sexual" in cats and i in fruit:
+                hits.append((i, i + 1, "sexual"))
         i += 1
     return hits
 
@@ -3001,7 +3037,7 @@ def shown(raw, normed):
     return " ".join(w if n_ in LEAD_WORDS else mask(w) for w, n_ in zip(raw, normed))
 
 
-ALL_CATS = ["strong", "moderate", "mild", "deity", "minced", "sexual", "orientation"]
+ALL_CATS = ["strong", "moderate", "slurs", "mild", "deity", "minced", "sexual", "orientation"]
 
 
 def raw_fields(raw, i, j, before=6, after=5):
@@ -3545,10 +3581,9 @@ def _ai_module():
 
 LANGUAGE_DEFS = {
     "strong": "the f-word or c-word in any form",
-    "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***, "
-                "or slang for a man's private parts ('grow some stones', 'has the balls to'), "
-                "or fruit and vegetables used for body parts ('check out those melons', "
-                "'pop her cherry', 'kneed him in the grapes')",
+    "moderate": "a crude swear word such as s***, b****, a**, a**hole, b******, p***ed or d***",
+    "slurs": "a slur: a hateful name for a group of people (racial and ethnic slurs, 'retarded' even "
+             "said as a description, anti-gay slurs)",
     "mild": "a mild swear word such as damn, hell used as a curse, crap, bloody used as a curse, "
             "'that's bull' (short for bullshit, not the animal), "
             "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
@@ -3556,13 +3591,15 @@ LANGUAGE_DEFS = {
              "talk about God; 'thank God' is fine)",
     "minced": "a soft substitute swear such as gosh, heck, freaking, darn, golly, good grief, "
               "for Pete's sake, holy cow or 'you don't know squat'",
-    "sexual": "a sexual word such as sex, sexy or horny, or a crude word for body parts",
+    "sexual": "a sexual word such as sex, sexy or horny, or a crude word for body parts, or fruit and "
+              "vegetables used for body parts ('check out those melons', 'pop her cherry')",
     "orientation": "a word about sexual orientation such as gay, lesbian, homosexual or bisexual "
                    "('gay' meaning cheerful or bright is NOT this)",
     "rude": "a rude word kids copy such as stupid, dumb, idiot, moron, loser, jerk or butt, or "
             "'shut up' / 'you suck' said to someone",
     "crude": "drunk, drunken, drunkenly, drunkenness or drunkard (being drunk; 'he had drunk his tea' "
-             "is NOT this)",
+             "is NOT this), 'balls' meaning nerve ('has the balls to', 'grow some stones', ballsy), "
+             "'kicked him in the nuts', or turd",
 }
 
 
@@ -6207,6 +6244,7 @@ def listen_heads_up(st):
 # laid out for easy view of how many profanity words removed, crude words etc, so that when I post content
 # warning I have exact amounts")
 WORD_KIND_LABELS = [("strong", "Strong swearing (the f-word and the like)"), ("moderate", "Swearing"),
+                    ("slurs", "Slurs"),
                     ("mild", "Mild swearing"), ("deity", "God's name used as a swear"),
                     ("minced", "Minced oaths (gosh, darn, heck...)"), ("sexual", "Sexual words"),
                     ("crude", "Crude words"), ("rude", "Rude words kids copy (stupid, shut up...)"),

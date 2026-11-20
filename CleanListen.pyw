@@ -159,8 +159,8 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("vampires", "Vampires & werewolves to cut", "Vampires"),
                 ("added", "Added by you (or cut before)", "Added"))
 CAT_LABELS = {"strong": "swearing", "moderate": "swearing", "mild": "mild word", "deity": "God's name",
-              "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation",
-              "rude": "rude word", "crude": "drunk (crude humor)", "mine": "your own word"}
+              "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation", "slurs": "slur",
+              "rude": "rude word", "crude": "crude word", "mine": "your own word"}
 
 
 def natural_key(p):

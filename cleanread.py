@@ -2227,6 +2227,7 @@ MOCK_FAITH = _ph(["religious nut|nuts|freak|freaks|fanatic|fanatics|nutjob|zealo
                   "imaginary friend in the sky"])
 
 LANG_CATS = [("strong", "F-word & worse"), ("moderate", "Swear words (s-word, b-word, a-word…)"),
+             ("slurs", "Slurs (hateful names for groups of people)"),
              ("mild", "Mild words (damn, hell, crap)"), ("deity", "God's name used as a swear"),
              ("minced", "Soft substitutes (gosh, heck, freaking)"), ("sexual", "Sexual words"),
              ("orientation", "Orientation words (gay, lesbian…)")]
@@ -3298,6 +3299,7 @@ def _upgrade(opts):
     opts.setdefault("graphic", opts.get("gore"))
     opts.setdefault("medical", bool(opts.get("gore") or opts.get("graphic")))   # before 1.17.21
     opts.setdefault("samesexwords", opts.get("relationships"))
+    opts.setdefault("slurs", True)      # its own box since 1.17.91 (CleanView 1.18.150)
     return opts
 
 
@@ -3315,7 +3317,7 @@ def analyze(book, opts, progress=None, cancel=None):
     say = progress or (lambda f, m: None)
     E.use_language(getattr(book, "language", "en"))     # as the book was read
     opts = _upgrade(opts)
-    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
+    cats = [c for g in ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
             for c in E.GROUPS[g]]
     # religion in parts, as in CleanListen (the tester): preaching, anger at God, prayers & verses
     rparts = religion_parts(opts)
@@ -3700,7 +3702,7 @@ def kinds_on(opts):
 def chat_filters(opts):
     """The ticks in the form CleanListen's Claude rules (rules_text) read."""
     opts = _upgrade(opts)
-    cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
+    cats = [c for g in ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
             for c in E.GROUPS[g]] + (["orientation"] if opts.get("samesexwords") else [])
     return {"kinds": kinds_on(opts), "cats": cats, "religion_parts": religion_parts(opts),
             "kiss": opts.get("kiss", "keep"), "kiss_ss": opts.get("kiss_ss", "keep")}

@@ -40,10 +40,12 @@ RELIGION_PARTS = (("preach", "Preaching"), ("anger", "Anger at God"), ("prayers"
 SECTIONS = [
     ("Bad language", 1, [
         ("swearing", "Swearing  (f-word, s-word, b-word…)", True),
+        # its own box, ticked for every age (CleanView 1.18.150; the owner: "organize better by type")
+        ("slurs", "Slurs  (hateful names for groups of people)", True),
         ("mild", "Mild words  (damn, hell, crap, “screw you”)", True),
         ("deity", "God's name used as a swear", True),
         ("minced", "Soft substitutes  (gosh, heck, freaking)", False),
-        ("sexual", "Sexual words  (sex, sexy…)", True),
+        ("sexual", "Sexual words  (sex, sexy, slut…)", True),
         ("rude", "Rude words kids copy  (stupid, dumb, idiot, shut up…)", False),
         ("samesexwords", "Words about same-sex relationships  (gay, lesbian…)", True)]),
     ("Sex and nudity", 1, [
@@ -88,7 +90,7 @@ BOXES = [key for _, _, items in SECTIONS for key, _, d in items if isinstance(d,
 LEVELS = [key for _, _, items in SECTIONS for key, _, d in items if isinstance(d, str)]
 LABELS = {key: label for _, _, items in SECTIONS for key, label, _ in items}
 TOPICS = ("holiday", "birthday", "magic", "darkmagic", "vampires")
-WORD_GROUPS = ("swearing", "mild", "deity", "minced", "sexual", "rude")
+WORD_GROUPS = ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude")
 
 STANDARD = {key: d for _, _, items in SECTIONS for key, _, d in items}
 STANDARD.update({"religion_preach": True, "religion_anger": True, "religion_prayers": False})
@@ -120,6 +122,9 @@ def _upgrade(ticks):
         t.setdefault("medical", bool(t.get("gore") or t.get("graphic")))
     if "religion_strict" in t:
         t.setdefault("religion_prayers", t["religion_strict"])
+    if t:
+        # saved before the Slurs box (1.17.91): ticked, as slurs were muted with Swearing before
+        t.setdefault("slurs", True)
     return {k: v for k, v in t.items() if k in STANDARD}
 
 

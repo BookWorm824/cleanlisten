@@ -55,3 +55,21 @@ def test_which_apps():
     for app in ("CleanListen.pyw", "CleanRead.pyw"):
         assert "main_on_first" not in (ROOT / app).read_text(encoding="utf8"), app
     assert "main_on_first=True" in (ROOT / "ReadAloud.pyw").read_text(encoding="utf8")
+
+
+def test_cleanread_starts_on_the_ticks(root):
+    """CleanRead: no Start cleaning on step 2 either ("What to do"): Next leads to the ticks on 3 (the
+    owner, 2026-11-20: "the start cleaning on section 2 should be removed. 2 leads to 3 to show them
+    what to tick")."""
+    steps = [("Ebook", "a"), ("What to do", "b"), ("What to take out", "c"), ("Options", "d")]
+    sp = CL.StepPage(root, tk.Frame(root), "CleanRead", None, steps, lambda n: "",
+                     ("Start cleaning", lambda: None), main_from=3)
+    for n in (1, 2):
+        sp.go(n)
+        assert not shown(sp.main_btn) and sp.next_btn._kind == "primary", n
+    sp.go(2)
+    assert sp.next_btn._text == "Next: What to take out"
+    sp.go(3)
+    assert shown(sp.main_btn) and sp.next_btn._kind == "secondary"
+    assert "main_from=3" in (ROOT / "CleanRead.pyw").read_text(encoding="utf8")
+    assert "main_from" not in (ROOT / "CleanListen.pyw").read_text(encoding="utf8")

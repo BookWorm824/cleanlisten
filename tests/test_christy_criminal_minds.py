@@ -6,7 +6,7 @@ import pytest
 import cleanlisten as E
 import cleanread as R
 
-ALL = ["strong", "moderate", "mild", "deity", "minced", "sexual", "rude"]
+ALL = ["strong", "moderate", "slurs", "mild", "deity", "minced", "sexual", "rude"]
 
 
 def words(text):

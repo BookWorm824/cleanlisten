@@ -179,7 +179,7 @@ def test_dick_still_marked_in_a_modern_book(tmp_path):
 @pytest.mark.parametrize("text", ["Coons are trying to get into school.",
                                   "Get lost, you big coons!", "that coon"])
 def test_coon_slur_marked(text):
-    assert [w for w in found(text, ["strong"]) if w.startswith("coon")], text
+    assert [w for w in found(text, ["slurs"]) if w.startswith("coon")], text
 
 
 @pytest.mark.parametrize("text", ["a Maine Coon", "a coon dog", "we went coon hunting",
@@ -187,13 +187,13 @@ def test_coon_slur_marked(text):
                                   "a coonskin cap", "Not raccoons, you fool",
                                   "raccoons on the porch", "a coon trap"])
 def test_coon_the_animal_left_alone(text):
-    assert found(text, ["strong"]) == [], text
+    assert found(text, ["slurs"]) == [], text
 
 
 # --- B2. "faggotty" with the same-sex words -------------------------------------------------
 def test_faggotty():
-    assert "faggotty" in found("Get your faggotty ass on the bus.", ["orientation"])
-    assert "faggoty" in found("that faggoty little", ["orientation"])
+    assert "faggotty" in found("Get your faggotty ass on the bus.", ["slurs"])
+    assert "faggoty" in found("that faggoty little", ["slurs"])
 
 
 # --- B3. strip clubs are sexual content ------------------------------------------------------

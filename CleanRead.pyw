@@ -440,7 +440,8 @@ class App(tk.Tk):
             links=[(f"v{app_version()} \u00b7 Check for updates", self.check_updates, "refresh"),
                    (f"Text size: {self.text_size}", self._text_size_menu, "text")],
             done=lambda i: i == 1 and bool(self.book_path), scroll_area=self._scroll_area,
-            start=step, theme=(self._theme_var(), self._set_theme))
+            start=step, theme=(self._theme_var(), self._set_theme),
+            main_from=3)      # Next leads to the ticks first (the owner, 2026-11-20: "2 leads to 3")
         self.footer = sp.nav
         self.start_btn = sp.main_btn
         self.start_btn.config(state="disabled")

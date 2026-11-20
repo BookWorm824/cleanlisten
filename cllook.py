@@ -251,11 +251,13 @@ class StepPage:
     app's own scrolling frame. Put each step's widgets in `pane(n)` (1-based), then call `go(n)`."""
 
     def __init__(self, app, parent, name, logo_png, steps, summary, main, links=(), done=None,
-                 scroll_area=None, start=1, theme=None, main_on_first=False):
+                 scroll_area=None, start=1, theme=None, main_on_first=False, main_from=None):
         """theme: (StringVar "light"/"dark", command) for the Light / Dark choice under the steps.
-        main_on_first: the green button on step 1 too (ReadAloud); otherwise Next leads on from it."""
+        main_on_first: the green button on step 1 too (ReadAloud); otherwise Next leads on from it.
+        main_from: the first step with the green button (CleanRead: 3, where the ticks are)."""
         self.app, self.steps, self.summary, self.done = app, list(steps), summary, done
         self.main_on_first = main_on_first
+        self.main_from = main_from or (1 if main_on_first else 2)
         X = self.X = lambda n: look.px(app, n)      # noqa: E731
         C = look.C
         SIDE, FAINT = C["side"], C["faint"]
@@ -372,7 +374,9 @@ class StepPage:
         # No Start cleaning on step 1: Next leads on to the choices, green (as CleanView 1.18.135;
         # the owner, 2026-11-18: "get rid of the green start cleaning button on page 1, by doing that
         # it leads to page 2 the the tick menus are", "keep the button on 2 and others")
-        main = n > 1 or self.main_on_first
+        # CleanRead's starts on step 3, the ticks (the owner, 2026-11-20: "the start cleaning on section 2
+        # should be removed. 2 leads to 3 to show them what to tick")
+        main = n >= self.main_from
         self.main_btn.pack_forget()
         self.next_btn.pack_forget()
         if main:

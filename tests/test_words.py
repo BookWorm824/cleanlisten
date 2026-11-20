@@ -92,7 +92,8 @@ def test_screw_that_is_still_the_insult(text):
     ("Nobody has the cojones to say it.", "cojones"),
 ])
 def test_body_slang_muted(text, word):
-    assert hits(text) == [(word, "moderate")]
+    # with crude humor since CleanView 1.18.150 ("balls" meaning nerve, kicks in the privates)
+    assert hits(text, EVERY + ["crude"]) == [(word, "crude")]
 
 
 @pytest.mark.parametrize("text", [
@@ -109,30 +110,32 @@ def test_body_slang_words_in_everyday_use(text):
     assert hits(text) == []
 
 
-def test_body_slang_is_swearing():
-    assert hits("Grow some stones.", ["mild", "deity", "sexual"]) == []
+def test_body_slang_is_crude_humor():
+    assert hits("Grow some stones.", EVERY) == []
 
 
 # --- fruit and vegetables for body parts: only in these phrases, only the slang word ----
-@pytest.mark.parametrize("text, muted", [
-    ("Check out those melons!", ["melons"]),
-    ("Nice pair of cantaloupes", ["cantaloupes"]),
-    ("He was staring at her coconuts", ["coconuts"]),
-    ("Look at them big melons", ["melons"]),
-    ("Her huge melons", ["melons"]),
-    ("I lost my cherry at prom", ["cherry"]),
-    ("She kneed him in the grapes", ["grapes"]),
-    ("Kicked me right in the plums", ["plums"]),
-    ("hit him in the franks and beans", ["franks", "beans"]),
-    ("He zipped his franks and beans", ["franks", "beans"]),
-    ("freezing my grapes off out here", ["grapes"]),
-    ("a cucumber in his pants", ["cucumber"]),
-    ("Look at her tight buns", ["buns"]),
-    ("his juicy peach", ["peach"]),
-    ("kicked him in the meat and two veg", ["veg"]),
+# (CleanView 1.18.150: kicks in the privates and "freezing my grapes off" with crude humor, the rest
+# with the sexual words)
+@pytest.mark.parametrize("text, muted, cat", [
+    ("Check out those melons!", ["melons"], "sexual"),
+    ("Nice pair of cantaloupes", ["cantaloupes"], "sexual"),
+    ("He was staring at her coconuts", ["coconuts"], "sexual"),
+    ("Look at them big melons", ["melons"], "sexual"),
+    ("Her huge melons", ["melons"], "sexual"),
+    ("I lost my cherry at prom", ["cherry"], "sexual"),
+    ("She kneed him in the grapes", ["grapes"], "crude"),
+    ("Kicked me right in the plums", ["plums"], "crude"),
+    ("hit him in the franks and beans", ["franks", "beans"], "crude"),
+    ("He zipped his franks and beans", ["franks", "beans"], "crude"),
+    ("freezing my grapes off out here", ["grapes"], "crude"),
+    ("a cucumber in his pants", ["cucumber"], "sexual"),
+    ("Look at her tight buns", ["buns"], "sexual"),
+    ("his juicy peach", ["peach"], "sexual"),
+    ("kicked him in the meat and two veg", ["veg"], "crude"),
 ])
-def test_fruit_slang_muted(text, muted):
-    assert hits(text) == [(w, "moderate") for w in muted]
+def test_fruit_slang_muted(text, muted, cat):
+    assert hits(text, EVERY + ["crude"]) == [(w, cat) for w in muted]
 
 
 @pytest.mark.parametrize("text", [
@@ -145,11 +148,12 @@ def test_fruit_slang_muted(text, muted):
     "popped a cherry tomato in her mouth", "a big pair of shoes",
 ])
 def test_fruit_words_in_everyday_use(text):
-    assert hits(text) == []
+    assert hits(text, EVERY + ["crude"]) == []
 
 
-def test_fruit_slang_is_swearing():
-    assert hits("Check out those melons!", ["mild", "deity", "sexual"]) == []
+def test_fruit_slang_is_not_swearing():
+    assert hits("Check out those melons!", ["strong", "moderate", "mild", "deity", "crude"]) == []
+    assert hits("Kicked me right in the plums", ["strong", "moderate", "mild", "deity", "sexual"]) == []
 
 
 # --- "that's bull": short for bullshit, mild; never the animal ---------------------------
@@ -215,8 +219,8 @@ def test_more_slang_innocent_uses(text):
     assert hits(text) == []
 
 
-def test_slurs_are_strong():
-    assert [c for _, c in hits("He called them wetbacks.")] == ["strong"]
+def test_slurs_have_their_own_box():
+    assert [c for _, c in hits("He called them wetbacks.")] == ["slurs"]
 
 
 # --- rude words kids copy: only when that box is ticked --------------------------------
@@ -300,7 +304,7 @@ def test_orientation_words_only_when_asked():
 # --- the shapes other apps depend on --------------------------------------------------
 def test_cats_contract():
     """CleanView/CleanRead mask every CATS category; orientation must stay out of it."""
-    assert set(E.CATS) == {"strong", "moderate", "mild", "minced", "deity", "sexual"}
+    assert set(E.CATS) == {"strong", "moderate", "slurs", "mild", "minced", "deity", "sexual"}
     assert "orientation" in E.EXTRA_CATS
     assert set(E.ALL_CATS) == set(E.CATS) | set(E.EXTRA_CATS)
 
@@ -360,8 +364,8 @@ def test_may_untick_word(word, cat, ok):
     ("You yanked my chain, sheesh.", "sheesh", "minced"),
     ("He was jerking off.", "jerking off", "sexual"),
     ("Go rub one out.", "rub one out", "sexual"),
-    ("What a jerk-off.", "jerkoff", "moderate"),
-    ("Stop wanking.", "wanking", "moderate"),
+    ("What a jerk-off.", "jerkoff", "sexual"),
+    ("Stop wanking.", "wanking", "sexual"),
 ])
 def test_chain_and_slang_found(text, phrase, cat):
     ws = words(text)
@@ -419,7 +423,7 @@ def test_shown_keeps_lead_in_readable():
     assert E.shown(raw, words("What the hell?")) == "What the h***"
 
 
-# --- "retarded" and its forms (swearing group, like CleanView 1.15.1) ------------------
+# --- "retarded" and its forms (the Slurs box since CleanView 1.18.150) ------------------
 @pytest.mark.parametrize("text, phrase", [
     ("That is so retarded.", "retarded"),
     ("Shut up, retardo.", "retardo"),
@@ -430,7 +434,7 @@ def test_shown_keeps_lead_in_readable():
     ("You re tards.", "re tards"),
 ])
 def test_retarded_forms_muted(text, phrase):
-    assert (phrase, "moderate") in hits(text)
+    assert (phrase, "slurs") in hits(text)
 
 
 @pytest.mark.parametrize("text", [
@@ -450,7 +454,7 @@ def test_retarded_lookalikes_kept(text):
     ("She's got real stones.", "stones"),
 ])
 def test_cleanview_phrases_found(text, phrase):
-    assert phrase in [p for p, _ in hits(text)]
+    assert phrase in [p for p, _ in hits(text, EVERY + ["crude"])]
 
 
 @pytest.mark.parametrize("text", [
@@ -549,10 +553,10 @@ def test_more_rude_words(text, phrase):
 @pytest.mark.parametrize("text, muted, cat", [
     ("We're screwed", ["we're screwed"], "mild"), ("Up yours!", ["up yours"], "mild"),
     ("That was craptastic", ["craptastic"], "mild"), ("Dayum", ["dayum"], "mild"),
-    ("She's a floozy", ["floozy"], "mild"), ("Can't be arsed", ["arsed"], "moderate"),
-    ("Check out those jugs", ["jugs"], "moderate"), ("Nice rack", ["rack"], "moderate"),
-    ("Kicked him in the junk", ["junk"], "moderate"), ("suck my cock", ["cock"], "moderate"),
-    ("kneed him in the crown jewels", ["crown", "jewels"], "moderate"),
+    ("She's a floozy", ["floozy"], "sexual"), ("Can't be arsed", ["arsed"], "moderate"),
+    ("Check out those jugs", ["jugs"], "sexual"), ("Nice rack", ["rack"], "sexual"),
+    ("Kicked him in the junk", ["junk"], "crude"), ("suck my cock", ["cock"], "sexual"),
+    ("kneed him in the crown jewels", ["crown", "jewels"], "crude"),
     ("a big schlong", ["schlong"], "sexual"),
 ])
 def test_more_mild_and_crude_words(text, muted, cat):
@@ -560,7 +564,7 @@ def test_more_mild_and_crude_words(text, muted, cat):
 
 
 def test_more_orientation_words():
-    assert [w for w, _ in hits("lesbos", ["orientation"])] == ["lesbos"]
+    assert [w for w, _ in hits("lesbos", ["slurs"])] == ["lesbos"]       # a slur (CleanView 1.18.150)
 
 
 @pytest.mark.parametrize("text", [
@@ -577,7 +581,7 @@ def test_more_everyday_uses_left_alone(text):
 
 
 @pytest.mark.parametrize("text, muted, cat", [
-    ("Grow some cajones", ["cajones"], "moderate"), ("He's got cahones", ["cahones"], "moderate"),
+    ("Grow some cajones", ["cajones"], "crude"), ("He's got cahones", ["cahones"], "crude"),
     ("Merde!", ["merde"], "moderate"), ("Scheisse", ["scheisse"], "moderate"),
     ("Verdammt!", ["verdammt"], "mild"), ("You still get screwed", ["get screwed"], "mild"),
     ("We got screwed!", ["got screwed"], "mild"), ("So help me God", ["so help me god"], "deity"),
@@ -666,7 +670,7 @@ def test_november_everyday_uses(text):
     ("that took some balls", "balls"), ("I swear by Jesus", "jesus"), ("oh god no", "oh god")])
 def test_november_still_caught(text, word):
     w = words(text)
-    assert word in [" ".join(w[i:j]) for i, j, _ in E.find_language(w, EVERY)]
+    assert word in [" ".join(w[i:j]) for i, j, _ in E.find_language(w, EVERY + ["crude"])]
 
 
 def test_one_explicit_word_said_over_and_over_isnt_a_sex_scene():
@@ -750,7 +754,7 @@ def test_oaths_near_prayers_still_caught(text, word):
     ("Even a greaseball's got feelings.", "greaseball's"), ("a dirty wop's car", "wop's"),
 ])
 def test_west_side_story_slurs(text, word):
-    assert (word, "strong") in hits(text)
+    assert (word, "slurs") in hits(text)
     assert word not in E.INNOCENT_WORDS            # never "fine in context"
 
 

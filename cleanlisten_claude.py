@@ -74,9 +74,9 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "holiday": "holiday", "birthday": "birthday candles", "darkmagic": "dark magic",
               "magic": "magic", "vampires": "vampires and werewolves",
               "added": "passage you chose to cut"}
-CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mild word",
+CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "slurs": "slur", "mild": "mild word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
-             "crude": "drunk (crude humor)", "mine": "the family's own word",
+             "crude": "crude word", "mine": "the family's own word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
 
 # What the family wants, filter by filter (from the owner's own rules for CleanListen)
@@ -225,16 +225,11 @@ KIND_RULES = {
                 "bats and other real animals, and ordinary wolves, are fine.",
 }
 CAT_RULES = {
-    "strong": "Strong swearing: the f-word or c-word in any form, and racial slurs - always mute.",
+    "strong": "Strong swearing: the f-word or c-word in any form - always mute.",
     "moderate": "Swearing: s***, b****, a**, a**hole, b******, p***ed, d***, and any word "
-                "containing them (e.g. 'shitload', 'bullshit') - always mute, and slurs such as "
-                "'retarded' (even said as a description). Also slang for a "
-                "man's private parts - stones, balls, nuts, a pair ('grow some stones', 'has the "
-                "balls to', 'kicked him in the nuts', 'grow a pair'), and fruit or vegetables "
-                "used for body parts ('check out those melons', 'pop her cherry', 'kneed him in "
-                "the grapes', 'is that a banana in your pocket'): mute just that word. The "
-                "same words in their everyday meaning (tennis balls, a pair of shoes, cherry "
-                "pie, ripe melons) are fine.",
+                "containing them (e.g. 'shitload', 'bullshit') - always mute.",
+    "slurs": "Slurs: hateful names for groups of people - racial and ethnic slurs, 'retarded' "
+             "(even said as a description), anti-gay slurs - always mute.",
     "mild": "Mild words: damn, hell used as a curse, crap, bloody used as a curse, 'screw you' / "
             "'screw it', and 'bull' meaning bullshit ('that's bull', 'cut the bull'). 'Hell' as "
             "the place in religious talk, 'bloody' meaning covered in blood, screwing something "
@@ -251,10 +246,15 @@ CAT_RULES = {
             "'cigarette butts', 'deaf and dumb').",
     "crude": "Drunk words (with crude humor): drunk, drunks, drunken, drunkenly, drunkenness, "
              "drunkard - mute just the word. 'Drunk' meaning what was drunk is fine ('he had drunk his "
-             "tea', 'drunk from the well').",
-    "sexual": "Sexual words: sex, sexual, sexually, sexy, horny, aroused, orgasm and crude words for "
-              "body parts - mute the word every time.",
-    "orientation": "Orientation words: gay, lesbian, homosexual, bisexual, queer and slurs - mute "
+             "tea', 'drunk from the well'). Also 'balls' meaning nerve ('grow some stones', 'has the "
+             "balls to', 'grow a pair', ballsy), 'kicked him in the nuts', and turd: mute just that "
+             "word. Tennis balls, a pair of shoes, a bag of nuts are fine.",
+    "sexual": "Sexual words: sex, sexual, sexually, sexy, horny, aroused, orgasm, slut, whore and crude "
+              "words for body parts - mute the word every time. Also fruit or vegetables used for "
+              "body parts ('check out those melons', 'pop her cherry', 'kneed him in the grapes', 'is "
+              "that a banana in your pocket'): mute just that word (cherry pie and ripe melons are "
+              "fine).",
+    "orientation": "Orientation words: gay, lesbian, homosexual, bisexual, queer - mute "
                    "the word (e.g. 'Are you gay?'). 'Gay' meaning cheerful or bright is fine.",
 }
 
