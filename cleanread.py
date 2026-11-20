@@ -2695,10 +2695,13 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
     todo, gated = [], {}
     for i, kind in sorted(cands):
         near = [book.sent_words(k) for k in (i - 1, i, i + 1) if 0 <= k < S]
-        if romance_near(book, i) if kind == "relationship" else E.ai_gate(kind, near):
+        was, kind = kind, E.ai_gore_kind(kind, near, types)   # blood without insides is graphic
+        if kind and (i, kind) in todo:
+            continue
+        if kind and (romance_near(book, i) if kind == "relationship" else E.ai_gate(kind, near)):
             todo.append((i, kind))
         else:
-            gated[kind] = gated.get(kind, 0) + 1
+            gated[was] = gated.get(was, 0) + 1
     if info is not None:
         info["gated"] = gated
     for n, (i, kind) in enumerate(todo):

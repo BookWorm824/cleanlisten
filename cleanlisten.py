@@ -3966,7 +3966,38 @@ def romance_sign(words):
         return True
 
 
+# Gore and graphic need a word of blood, a wound or a body torn open nearby (the owner's Hugo and
+# Jane Eyre audiobook, 2026-11-15 and 2026-11-20: the small AI offered "rude carts, bespattered with
+# rustic mire" and farmers' outhouses as gore, and she ticked none of them).
+GATE_GORY = _gw(
+    r"blood(y|ied|ier|iest|stained|shed)?", r"bleed(s|ing)?", r"bled", r"wound(s|ed|ing)?",
+    r"gash(es|ed)?", r"gor(e|ed|y|ier|iest)", r"flesh", r"mangled", r"mutilat\w*", r"maim(ed|ing)?",
+    r"sever(ed|ing)?", r"corpses?", r"carcass(es)?", r"skulls?", r"bones?", r"brains?", r"guts",
+    r"innards", r"entrails", r"intestines?", r"organs", r"viscera", r"scalp(ed|ing)?", r"torn",
+    r"dismember\w*", r"disembowel\w*", r"decapitat\w*", r"behead(ed|ing)?", r"impal(e|ed|ing)",
+    r"gouged?", r"pulp", r"eyeballs?", r"stumps?")
+GATE_GORY_PHRASE = re.compile(r"\b(cut|chopped|hacked|ripped|tore|torn) (off|out|open)\b|"
+                              r"\bburned alive\b")
+
+
+def gory_sign(words):
+    """A sign of blood, a wound or a body torn open in one sentence."""
+    return (any(GATE_GORY.match(w) for w in words) or bool(GATE_GORY_PHRASE.search(" ".join(words)))
+            or is_gory(words))
+
+
+def ai_gore_kind(kind, near, kinds):
+    """The small AI calls any blood "gore". Gore is insides on the outside: a find with no word of
+    insides in the sentence or the one before or after is graphic (blood and wounds), and is
+    dropped when graphic isn't being filtered. Other kinds come back as they are."""
+    if kind != "gore" or any(gore_level(list(w)) == "gore" for w in near if w):
+        return kind
+    return "graphic" if "graphic" in kinds else None
+
+
 AI_GATES = {"violence": lambda near: any(violence_sign(w) for w in near),
+            "gore": lambda near: any(gory_sign(w) for w in near),
+            "graphic": lambda near: any(gory_sign(w) for w in near),
             "disturbing": lambda near: any(disturbing_sign(w) for w in near),
             "disrespect": _disrespect_ok,
             "rebellion": _disrespect_ok,        # CleanRead's content check calls it rebellion
@@ -4110,8 +4141,13 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     # disrespect, same-sex...) needs a sign of it in that sentence or the one before or after, else
     # it isn't double-checked or shown (the owner's audiobooks had 677 and 721 same-sex suggestions,
     # "Daphne is late.", none of which she ticked)
-    todo = [(i, kind) for i, kind in sorted(cands)
-            if ai_gate(kind, [sent_norm[k] for k in (i - 1, i, i + 1) if 0 <= k < len(sents)])]
+    todo = set()
+    for i, kind in sorted(cands):
+        near = [sent_norm[k] for k in (i - 1, i, i + 1) if 0 <= k < len(sents)]
+        kind = ai_gore_kind(kind, near, kinds)      # blood without insides is graphic (2026-11-20)
+        if kind and ai_gate(kind, near):
+            todo.add((i, kind))
+    todo = sorted(todo)
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt

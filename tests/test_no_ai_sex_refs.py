@@ -8,7 +8,7 @@ import cleanlisten as E
 import cleanread as R
 
 LINES = {"Jasper found her udder.": "ref", "Twice.": "ref",
-         "Blood poured from the wound in his chest.": "gore"}
+         "His guts spilled from the wound in his belly.": "gore"}
 PLAIN = ["The wind blew across the fields.", "Anna fed the chickens before school.",
          "Her brother read a book by the fire.", "The bus was late again."]
 

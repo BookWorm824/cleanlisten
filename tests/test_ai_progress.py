@@ -20,14 +20,14 @@ def test_cleanlisten_ai_double_check_counts(monkeypatch):
 
         def chat(self, prompt, schema=None, timeout=300):
             if "sentences in order" in prompt:    # flag both witch sentences
-                return {"flags": [{"quote": "The witch flew away tonight.", "type": "gore"},
-                                  {"quote": "The witch cast a spell today.", "type": "gore"}]}
+                return {"flags": [{"quote": "The witch flew away tonight.", "type": "kiss"},
+                                  {"quote": "The witch cast a spell today.", "type": "kiss"}]}
             return {"fits": False, "confidence": "low"}
 
     monkeypatch.setattr(E, "_ai_module", lambda: FakeAI())
     monkeypatch.setattr(E, "_learned_examples", lambda title="": "")
     said = []
-    E.ai_assist(asr, [], ["gore"], to_sentences, E.span_times, progress=lambda f, m: said.append(m))
+    E.ai_assist(asr, [], ["kiss"], to_sentences, E.span_times, progress=lambda f, m: said.append(m))
     checks = [m for m in said if m.startswith("AI is double-checking what it found")]
     assert checks == ["AI is double-checking what it found · 1 of 2",
                       "AI is double-checking what it found · 2 of 2"]

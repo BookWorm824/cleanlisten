@@ -69,9 +69,11 @@ def test_cleanlisten_offers_every_ai_find_unticked(monkeypatch):
         return a, min(e for e in ends if e >= j)
     monkeypatch.setattr(E, "_ai_module", lambda: VerySure())
     monkeypatch.setattr(E, "_learned_examples", lambda title="": "")
-    scenes = E.ai_assist(asr, [], ["ref", "gore", "disturbing", "kiss"], to_sentences, E.span_times)
+    scenes = E.ai_assist(asr, [], ["ref", "gore", "graphic", "disturbing", "kiss"], to_sentences,
+                         E.span_times)
     assert scenes and all(sc["cut"] is False and sc["ai_note"] == "AI suggests" for sc in scenes)
-    assert "gore" in {sc["kind"] for sc in scenes}
+    # blood with no insides is graphic, not gore (2026-11-20)
+    assert "graphic" in {sc["kind"] for sc in scenes} and "gore" not in {sc["kind"] for sc in scenes}
     # "Chunks of wood crashed to the floor." has nothing disturbing in it (word gates, 2026-11-16)
     assert "disturbing" not in {sc["kind"] for sc in scenes}
     assert "ref" not in {sc["kind"] for sc in scenes}       # (2026-11-15: "stop showing them")
