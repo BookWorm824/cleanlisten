@@ -247,10 +247,19 @@ def _sweeping_logo(parent, ico, bg, px, paused=None):
         return None
     mid = tk.Frame(parent, bg=bg)
     mid.pack(fill="both", expand=True)
-    cv = tk.Canvas(mid, width=px, height=px, bg=bg, highlightthickness=0, bd=0)
+    size = px
+    try:                # the size it will have, so he's drawn once at that size (sweeper 1.17.94)
+        mid.update_idletasks()
+        if mid.winfo_width() > 1 and mid.winfo_height() > 1:
+            n = fit_size(px, mid.winfo_width(), mid.winfo_height())
+            if n != px:
+                size, back = n, SW.backdrop(_resize(pic, n), bg)
+    except (tk.TclError, ValueError):
+        pass
+    cv = tk.Canvas(mid, width=size, height=size, bg=bg, highlightthickness=0, bd=0)
     cv.image = _photo(cv, SW.opaque(back))
     cv.item = cv.create_image(0, 0, image=cv.image, anchor="nw")
-    cv.size = px
+    cv.size = size
     cv.place(relx=0.5, rely=0.45, anchor="center")
     cv.sweeper = SW.Sweeper(cv, back, lambda rgba, into: _photo(cv, rgba, into), paused=paused, tile=tile)
     cv.sweeper.start()

@@ -27,7 +27,19 @@ before, and the shirt never close to the pants' colour (navy on navy).
 numpy draws him (smooth edges at any size, the way cvlook draws); `Walker` decides where he
 goes (no Tk, so tests can run it); `Sweeper` shows him on a Tk canvas over the logo. The canvas
 shows the logo on the page's background as one picture (`backdrop`) and him as a small second
-picture cut from it with him drawn in, moved each frame."""
+picture cut from it with him drawn in, moved each frame.
+
+1.17.94 (CleanListen; the owner, 2026-11-20, checking a book in CleanRead without the AI helper:
+"the littleman on the logo did this and didn't move, the whole app also froze for a bit before
+showing what was found"): drawing him is hundreds of small numpy steps, and while a book is being
+checked each one waits its turn with the check (about 15 ms on Windows), so one frame took 4
+seconds and the window stood still. Now every pose (`PHASES` of each) and puff is drawn once,
+see-through (`see_through`), when he starts, and a frame only moves a picture and swaps it
+(`Sweeper.drawn_once`, on by default). The window plays a third of a second of frames on its own
+(`PLAY`, `BATCH`), so the check is interrupted 3 times a second instead of at every frame (a check
+that took 70 seconds without him took 120 with him moved every frame, 80 this way). His walk and
+sweep are the same; the short easing between walking and sweeping is left out, Pause shows within a
+third of a second, and he keeps his size if the window is resized while he works."""
 import datetime
 import math
 import random
@@ -505,18 +517,114 @@ class Walker:
         return x0, y0, pic
 
 
+# ---------- drawn once, moved after (1.17.94) ----------
+PHASES = {"walk": 10, "sweep": 10, "pause": 4}    # poses drawn of each, through a step, a stroke, a breath
+PUFF_STEPS = 6                                     # pictures of a puff, as it fades
+BREATH = 2.2                                       # leaning()'s breathing (radians a second)
+BATCH = FPS // 3                                   # frames worked out at a time (a third of a second's): the
+#                                                    window plays them on its own (PLAY), so the check
+#                                                    is interrupted 3 times a second, not every frame,
+#                                                    and Pause shows within a third of a second
+PLAY = """
+proc sweeper_play {tag frames ms} {
+    global sweeper_on
+    if {![info exists sweeper_on($tag)]} return
+    if {[llength $frames] == 0} {
+        if {[catch {$tag}]} {unset -nocomplain sweeper_on($tag)}
+        return
+    }
+    if {[catch {eval [lindex $frames 0]}]} {
+        unset -nocomplain sweeper_on($tag)
+        return
+    }
+    after $ms [list sweeper_play $tag [lrange $frames 1 end] $ms]
+}
+"""
+
+
+def see_through(draw_on, shape):
+    """What draw_on(picture) puts on any picture of `shape` (h x w x 3), as h x w x 4 uint8 with
+    see-through pixels: drawn on black and on white, the difference is how see-through each pixel
+    is (he's drawn by blending, so this is exact to a shade)."""
+    blk, wht = np.zeros(shape, np.uint8), np.full(shape, 255, np.uint8)
+    draw_on(blk)
+    draw_on(wht)
+    a = np.clip(1 - (wht.astype(float) - blk).mean(axis=2) / 255.0, 0, 1)
+    col = np.where(a[..., None] > 0.004, blk / np.maximum(a[..., None], 1e-6), 0)
+    return np.dstack([np.clip(col + 0.5, 0, 255).astype(np.uint8),
+                      np.clip(a * 255 + 0.5, 0, 255).astype(np.uint8)])
+
+
+def pose_key(walker):
+    """(what he's doing, which of its PHASES, which way he faces): the drawn pose nearest now."""
+    m = walker.mode()
+    n = PHASES[m]
+    u = (walker.p if m == "walk" else walker.t * (STROKE if m == "sweep" else BREATH) / (2 * math.pi))
+    return m, int(round(u * n)) % n, walker.face
+
+
+def key_pose(key):
+    """The pose a pose_key stands for."""
+    m, i, _ = key
+    u = i / PHASES[m]
+    if m == "walk":
+        return walking(u)
+    return sweeping(u * 2 * math.pi / STROKE) if m == "sweep" else leaning(u * 2 * math.pi / BREATH)
+
+
+def him_box(h, face):
+    """(left, top, width, height) of a picture of him, from his feet, whole pixels."""
+    a, b, c, d = BOX
+    if face < 0:
+        a, b = -b, -a
+    left, top = math.floor(a * h), math.floor(c * h)
+    return left, top, math.ceil(b * h) - left + 1, math.ceil(d * h) - top + 1
+
+
+def puff_box(h):
+    """(left, top, width, height) of a picture of a puff, from where it starts."""
+    left, top = math.floor(-0.6 * h), math.floor(-0.6 * h)
+    return left, top, math.ceil(1.2 * h) + 1, math.ceil(0.9 * h) + 1
+
+
+def all_pictures(h, wear):
+    """{pose_key or ("puff", step): (h x w x 4 picture, left, top)} for him at height h."""
+    out = {}
+    for m, n in PHASES.items():
+        for i in range(n):
+            for f in (1, -1):
+                left, top, w, hh = him_box(h, f)
+                pose = key_pose((m, i, f))
+                out[(m, i, f)] = (see_through(
+                    lambda pic, pose=pose, f=f, left=left, top=top: draw(pic, -left, -top, h, pose, f, wear=wear),
+                    (hh, w, 3)), left, top)
+    for k in range(PUFF_STEPS):
+        left, top, w, hh = puff_box(h)
+        age = k / PUFF_STEPS * PUFF_LIFE
+        out[("puff", k)] = (see_through(
+            lambda pic, age=age, left=left, top=top: draw_puffs(pic, [(-left, -top, age)], h), (hh, w, 3)),
+            left, top)
+    return out
+
+
 # ---------- on the screen ----------
 class Sweeper:
     """Him on a Tk canvas that shows `back` (the backdrop) at 0, 0. Stops by itself when the
     canvas goes (the page changed) and draws nothing while it isn't on the screen. paused():
     whether cleaning is paused now, asked every frame (he leans on his broom meanwhile)."""
 
-    def __init__(self, canvas, back, photo, paused=None, tile=None):
+    def __init__(self, canvas, back, photo, paused=None, tile=None, drawn_once=True):
         self.canvas, self.back, self.photo = canvas, back, photo     # photo(rgba, into) -> image
         self.paused = paused
         self.walker = Walker(back.shape[0], tile=tile)
         self.img = None
         self.item = None
+        # his poses drawn once, then moved (1.17.94: drawing him each frame froze the window
+        # while a book was being checked)
+        self.drawn_once = drawn_once
+        self.pictures = None                   # {pose_key: (tk picture, left, top)}
+        self.puff_items = []
+        self.shown_key = None
         self.when = None
         self.running = False
         self.top = canvas.winfo_toplevel()
@@ -526,10 +634,30 @@ class Sweeper:
     def start(self):
         if not self.running:
             self.running, self.when = True, time.monotonic()
+            if self.drawn_once and self.pictures is None:
+                try:          # now, before the work starts: later each would wait on it
+                    self.pictures = {k: (self.photo(rgba, None), left, top) for k, (rgba, left, top)
+                                     in all_pictures(self.walker.h, self.walker.wear).items()}
+                except Exception:
+                    self.drawn_once = False          # drawn each frame, as before
+            if self.drawn_once:
+                try:
+                    self._play()
+                    return
+                except Exception:
+                    self.drawn_once = False
             self._tick()
 
     def stop(self):
         self.running = False
+        tag = getattr(self, "tag", None)
+        if tag:
+            self.tag = None
+            try:
+                self.canvas.tk.eval(f"unset -nocomplain sweeper_on({tag})")
+                self.top.deletecommand(tag)
+            except Exception:
+                pass
         if self.next is not None:
             try:
                 self.top.after_cancel(self.next)
@@ -546,7 +674,9 @@ class Sweeper:
         if not self.running:
             return
         try:
-            if not self.canvas.winfo_exists():
+            # (drawn once: no asking the window first; a frame is one call to it, see _move, and a
+            # canvas that's gone ends him by the error)
+            if not self.drawn_once and not self.canvas.winfo_exists():
                 self.running = False
                 return
             now = time.monotonic()
@@ -566,3 +696,48 @@ class Sweeper:
             self.next = self.top.after(1000 // FPS, self._tick)
         except Exception:          # never let him break the cleaning screen
             self.running = False
+
+    def _play(self):
+        """Start the window playing him (PLAY), a third of a second's frames at a time (BATCH)."""
+        cv = self.canvas
+        if not cv.tk.eval("info procs sweeper_play"):
+            cv.tk.eval(PLAY)
+        self.item = cv.create_image(0, 0, anchor="nw")       # him, and up to three puffs
+        self.puff_items = [cv.create_image(0, 0, anchor="nw", state="hidden") for _ in range(3)]
+        self.tag = self.top.register(self._next_second)
+        cv.tk.eval(f"set sweeper_on({self.tag}) 1")
+        self._next_second()
+
+    def _next_second(self):
+        """The next BATCH frames, worked out now and played by the window on its own."""
+        if not self.running or not self.tag:
+            return
+        try:
+            if self.paused is not None:
+                self.walker.paused = bool(self.paused())
+            frames = []
+            for _ in range(BATCH):
+                self.walker.step(1.0 / FPS)
+                frames.append(self._frame())
+            self.canvas.tk.call("sweeper_play", self.tag, tuple(frames), 1000 // FPS)
+        except Exception:          # never let him break the cleaning screen
+            self.stop()
+
+    def _frame(self):
+        """One frame as the window's own commands: him and his puffs (pictures drawn once,
+        all_pictures) moved, and swapped when his pose changes."""
+        w, cv = self.walker, self.canvas
+        key = pose_key(w)
+        img, left, top = self.pictures[key]
+        name = str(cv)
+        tcl = [f"{name} coords {self.item} {int(round(w.x)) + left} {int(round(w.y)) + top}"]
+        if key != self.shown_key:
+            tcl.append(f"{name} itemconfigure {self.item} -image {img}")
+        self.shown_key = key
+        for item, (px, py, age) in zip(self.puff_items, w.puffs):
+            pimg, pl, pt = self.pictures[("puff", min(PUFF_STEPS - 1, int(age / PUFF_LIFE * PUFF_STEPS)))]
+            tcl.append(f"{name} coords {item} {int(round(px)) + pl} {int(round(py)) + pt}")
+            tcl.append(f"{name} itemconfigure {item} -image {pimg} -state normal")
+        for item in self.puff_items[len(w.puffs):]:
+            tcl.append(f"{name} itemconfigure {item} -state hidden")
+        return "\n".join(tcl)

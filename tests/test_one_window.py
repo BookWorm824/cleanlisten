@@ -83,9 +83,13 @@ class Click:
         self.lm = lm
 
     def __enter__(self):
+        def splash(*a, begin=None, **k):        # the box, which starts the program once it's up
+            self.calls.append(("splash", a))
+            if begin is not None:
+                begin()
         self.ps = [mock.patch.object(self.lm, n, (lambda *a, n=n, **k: self.calls.append((n, a)) or
                                                   (mock.Mock() if n == "start_app" else None)))
-                   for n in ("bring_forward", "start_app", "splash")]
+                   for n in ("bring_forward", "start_app")] + [mock.patch.object(self.lm, "splash", splash)]
         for p in self.ps:
             p.start()
         return self
@@ -101,7 +105,7 @@ def test_a_click_while_open_brings_it_forward(lm):
         assert [n for n, _ in c.calls] == ["bring_forward"] and c.calls[0][1] == ("read",)
         c.calls.clear()
         assert lm.clicked("")                 # CleanListen isn't open: it opens
-        assert [n for n, _ in c.calls] == ["start_app", "splash"]
+        assert [n for n, _ in c.calls] == ["splash", "start_app"]     # the box first (1.17.94)
 
 
 def test_a_click_while_opening_brings_it_forward(lm):
@@ -115,7 +119,7 @@ def test_update_now_opens_the_new_one(lm, monkeypatch):
     monkeypatch.setenv("CLEANLISTEN_UPDATE_DONE", "1")
     with Click(lm) as c, mock.patch.object(lm, "exists", lambda n: True):
         assert lm.clicked("")
-    assert [n for n, _ in c.calls] == ["start_app", "splash"]
+    assert [n for n, _ in c.calls] == ["splash", "start_app"]
     assert os.environ.get("CLEANLISTEN_UPDATE_DONE") == "1"      # passed on to the app part
 
 
@@ -336,3 +340,62 @@ def test_the_box_says_to_wait():
     text = (ROOT / "launcher.pyw").read_text(encoding="utf8")
     assert "Please wait: {name} opens by itself when it's done." in text
     assert "UPDATING_MOST = 600" in text and "UPDATE_MOST = 120" in text
+
+
+# --- the box up before the update (1.17.94; the owner, 2026-11-20: "when i opened the window and it was
+# update it didnt have the little window that said it was updating", "with the update counter", "the box
+# was on this pc"): a quick update was over before the box had come up
+def test_the_box_is_up_before_the_program_starts():
+    code = HIDE + textwrap.dedent(f"""
+        import importlib.machinery, importlib.util, subprocess, sys, tkinter
+        loader = importlib.machinery.SourceFileLoader("lm_first", {str(ROOT / "launcher.pyw")!r})
+        lm = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(lm)
+        def begin():
+            print("box up" if tkinter._default_root and tkinter._default_root.winfo_ismapped() else "no box")
+            return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(0.5)"])
+        lm.splash(None, "read", begin=begin)
+    """)
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60).stdout
+    assert out.strip() == "box up"
+
+
+def test_couldnt_start_closes_the_box(lm):
+    t = time.time()
+    lm.splash(None, "read", begin=lambda: None)
+    assert time.time() - t < 3
+
+
+def test_no_box_still_opens_and_says_why(lm):
+    started = []
+
+    def broken(*a, **k):
+        raise RuntimeError("Can't find a usable init.tcl")
+    with mock.patch.object(lm, "exists", lambda n: False), mock.patch.object(lm, "hold", lambda n, wait=0: True),             mock.patch.object(lm, "splash", broken),             mock.patch.object(lm, "start_app", lambda arg="": started.append(arg) or mock.Mock()):
+        assert lm.clicked("read")
+    assert started == ["read"]                               # once
+    assert "init.tcl" in (lm.APP_DATA / lm.BOX_ERROR).read_text(encoding="utf8")
+
+
+def test_after_an_update_the_box_says_so(lm):
+    def upd(arg=None):
+        lm.LAUNCHER_CHANGED = False
+        return "9.9.9"
+    with mock.patch.object(lm, "hold", lambda n, wait=0: True), mock.patch.object(lm, "update", upd),             mock.patch.object(lm.runpy, "run_path"), mock.patch.object(lm.sys, "argv", ["x"]):
+        lm.run_app("read")
+    os.environ.pop("CLEANLISTEN_UPDATED", None)
+    assert lm.opening_note("read").read_text(encoding="utf8") ==         "CleanRead was updated to version 9.9.9. Opening it now…"
+
+
+def test_the_box_tries_again_when_tk_wont_start(lm):
+    tries = []
+
+    class Tk:
+        def __init__(self):
+            tries.append(1)
+            if len(tries) < 3:
+                raise lm_tk.TclError("Can't find a usable init.tcl")
+    import tkinter as lm_tk
+    with mock.patch.object(lm_tk, "Tk", Tk), mock.patch.object(lm.time, "sleep", lambda s: None):
+        assert isinstance(lm._new_tk(), Tk)
+    assert len(tries) == 3

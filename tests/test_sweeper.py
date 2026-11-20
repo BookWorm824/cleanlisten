@@ -276,7 +276,7 @@ class OnTheWorkingPage(unittest.TestCase):
             pump(0.6)
             self.assertEqual((cv2.sweeper.walker.x, cv2.sweeper.walker.y), spot)
             held[0] = False
-            pump(0.4)
+            pump(0.8)              # (Pause is looked at every third of a second: sweeper.BATCH, 1.17.94)
             self.assertFalse(cv2.sweeper.walker.paused)
             page2.destroy()
             # the small logo elsewhere stays a plain picture

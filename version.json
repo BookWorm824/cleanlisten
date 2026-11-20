@@ -1,5 +1,5 @@
 {
- "version": "1.17.93",
+ "version": "1.17.94",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -68,7 +68,7 @@
   "cleanlisten_gpt.py": "d88b9f7d6f77a7a79eba9cb78efdde616e847bc9119c4227b1a2dadf035d2636",
   "cleanlisten_gemini.py": "669d470cbd36cd089297d1416cb3cb4b6273abe08dda6a6c132b1e0be88bb322",
   "cleanlisten_learn.py": "7cdc0e26d0e8b404c3e293a984dc7cdbf1b90450095ac5594eacaadd7bae6c6c",
-  "launcher.pyw": "7a55cf7f6c15ad957bc873759004dfaf1ac591d4d8689c6e283569880e5f7550",
+  "launcher.pyw": "9452f060633691bd6d728d3f4b9a902c5ffb442487910165674d4c361343fdee",
   "icon.ico": "7c435e53e1f7cd42e43dd664479ab158249750690fcd7e5f455af50633d9df02",
   "cleanview_ai.py": "ecaefc9d222996363744a03de709f923aaef0f17f4d3e190fa473512b3befaa1",
   "CleanView.pyw": "f65ef6d2df533d04828b603120a268a9a338d1d3c9e1ed4bcb7714f899f402c3",
@@ -76,8 +76,8 @@
   "cllook.py": "e84665a46ddc589bdc44acbb9dfe965f3f07a6f14224fe0836dffc9c76dacc96",
   "cvlook.py": "4c720d1916cbc27191101b74e1a75734695e1b152f0e114ca4f5862dae4b4df4",
   "cvlang.py": "39ff256ea14dfbfaa830149e51feab70e39ab8b444bcde278058725b3d1f18c9",
-  "logo.py": "4740dff71a36c79ea72a97faf79e63ddd7b2533cd85cbd3d668dd5221f3af034",
-  "sweeper.py": "54ebde8a61c23ce282472cc00840307f5a7c4825e85b1961ecf10a1e37d84f10",
+  "logo.py": "7bc9bb7ff0f10e97e8ed7487255b954efcba06606c3360a8a0488919b5ef3b49",
+  "sweeper.py": "fa13c693bf1ba5902686cd4a005b540148cfec678586bf0c656ed63b6ec2ccfe",
   "freezes.py": "b80a4f91209d2436d50ec0be692ab1faa533fcdd8c66a04290d12864e2e4534a",
   "bookrunner.py": "04724b3ebca9310cd7873771a047858b3ebc547c39d3ef35dba30edbbff49a66",
   "dropfiles.py": "511c56d55948acfe0f482ca46342d6b1b8aa276dc52e50c212c3bd9a824fc768",

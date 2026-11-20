@@ -12,6 +12,7 @@ import os
 import runpy
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
@@ -775,15 +776,46 @@ def still_opening(arg=""):
     return proc
 
 
-def splash(child, arg="", most=SPLASH_MOST):
+BOX_ERROR = "opening_box_error.txt"   # in APP_DATA: why the opening box couldn't open, if it couldn't
+
+
+def _box_failed(arg, ex):
+    """Note why the opening box couldn't open (the program opens all the same)."""
+    try:
+        import traceback
+        APP_DATA.mkdir(parents=True, exist_ok=True)
+        (APP_DATA / BOX_ERROR).write_text(
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')} {app_name(arg)}: {ex}\n\n{traceback.format_exc()}",
+            encoding="utf8")
+    except Exception:
+        pass
+
+
+def _new_tk(tries=3):
+    """A Tk window, tried again if Tcl won't start (now and then on the owner's PC: "Can't find a
+    usable init.tcl")."""
+    import tkinter as tk
+    for n in range(tries):
+        try:
+            return tk.Tk()
+        except tk.TclError:
+            if n == tries - 1:
+                raise
+            time.sleep(0.4)
+
+
+def splash(child, arg="", most=SPLASH_MOST, begin=None):
     """A small "Opening CleanListen..." box until the program's own window is up (or it has
     stopped, or `most` seconds; while an update is fetched, `UPDATING_MOST`). The update says how
-    far it's got ("Updating CleanRead to 1.17.64... (5 of 21)") and that it opens by itself."""
-    import time
+    far it's got ("Updating CleanRead to 1.17.64... (5 of 21)") and that it opens by itself.
+    begin: starts the program once the box is up and returns it (as start_app), so a quick update
+    isn't over before the box shows (1.17.94; the owner, 2026-11-20: "when i opened the window and
+    it was update it didnt have the little window that said it was updating", "with the update
+    counter"); None from it closes the box."""
     import tkinter as tk
     from tkinter import ttk
     name = app_name(arg)
-    root = tk.Tk()
+    root = _new_tk()
     root.title(f"Opening {name}")      # not the program's own title, so a click can't mistake it
     try:
         root.iconbitmap(str(HERE / OWN.get(arg, OWN[""])[1]))
@@ -807,6 +839,18 @@ def splash(child, arg="", most=SPLASH_MOST):
     w, h = root.winfo_reqwidth(), root.winfo_reqheight()
     root.geometry(f"+{(root.winfo_screenwidth() - w) // 2}+"
                   f"{(root.winfo_screenheight() - h) // 2 - 40}")
+    try:                       # in front, where it can be seen
+        root.lift()
+        root.attributes("-topmost", True)
+        root.after(1500, lambda: root.attributes("-topmost", False))
+    except tk.TclError:
+        pass
+    if begin is not None:
+        root.update()
+        child = begin()
+        if child is None:      # couldn't start it apart: it's run in this process instead
+            root.destroy()
+            return
     start = time.time()
     try:                       # the program's window may come to the front itself
         import ctypes
@@ -876,7 +920,8 @@ def run_app(arg=""):
         sys.argv = [str(HERE / "launcher.pyw")] + ([arg] if arg else []) + [APP_PART]
         runpy.run_path(str(HERE / "launcher.pyw"), run_name="__main__")
         return
-    opening(f"Opening {name}…", arg)
+    # (after an update the box says so, however quick it was: 1.17.94)
+    opening(f"{note} Opening it now…" if note else f"Opening {name}…", arg)
     # a new logo on the desktop, Start menu and taskbar shortcuts (once per change, out of the way)
     import threading
     threading.Thread(target=_new_icons_on_shortcuts, daemon=True).start()
@@ -906,14 +951,18 @@ def clicked(arg=""):
         opening_note(arg).unlink(missing_ok=True)
     except OSError:
         pass
-    child = start_app(arg)
-    if child is None:
-        return False
+    started = []
+
+    def begin():
+        started.append(start_app(arg))
+        return started[0]
     try:
-        splash(child, arg)
-    except Exception:          # no box for it: the program opens all the same
-        pass
-    return True
+        splash(None, arg, begin=begin)     # the box first, then the program (1.17.94)
+    except Exception as ex:    # no box for it: the program opens all the same, and why is noted
+        _box_failed(arg, ex)
+    if not started:            # the box couldn't open before it was started
+        begin()
+    return started[0] is not None
 
 
 def main():
