@@ -713,7 +713,9 @@ class App(tk.Tk):
         self._show_books_count()
         self.start_hint = tk.Label(sp.nav, text="Choose an audiobook first", bg=BG, fg=MUTED,
                                    font=(FONT, 9))
-        self.start_hint.pack(side="right", padx=(0, X(10)))
+        # a gap between it and the Next button (the owner, 2026-11-20: "the bottom part needs more
+        # space between")
+        self.start_hint.pack(side="right", padx=(X(18), X(10)))
 
         # ----- step 1: the audiobook
         p1 = sp.pane(1)
@@ -731,10 +733,12 @@ class App(tk.Tk):
         tk.Label(words, text="A folder of its files, or the files themselves.", bg=SOFT, fg=MUTED,
                  font=(FONT, 9), anchor="w", wraplength=X(200), justify="left").pack(
                      anchor="w", pady=(X(2), 0))
+        # (before=words: in a smaller window the words wrap and the buttons keep their room; the
+        # owner, 2026-11-20, of "Choose fo" cut off: "ok when maximized but not when smaller")
         look.Pill(drop.body, "Choose files\u2026", self.pick_audio, kind="secondary", size=11,
-                  pad=(18, 10)).pack(side="right")
+                  pad=(18, 10)).pack(side="right", before=words)
         look.Pill(drop.body, "Choose folder\u2026", self.pick_folder, size=11,
-                  pad=(18, 10)).pack(side="right", padx=(0, X(8)))
+                  pad=(18, 10)).pack(side="right", padx=(0, X(8)), before=words)
         self.audio_lbl = tk.Label(p1, text="No audiobook chosen yet", bg=BG, fg=MUTED,
                                   font=(FONT, 10), wraplength=X(560), justify="left", anchor="w")
         self.audio_lbl.pack(anchor="w", pady=(X(12), 0))
@@ -749,7 +753,7 @@ class App(tk.Tk):
                                   anchor="w")
         self.ebook_lbl.pack(anchor="w", pady=(X(2), 0))
         look.Pill(b, "Choose ebook\u2026", self.pick_ebook, kind="secondary", size=10,
-                  pad=(16, 8)).pack(side="right")
+                  pad=(16, 8)).pack(side="right", before=words)
         # the language the book is read in (1.17.30, as CleanView's "Language spoken in the
         # video"; the owner, 2026-11-13: "ask clean view about the language", "update"):
         # English as always, or another one, with its own word lists
@@ -768,7 +772,7 @@ class App(tk.Tk):
         # a drop-down list, so more languages don't crowd the page (as CleanView 1.18.85)
         self.language_box = CL.dropdown(b, self.lang_var, engine.cvlang.LANGS,
                                         command=self._language_chosen)
-        self.language_box.pack(side="right")
+        self.language_box.pack(side="right", before=words)
 
         # ----- step 2: what to remove (the same filters as CleanRead and CleanView)
         self.filter_card = F.FilterPanel(sp.pane(2), on_change=sp.refresh, wrap=560,

@@ -1,5 +1,5 @@
 {
- "version": "1.17.92",
+ "version": "1.17.93",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -62,7 +62,7 @@
  ],
  "sha256": {
   "cleanlisten.py": "99d734deea71a873485591a9d410b51085586ebccb528b1c85ad1a3fc4d76b9f",
-  "CleanListen.pyw": "b4dd16bbf558eeaaff4dc53590bb565dd4e91860fe8b4f5285ed5d61e1bbe753",
+  "CleanListen.pyw": "5747b4acc85b7e8351432485036ea6c4055b92446473ddb48a7c325d01eb69ed",
   "cleanlisten_claude.py": "c80a668ff188a9e87ab93ab5823fcd1aeb47c2c9fd89b1506adf0391e49bd93b",
   "shared_learned.json": "9eaac90b12aa6a9da8741d0335c6235ecfe29751e224b194eb6f351eaaa565d8",
   "cleanlisten_gpt.py": "d88b9f7d6f77a7a79eba9cb78efdde616e847bc9119c4227b1a2dadf035d2636",
@@ -86,7 +86,7 @@
   "shortcuts.py": "8b6709fa744169fd2493a3862ff20b18d08d4d4f32057f39db81119250fa40a3",
   "cleanread.py": "436b7b70fc4af7b0adfad6e01e955fa8351053d4aa668ae7ae905f01be3ad48c",
   "pdfbook.py": "487bb95511c6d858e1eb5271c3bf7439d1a0a4e3af15dec115dac080863bc563",
-  "CleanRead.pyw": "3da9b19f767fffb18c19fa44bf7f24f19a5f9144914fa98bfcaddabc281b8a8b",
+  "CleanRead.pyw": "4c1d97106772004b75f5112160c74d9c3b41ff7a0e84ef538574ea77b5744191",
   "cleanread.ico": "07262f5f296d2542d3c1d5d900274f31a1173a72f5824cbc222988d579e32c63",
   "cleanlisten_logo.png": "1b0db5569d32f91cbda43f8ceb6a4ec94442f3ee4c0bcf4a37161dfc6886ce04",
   "cleanread_logo.png": "6b7b20b35fd64b1fa6b7ba7ebc42c99cda783c0e0562ef94681f97ccd6933fa3",

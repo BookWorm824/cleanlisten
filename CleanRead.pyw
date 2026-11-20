@@ -467,7 +467,9 @@ class App(tk.Tk):
                      anchor="w", pady=(X(2), 0))
         self.choose_btn = look.Pill(drop.body, "Choose ebook\u2026", self.pick_book, size=12,
                                     pad=(22, 11))
-        self.choose_btn.pack(side="right")
+        # (before=words: in a smaller window the words wrap and the button keeps its room, as
+        # CleanListen 1.17.92; the owner, 2026-11-20: "ok when maximized but not when smaller")
+        self.choose_btn.pack(side="right", before=words)
         self.book_lbl = tk.Label(sp.pane(1), text="No book chosen yet", bg=BG, fg=MUTED,
                                  font=(FONT, 10), wraplength=X(560), justify="left", anchor="w")
         self.book_lbl.pack(anchor="w", pady=(X(12), 0))
@@ -493,7 +495,7 @@ class App(tk.Tk):
         # a drop-down list, so more languages don't crowd the page (as CleanView 1.18.85)
         self.language_box = CL.dropdown(b, self.lang_var, engine.E.cvlang.LANGS,
                                         command=self._language_chosen)
-        self.language_box.pack(side="right")
+        self.language_box.pack(side="right", before=words)
 
         # ----- step 2: check it, or make a clean copy
         mv = tk.StringVar(value=self.mode.get())
