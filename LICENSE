@@ -12,6 +12,12 @@ Without the owner's written permission you may not copy, change, adapt, translat
 republish, share, sell or sublicense this software or its source code, in whole or in part,
 or use it to build other software.
 
+Parts that keep their own licences: some of the word lists draw on the List of Dirty,
+Naughty, Obscene and Otherwise Bad Words (LDNOOBW, CC BY 4.0), the bad-words package (MIT)
+and Wiktionary (CC BY-SA 4.0), with thanks. The tools, AI models and voices these apps
+download or use (ffmpeg, NVIDIA Parakeet, the Ollama models, the reading voices and others)
+belong to their makers and keep their own licences.
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO
 EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE
 SOFTWARE OR ITS USE.
