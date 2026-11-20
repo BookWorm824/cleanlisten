@@ -17,7 +17,7 @@ How it works:
   Maker         reads the chapters in several worker processes at once (`speak`), one
                 chapter file each (AAC), so a closed window or a crash carries on where it was
   assemble()    joins the chapter files into one M4B with chapters, tags and cover (no
-                re-encoding), and optionally MP3 chapter files (for a Yoto)
+                re-encoding), or one MP3 with them, and optionally MP3 chapter files (for a Yoto)
 
 Command line (for testing):
   python readaloud.py info BOOK.epub
@@ -47,6 +47,7 @@ MODEL_URL = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models
 MODEL_MB = 334
 SR = 24000
 BITRATE = "64k"          # one voice, mono: 64k AAC sounds the same as the original
+MP3_BITRATE = "96k"      # the one-MP3 audiobook (MP3 needs a little more than AAC for the same sound)
 
 # The English voices worth listening to (Kokoro's own quality grades: Heart and Bella are its
 # best; the men's voices are a step below). (id in the model, name shown, what it sounds like,
@@ -1550,6 +1551,8 @@ def assemble(jobdir, progress=None):
     dst = Path(job["out"])
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name("~saving~ " + dst.name)
+    as_mp3 = dst.suffix.lower() == ".mp3"   # one MP3, chapters and cover inside (the owner, 2026-11-20)
+
     def join(cover):
         cmd = [tool("ffmpeg"), "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-i", str(meta)]
         if cover:
@@ -1557,9 +1560,28 @@ def assemble(jobdir, progress=None):
                     "-disposition:v:0", "attached_pic"]
         else:
             cmd += ["-map", "0:a"]
-        cmd += ["-c:a", "copy", "-map_metadata", "1", "-map_chapters", "1", "-movflags", "+faststart",
-                "-f", "ipod", str(tmp)]
-        return subprocess.run(cmd, capture_output=True, text=True, **_NOWIN)
+        cmd += ["-map_metadata", "1", "-map_chapters", "1"]
+        if not as_mp3:
+            cmd += ["-c:a", "copy", "-movflags", "+faststart", "-f", "ipod", str(tmp)]
+            return subprocess.run(cmd, capture_output=True, text=True, **_NOWIN)
+        # the chapters are AAC, so the MP3 is made again from them: a few minutes for a long book
+        cmd += ["-c:a", "libmp3lame", "-b:a", MP3_BITRATE, "-id3v2_version", "3", "-write_xing", "1",
+                "-f", "mp3", "-progress", "pipe:1", "-nostats", str(tmp)]
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             encoding="utf8", errors="replace", **_NOWIN)
+        err = []
+        reader = threading.Thread(target=lambda: err.append(p.stderr.read()), daemon=True)
+        reader.start()
+        for line in p.stdout:
+            if line.startswith("out_time_us=") and at > 0:
+                try:
+                    done = min(1.0, max(0.0, int(line.split("=", 1)[1]) / 1e6 / at))
+                except ValueError:
+                    continue
+                say(0.1 + 0.8 * done, f"Making the MP3 file… {int(done * 100)}%")
+        p.wait()
+        reader.join(timeout=5)
+        return subprocess.CompletedProcess(cmd, p.returncode, "", "".join(err))
 
     cover = _cover(jobdir)
     r = join(cover)
@@ -1623,16 +1645,18 @@ def clean_up(jobdir):
     shutil.rmtree(jobdir, ignore_errors=True)
 
 
-def out_path(book, folder, abs_layout=False):
-    """Where the M4B goes: folder/Title.m4b, or with abs_layout the Audiobookshelf folders
-    (Author/Series/Book 2 - Title/Title.m4b), like CleanListen's M4B."""
+def out_path(book, folder, abs_layout=False, kind="m4b"):
+    """Where the audiobook goes: folder/Title.m4b, or with abs_layout the Audiobookshelf folders
+    (Author/Series/Book 2 - Title/Title.m4b), like CleanListen's M4B. kind "mp3": Title.mp3
+    instead (assemble() goes by the ending)."""
     sys.path.insert(0, str(HERE))
     import cleanlisten as E
+    ext = ".mp3" if kind == "mp3" else ".m4b"
     title = E.safe_name(book["title"])
     if abs_layout:
         d = E.abs_folder(folder, book["title"], book.get("author", ""), book.get("series", ""), book.get("number", ""))
-        return d / (E.safe_name(E.strip_number(book["title"], book.get("number", ""))) + ".m4b")
-    return Path(folder) / (title + ".m4b")
+        return d / (E.safe_name(E.strip_number(book["title"], book.get("number", ""))) + ext)
+    return Path(folder) / (title + ext)
 
 
 def fmt_left(sec):

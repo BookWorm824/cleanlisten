@@ -54,6 +54,13 @@ def voice_labels(lang):
     return [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.voices_for(lang)]
 GPU_LABELS = [gpu.GPU_VOICES[v][0].replace(" - ", "  ·  ") for v in gpu.NARRATORS]
 AI_NAMES = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
+KINDS = {"m4b": "M4B", "mp3": "MP3"}
+KIND_NOTES = {
+    "m4b": "The audiobook is one M4B file with chapters and the book's cover. It plays in "
+           "Audiobookshelf, Apple Books, BookPlayer, Smart AudioBook Player and VLC.",
+    "mp3": "The audiobook is one MP3 file with the book's cover. It plays on almost anything: phones, "
+           "computers, cars and MP3 players. The chapters are inside it, but some players don't show "
+           "them. Saving it takes a minute or two longer, and the file is a bit bigger."}
 
 
 def _saved_ai():
@@ -361,9 +368,8 @@ class App(tk.Tk):
                 return "Choose a book first"
             k, total = len(self._chosen()), len(self.book["chapters"])
             return f"All {total} parts" if k == total else f"{k} of {total} parts"
-        if self.folder:
-            return Path(self.folder).name or str(self.folder)
-        return "Next to the ebook"
+        where = (Path(self.folder).name or str(self.folder)) if self.folder else "Next to the ebook"
+        return where + (" · MP3" if self._kind() == "mp3" else "")
 
     def _refresh_steps(self):
         sp = getattr(self, "steps_page", None)
@@ -634,14 +640,20 @@ class App(tk.Tk):
         tk.Label(self.abs_row, text="Book number", bg=CARD, fg=INK, font=(FONT, 10)).pack(side="left")
         self.number_var = tk.StringVar()
         ttk.Entry(self.abs_row, textvariable=self.number_var, width=6).pack(side="left", padx=X(8))
+        # one M4B or one MP3 (the owner, 2026-11-20: "can you have the option to save as mp3 or m4B")
+        self.kind_var = tk.StringVar(value="mp3" if st.get("kind") == "mp3" else "m4b")
+        b = sp.card(5, top=12)
+        self._heading(b, "Save it as")
+        look.Segmented(b, list(KINDS.items()), self.kind_var, command=self._kind_changed,
+                       bg=CARD, size=10).pack(anchor="w", pady=(X(8), 0))
         self.mp3_var = tk.BooleanVar(value=st.get("mp3", False))
         b = sp.card(5, top=12)
         self.mp3_check = CL.switch_row(b, self.mp3_var, "Also make MP3 chapter files",
                                        "For a Yoto or an older player.", command=self._remember)
         self.mp3_check.pack(fill="x")
-        tk.Label(sp.pane(5), text="The audiobook is one M4B file with chapters and the book's cover. It "
-                 "plays in Audiobookshelf, Apple Books, BookPlayer, Smart AudioBook Player and VLC.",
-                 bg=BG, fg=FAINT, font=(FONT, 9), wraplength=X(560), justify="left").pack(anchor="w", pady=(X(14), 0))
+        self.kind_note = tk.Label(sp.pane(5), text=KIND_NOTES[self.kind_var.get()], bg=BG, fg=FAINT,
+                                  font=(FONT, 9), wraplength=X(560), justify="left")
+        self.kind_note.pack(anchor="w", pady=(X(14), 0))
         self._abs_changed()
         if self.book:
             self._show_book()
@@ -833,8 +845,20 @@ class App(tk.Tk):
         self._remember()
         self._show_folder()
 
+    def _kind(self):
+        try:
+            return "mp3" if self.kind_var.get() == "mp3" else "m4b"
+        except (tk.TclError, AttributeError):
+            return "m4b"
+
+    def _kind_changed(self, *_):
+        if getattr(self, "kind_note", None) is not None and self.kind_note.winfo_exists():
+            self.kind_note.config(text=KIND_NOTES[self._kind()])
+        self._remember()
+
     def _remember(self):
         st = self.settings
+        st["kind"] = self._kind()
         try:
             lang = self._lang()
             st["language"] = lang
@@ -1049,7 +1073,7 @@ class App(tk.Tk):
     def _out_file(self):
         b = dict(self.book, series=self.series_var.get().strip(), number=self.number_var.get().strip())
         folder = self.folder or str(Path(self.book_path).parent)
-        return engine.out_path(b, folder, self.abs_var.get()), b
+        return engine.out_path(b, folder, self.abs_var.get(), kind=self._kind()), b
 
     def start(self):
         if not self.book:
