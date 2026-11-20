@@ -999,7 +999,10 @@ def gay_happy(words, i):
 CASE_TALK_NEXT = {"assault", "assaults", "assaulted", "offender", "offenders", "offense", "offenses",
                   "offence", "offences", "crime", "crimes", "trafficking", "trafficker", "traffickers",
                   "abuse", "abused", "abuser", "abusers", "predator", "predators", "harassment",
-                  "exploitation"}
+                  "exploitation",
+                  # "Bringing in the sex criminals" (CleanView 1.18.149, Criminal Minds S1E19: "sex"
+                  # was muted there while "sex crimes" played as case talk; the owner: "All of them")
+                  "criminal", "criminals"}
 # "Stripper" the person is a sexual word; the tool and the chemical aren't (the owner, 2026-11-13:
 # "read the context. like a paint stripper would be ok. but a person stripper isnt. a pole by
 # itself is fine but with stripper it isn't"). It's the thing when what it strips, or the work it's
@@ -1431,7 +1434,7 @@ SEX_TALK_NEXT = {"life", "lives", "appeal", "drive", "scene", "scenes", "symbol"
                  "worker", "workers", "trafficking", "abuse", "change", "addict", "addiction", "kitten",
                  "object", "objects", "organ", "organs", "partner", "partners", "slave", "slaves",
                  "with", "was", "is", "and", "talk", "game", "games", "club", "shop", "shops", "video",
-                 "videos", "doll", "dolls", "crime", "crimes", "pistol", "bomb", "bombs", "kitten",
+                 "videos", "doll", "dolls", "crime", "crimes", "criminal", "criminals", "pistol", "bomb", "bombs", "kitten",
                  "god", "goddess", "dream", "dreams", "pot", "machine", "position", "positions"}
 
 

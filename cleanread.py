@@ -1522,6 +1522,7 @@ _MEDICAL = Matcher(
              # coroner and doctor case talk (CleanView 1.18.72's list); not "a tox screen", "he'll be
              # fine", "time to go home", "a wound to my pride"
              "sexual|sexually assault|assaults|assaulted", "sex|sexual offender|offenders",
+             "sex crime|crimes|criminal|criminals",     # CleanView 1.18.149 (Criminal Minds S1E19)
              "rape kit|kits", "cause|time of death",
              "stab|gunshot|exit|entry|defensive wound|wounds", "blunt force trauma|injury|injuries",
              "ligature mark|marks", "rigor mortis", "post mortem", "postmortem",

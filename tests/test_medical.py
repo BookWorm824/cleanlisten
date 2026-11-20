@@ -160,7 +160,8 @@ CASE = "Any signs of sexual assault?"
     "Time of death between ten and midnight.", "The autopsy showed water in her lungs.",
     "Two stab wounds to the chest.", "A gunshot wound to the back.", "Blunt force trauma.",
     "Ligature marks on her neck.", "Lividity says she was moved.", "Rigor mortis has set in.",
-    "Defensive wounds on her hands.", "The post-mortem is tomorrow.", "GSW to the abdomen."])
+    "Defensive wounds on her hands.", "The post-mortem is tomorrow.", "GSW to the abdomen.",
+    "Bringing in the sex criminals.", "Six sex crimes in two years."])
 def test_case_talk_is_medical(line):
     assert R.MEDICAL(words(line))
 
@@ -172,9 +173,12 @@ def test_everyday_talk_isnt(line):
 
 
 def test_sexual_in_case_talk_isnt_a_sexual_word():
-    for line in (CASE, "He is a registered sex offender.", "She was sexually assaulted."):
+    # "sex criminals" too (CleanView 1.18.149, Criminal Minds S1E19: "Bringing in the sex criminals"
+    # had "sex" muted while "sex crimes" played; the owner: "All of them")
+    for line in (CASE, "He is a registered sex offender.", "She was sexually assaulted.",
+                 "Bringing in the sex criminals.", "A known sex criminal.", "Six sex crimes."):
         assert not E.find_language(words(line), ["sexual"]) and not R._ref_hit(words(line))
-    for line in ("They had sex.", "She looked sexy.", "a sexual joke"):
+    for line in ("They had sex.", "She looked sexy.", "a sexual joke", "The criminal had sex."):
         assert E.find_language(words(line), ["sexual"])
     assert "case talk" in E.AI_TYPES["ref"] and "case talk" in E.AI_TYPES["medical"]
     assert "case talk" in cc.KIND_RULES["ref"] and "case talk" in cc.KIND_RULES["medical"]
