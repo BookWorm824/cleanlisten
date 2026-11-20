@@ -251,9 +251,11 @@ class StepPage:
     app's own scrolling frame. Put each step's widgets in `pane(n)` (1-based), then call `go(n)`."""
 
     def __init__(self, app, parent, name, logo_png, steps, summary, main, links=(), done=None,
-                 scroll_area=None, start=1, theme=None):
-        """theme: (StringVar "light"/"dark", command) for the Light / Dark choice under the steps."""
+                 scroll_area=None, start=1, theme=None, main_on_first=False):
+        """theme: (StringVar "light"/"dark", command) for the Light / Dark choice under the steps.
+        main_on_first: the green button on step 1 too (ReadAloud); otherwise Next leads on from it."""
         self.app, self.steps, self.summary, self.done = app, list(steps), summary, done
+        self.main_on_first = main_on_first
         X = self.X = lambda n: look.px(app, n)      # noqa: E731
         C = look.C
         SIDE, FAINT = C["side"], C["faint"]
@@ -367,11 +369,18 @@ class StepPage:
             self.back_btn.pack(side="left")
         else:
             self.back_btn.pack_forget()
+        # No Start cleaning on step 1: Next leads on to the choices, green (as CleanView 1.18.135;
+        # the owner, 2026-11-18: "get rid of the green start cleaning button on page 1, by doing that
+        # it leads to page 2 the the tick menus are", "keep the button on 2 and others")
+        main = n > 1 or self.main_on_first
+        self.main_btn.pack_forget()
+        self.next_btn.pack_forget()
+        if main:
+            self.main_btn.pack(side="right")
         if n < len(self.steps):
-            self.next_btn.config(text=f"Next: {self.steps[n][0]}")
-            self.next_btn.pack(side="right", padx=(0, self.X(10)))
-        else:
-            self.next_btn.pack_forget()
+            self.next_btn.config(text=f"Next: {self.steps[n][0]}",
+                                 kind="secondary" if main else "primary")
+            self.next_btn.pack(side="right", padx=(0, self.X(10)) if main else 0)
         self.refresh()
 
     def refresh(self):

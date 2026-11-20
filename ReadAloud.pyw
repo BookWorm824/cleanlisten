@@ -447,7 +447,8 @@ class App(tk.Tk):
             self, p, APP, LOGO.logo_png("readaloud.ico", X(40))[0], self.STEPS, self._step_summary,
             ("Make audiobook", self.start), done=lambda i: i == 1 and bool(self.book),
             scroll_area=self._scroll_area, start=step, theme=(self._theme_var(), self._set_theme),
-            links=[(f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")])
+            links=[(f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")],
+            main_on_first=True)     # not a Start cleaning: it stays on step 1 (CleanView 1.18.135)
         self.size_link = sp.links[f"Text size: {self.text_size}"]
         self.footer = sp.nav
         self.start_btn = sp.main_btn
