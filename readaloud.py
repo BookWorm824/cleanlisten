@@ -581,6 +581,29 @@ def _pdf_title(raw, path):
     return t
 
 
+def _unknown_marks(line):
+    """A dash or curly quote the PDF's font didn't name comes out as "�": a dash between
+    words, else a quote."""
+    line = re.sub(r"\s�\s", " — ", line)
+    return line.replace("�", '"')
+
+
+def _pdf_lines(pg):
+    """A page's lines of text. A PDF from Google Docs comes out one word to a line (the owner,
+    2026-11-19: "its not reading words, its just saying letters"): it was taken for a scan and
+    read wrongly. Then the page is read again keeping its layout, which gives the real lines."""
+    lines = [" ".join(l.split()) for l in (pg.extract_text() or "").split("\n") if l.strip()]
+    if len(lines) >= 12 and sum(len(l.split()) for l in lines) <= 1.5 * len(lines):
+        try:
+            laid = [" ".join(l.split()) for l in (pg.extract_text(extraction_mode="layout") or "")
+                    .split("\n") if l.strip()]
+            if laid and len(laid) < len(lines):
+                lines = laid
+        except Exception:
+            pass
+    return [_unknown_marks(l) for l in lines]
+
+
 def read_pdf(path):
     """(title, author, cover bytes or None, chapters [{"title", "paras", "read"}])."""
     try:
@@ -588,8 +611,7 @@ def read_pdf(path):
         r = PdfReader(str(path))
         if r.is_encrypted and not r.decrypt(""):
             raise BookError("This PDF is locked with a password, so it can't be read.")
-        pages = [[" ".join(l.split()) for l in (pg.extract_text() or "").split("\n") if l.strip()]
-                 for pg in r.pages]
+        pages = [_pdf_lines(pg) for pg in r.pages]
     except BookError:
         raise
     except Exception as ex:
@@ -685,6 +707,13 @@ def read_pdf(path):
             new(starts[i] or f"Chapter {k}")
         for line in lines:
             ch = chapters[-1]
+            # a script's "LANDON:" / "SOUND EFFECT:" and a "SCENE 1 — THE PLAYROOM" line stand on
+            # their own, not stuck to the end of the line before (the owner's script, 2026-11-19)
+            if len(line.split()) <= 8 and line.isupper() and (line.endswith(":") or not END_PUNCT.search(line)):
+                flush()
+                ch["_cur"] = line
+                flush()
+                continue
             ch["_cur"] = join_lines(ch["_cur"], line) if ch["_cur"] else line
             if END_PUNCT.search(line) and len(line) < 0.85 * full:
                 flush()
@@ -752,16 +781,13 @@ def load_book(path, progress=None, cancel=None, language="en"):
     chapters = []
     title, author, series, number, cover, cover_ext = path.stem, "", "", "", None, ""
     if fmt == ".pdf":
-        try:
-            if _pictures_only(path):            # mostly scans (a few pages of text don't count)
-                raise BookError(SCANNED)
-            title, author, cover, chapters = read_pdf(path)
-        except BookError as ex:
-            if not str(ex).startswith(SCANNED):
-                raise
+        # only pictures of pages go to the page reader: a PDF with text in it, read badly, came out
+        # as letters spaced apart there (the owner, 2026-11-19: "its just saying letters")
+        if _pictures_only(path):                # mostly scans (a few pages of text don't count)
             book = load_book(scanned_pdf(path, progress, cancel, language))
             book["path"] = str(path)            # the audiobook goes next to the PDF, as any book
             return book
+        title, author, cover, chapters = read_pdf(path)
         cover_ext = ".jpg" if cover else ""
     elif fmt == ".docx":
         t, a, paras = _read_docx(path)

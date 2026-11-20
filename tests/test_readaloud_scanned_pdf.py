@@ -85,3 +85,51 @@ def test_the_page_says_what_its_doing_meanwhile(window, tmp_path, monkeypatch):
     assert ended.wait(5)
     _pump(app, 0.3)
     assert app.q.empty()                    # no error box
+
+
+class _GoogleDocsPage:
+    """A page as pypdf reads a PDF from Google Docs: one word to a line, unless asked to keep the
+    layout (the owner's "Always Here Script", 2026-11-19)."""
+    LINES = ["ALWAYS HERE", "SCENE 1 � THE PLAYROOM", "NARRATOR:",
+             "One sunny afternoon, a little boy named Landon sat on the floor of the playroom. The warm",
+             "afternoon sun shone through the windows while toys, blocks, and stuffed animals surrounded",
+             "him.", "LANDON:", "�And he's coming around the corner! Faster! Faster!�"]
+
+    def extract_text(self, extraction_mode="plain"):
+        if extraction_mode == "layout":
+            return "\n\n".join("   " + l for l in self.LINES)
+        return "\n \n".join(w for l in self.LINES for w in l.split())
+
+
+def test_a_pdf_from_google_docs_is_read_as_words_not_letters():
+    # it came out one word to a line, was taken for a scan, and the page reader's text was letters
+    # spaced apart ("O n e s u n n y aftfte rn o o n"), which the voice spelled out
+    lines = R._pdf_lines(_GoogleDocsPage())
+    assert lines[3].startswith("One sunny afternoon, a little boy named Landon")
+    assert lines[1] == "SCENE 1 — THE PLAYROOM"                     # the dash the font didn't name
+    assert lines[-1] == '"And he\'s coming around the corner! Faster! Faster!"'
+
+
+def test_a_scripts_speaker_labels_stand_on_their_own(monkeypatch):
+    import pypdf
+
+    class Reader:
+        def __init__(self, path):
+            self.pages = [_GoogleDocsPage()]
+            self.metadata = {"/Title": "Always Here Script"}
+            self.is_encrypted = False
+    monkeypatch.setattr(pypdf, "PdfReader", Reader)
+    title, author, cover, chapters = R.read_pdf("Always Here Script.pdf")
+    paras = [t for c in chapters for _, t in c["paras"]]
+    assert "NARRATOR:" in paras and "LANDON:" in paras                  # not stuck to the line before
+    assert any(p.startswith("One sunny afternoon") and p.endswith("surrounded him.") for p in paras)
+
+
+def test_a_pdf_with_text_never_goes_to_the_page_reader(tmp_path, monkeypatch):
+    monkeypatch.setattr(R, "_pictures_only", lambda path: False)
+    monkeypatch.setattr(pdfbook, "convert", lambda *a, **k: pytest.fail("sent to the page reader"))
+    monkeypatch.setattr(R, "read_pdf", lambda path: (_ for _ in ()).throw(R.BookError(R.SCANNED + " (x)")))
+    pdf = tmp_path / "odd.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    with pytest.raises(R.BookError, match="No text was found"):
+        R.load_book(pdf)
