@@ -1,5 +1,5 @@
 {
- "version": "1.17.84",
+ "version": "1.17.85",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -77,7 +77,7 @@
   "cvlook.py": "4c720d1916cbc27191101b74e1a75734695e1b152f0e114ca4f5862dae4b4df4",
   "cvlang.py": "39ff256ea14dfbfaa830149e51feab70e39ab8b444bcde278058725b3d1f18c9",
   "logo.py": "4740dff71a36c79ea72a97faf79e63ddd7b2533cd85cbd3d668dd5221f3af034",
-  "sweeper.py": "ff13e3588b1bc40d8fcbdac60404200b1079cfa6b18850f1f0d31bdf70af6d02",
+  "sweeper.py": "54ebde8a61c23ce282472cc00840307f5a7c4825e85b1961ecf10a1e37d84f10",
   "freezes.py": "b80a4f91209d2436d50ec0be692ab1faa533fcdd8c66a04290d12864e2e4534a",
   "bookrunner.py": "04724b3ebca9310cd7873771a047858b3ebc547c39d3ef35dba30edbbff49a66",
   "dropfiles.py": "511c56d55948acfe0f482ca46342d6b1b8aa276dc52e50c212c3bd9a824fc768",
