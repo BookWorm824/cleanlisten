@@ -653,7 +653,9 @@ class App(tk.Tk):
         tk.Label(words, text="Choose an ebook", bg=SOFT, fg=INK, font=(HEAD, 13), anchor="w").pack(anchor="w")
         tk.Label(words, text="EPUB, PDF, Word or TXT — not copy-protected.", bg=SOFT, fg=MUTED,
                  font=(FONT, 9), anchor="w", wraplength=X(260), justify="left").pack(anchor="w", pady=(X(2), 0))
-        look.Pill(drop.body, "Choose ebook…", self.pick_book, size=12, pad=(22, 11)).pack(side="right")
+        # packed before the words, so a small window squeezes the words, not the button (the owner's
+        # screenshot of CleanListen, 2026-11-20: "Choose fo" cut off, "ok when maximized but not when smaller")
+        look.Pill(drop.body, "Choose ebook…", self.pick_book, size=12, pad=(22, 11)).pack(side="right", before=words)
         row = tk.Frame(sp.pane(1), bg=BG)
         row.pack(fill="x", pady=(X(14), 0))
         self.cover_lbl = tk.Label(row, bg=BG)
