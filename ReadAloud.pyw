@@ -47,6 +47,7 @@ def use_theme(name):
 use_theme("light")          # the saved choice is read when the window opens (App.__init__)
 HEAD = CL.HEAD
 BOOK_TYPES = [("Ebooks", "*.epub *.pdf *.txt *.docx"), ("All files", "*.*")]
+AUDIO_TYPES = [("Audiobooks", "*.mp3 *.m4b *.m4a"), ("All files", "*.*")]
 VOICE_LABELS = [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.VOICES]
 
 
@@ -70,6 +71,13 @@ def _saved_ai():
         return cc.saved_provider()
     except Exception:
         return "claude"
+
+
+def app_version():
+    try:
+        return json.loads((HERE / "version.json").read_text())["version"]
+    except Exception:
+        return "?"
 
 
 def chime():
@@ -231,6 +239,14 @@ class App(tk.Tk):
         self.watch = freezes.Watch(self, APP, APP_DATA, "readaloud_")
         self.watch.start()
         self.after(100, self._poll)
+        self.bind_all("<F5>", self.check_updates)
+        self.after(self.UPDATE_FIRST, self._auto_check)
+        try:                                # just updated: back to where it was
+            carry = json.loads(os.environ.pop("READALOUD_CARRY_ON", "") or "{}")
+        except ValueError:
+            carry = {}
+        if carry:
+            self.after(200, lambda: self._carry_on(carry))
 
     # ---------- look ----------
     def _style(self):
@@ -282,6 +298,11 @@ class App(tk.Tk):
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
                      wraplength=X(740), justify="left").pack(anchor="w", pady=(X(4), X(14)))
+        # "Check for updates" on every page, as CleanListen's and CleanRead's
+        self._upd_lbl = tk.Label(self.page, text=self._upd_default(), bg=BG, fg=ACCENT,
+                                 font=(FONT, 9, "underline"), cursor="hand2")
+        self._upd_lbl.place(relx=1.0, y=2, anchor="ne")
+        self._upd_lbl.bind("<Button-1>", self.check_updates)
         return self.page
 
     def _logo(self, parent, sweeper=False):
@@ -322,6 +343,146 @@ class App(tk.Tk):
         self.bind_all("<Button-5>", lambda e: wheel(2))
         inner._canvas = canvas
         return inner
+
+    # ---------- updates while it's open (the owner, 2026-11-20: "also need update without closing
+    # the program"), as CleanListen's and CleanRead's "Check for updates", with CleanView's quiet
+    # look every 30 minutes and F5. It opens again just where it was: the same book and step, or
+    # the book being read carries on by itself (what was read so far is kept, as after Stop for now).
+    UPDATE_EVERY = 30 * 60 * 1000          # ms between quiet looks for an update
+    UPDATE_FIRST = 5 * 60 * 1000           # the first look, a while after opening
+
+    def _launcher(self):
+        import importlib.machinery
+        import importlib.util
+        loader = importlib.machinery.SourceFileLoader("ra_launcher", str(HERE / "launcher.pyw"))
+        spec = importlib.util.spec_from_loader("ra_launcher", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        return mod
+
+    def _upd_text(self, text):
+        """What the update link says, on whichever page is showing."""
+        for w in (getattr(self, "upd_link", None), getattr(self, "_upd_lbl", None)):
+            w = getattr(w, "label", w)
+            try:
+                if w is not None and w.winfo_exists():
+                    w.config(text=text)
+            except tk.TclError:
+                pass
+
+    def _upd_default(self):
+        new = getattr(self, "update_ready", None)
+        return f"ReadAloud {new} is ready · Update now" if new else f"v{app_version()} · Check for updates"
+
+    def _auto_check(self):
+        """The quiet look: only says an update is ready (the link turns into Update now); nothing is
+        downloaded or restarted until it's pressed."""
+        self.after(self.UPDATE_EVERY, self._auto_check)
+        if getattr(self, "_updating", False) or getattr(self, "update_ready", None):
+            return
+
+        def work():
+            try:
+                L = self._launcher()
+                remote = L.remote_version(timeout=10)       # only an update with her seal
+                if L._ver(remote["version"]) > L._ver(app_version()):
+                    self.q.put(("update_ready", remote["version"]))
+            except Exception:
+                pass                                        # no internet: try again next time
+        threading.Thread(target=work, daemon=True, name="look for an update").start()
+
+    def check_updates(self, _=None):
+        if getattr(self, "_updating", False):
+            return
+        if self._converting():
+            messagebox.showinfo(APP, "Let the converting finish first (or press Cancel), then update.")
+            return
+        if self.maker and not messagebox.askyesno(
+                APP, "Update now? The book stops for a moment and carries on by itself when "
+                     "ReadAloud opens again. Nothing that's been read is lost."):
+            return
+        self._updating = True
+        self._upd_text("Checking for updates…")
+        maker = self.maker
+        self._upd_stopped = False           # set once the book has really been stopped for it
+
+        def work():
+            try:
+                L = self._launcher()
+                remote = L.remote_version(timeout=10)
+                if L._ver(remote["version"]) <= L._ver(app_version()):
+                    self.q.put(("update_none", app_version()))
+                    return
+                if maker:            # stop the reading first, so no new chapter starts mid-update
+                    self.q.put(("update_progress", "Pausing the book for the update…"))
+                    self.job += 1           # what the stopping book says now isn't shown
+                    maker.stop()
+                    self._upd_stopped = True
+                self.q.put(("update_progress", f"Updating to {remote['version']}…"))
+                new = L.update()
+                self.q.put(("updated", new or remote["version"]))
+            except Exception as ex:
+                self.q.put(("update_fail", str(ex)))
+        threading.Thread(target=work, daemon=True, name="check for updates").start()
+
+    def _carry_state(self):
+        """Where it is now, for after the update: the book being read, or the book and step chosen."""
+        if self.maker:
+            return {"job": str(self.maker.jobdir), "title": getattr(self, "job_title", "")}
+        sp = getattr(self, "steps_page", None)
+        if sp is not None and self.book_path:
+            try:
+                typed = (self.series_var.get().strip(), self.number_var.get().strip())
+            except (tk.TclError, AttributeError):
+                typed = ("", "")
+            return {"book": str(self.book_path), "step": getattr(sp, "now", 1),
+                    "series": typed[0], "number": typed[1]}
+        return {}
+
+    def _update_msg(self, kind, val):
+        self._updating = kind == "update_progress"
+        if kind == "update_ready":
+            self.update_ready = val
+            self._upd_text(self._upd_default())
+        elif kind == "update_progress":
+            self._upd_text(val)
+        elif kind == "update_none":
+            self.update_ready = None
+            self._upd_text(f"v{val} · ✓ You have the latest version")
+        elif kind == "update_fail":
+            stopped = bool(getattr(self, "_upd_stopped", False) and self.maker)
+            if stopped:
+                # the book was stopped for it: back to the first page, where it shows under Resume
+                self._upd_stopped = False
+                self.maker = None
+                self.book = None
+                self.show_setup()
+            self._upd_text(self._upd_default())
+            messagebox.showerror(APP, f"Couldn't update right now ({val[:200]}). Try again in a few "
+                                 "minutes." + ("\n\nNothing that was read is lost: press Resume and "
+                                               "the book carries on." if stopped else ""))
+        elif kind == "updated":
+            self._remember()
+            env = dict(os.environ, CLEANLISTEN_UPDATED=f"ReadAloud was updated to version {val}.",
+                       CLEANLISTEN_UPDATE_DONE="1", READALOUD_CARRY_ON=json.dumps(self._carry_state()))
+            try:   # through the new launcher, which waits for this window to go first
+                subprocess.Popen([sys.executable, str(HERE / "launcher.pyw"), "aloud"], cwd=str(HERE), env=env)
+            except Exception as ex:
+                messagebox.showinfo(APP, f"Updated to {val}. Close ReadAloud and open it again to "
+                                    f"finish ({ex}).")
+                return
+            self.maker = None
+            stop_playing()
+            self.destroy()
+
+    def _carry_on(self, data):
+        """Just after an update: back to the book and step, or the book being read carries on."""
+        job = Path(data["job"]) if data.get("job") else None
+        if job and (job / "job.json").exists() and not (job / "done.json").exists():
+            self.run_job(job, data.get("title", ""))
+        elif data.get("book") and Path(data["book"]).exists():
+            self._carry_step = (int(data.get("step") or 1), data.get("series", ""), data.get("number", ""))
+            self.open_book(data["book"])
 
     def _note(self, parent, text, bg=None, pad=0, fg=None):
         tk.Label(parent, text=text, bg=bg or CARD, fg=fg or MUTED, font=(FONT, 9), wraplength=self._px(560),
@@ -453,9 +614,11 @@ class App(tk.Tk):
             self, p, APP, LOGO.logo_png("readaloud.ico", X(40))[0], self.STEPS, self._step_summary,
             ("Make audiobook", self.start), done=lambda i: i == 1 and bool(self.book),
             scroll_area=self._scroll_area, start=step, theme=(self._theme_var(), self._set_theme),
-            links=[(f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")],
+            links=[(self._upd_default(), self.check_updates, "refresh"),
+                   (f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")],
             main_on_first=True)     # not a Start cleaning: it stays on step 1 (CleanView 1.18.135)
         self.size_link = sp.links[f"Text size: {self.text_size}"]
+        self.upd_link = sp.links[self._upd_default()]
         self.footer = sp.nav
         self.start_btn = sp.main_btn
         self.start_btn.config(state="disabled")
@@ -501,6 +664,18 @@ class App(tk.Tk):
         tk.Label(sp.pane(1), text="Want it clean? Make a clean copy in CleanRead first, then choose that "
                  "copy here. Kindle books are copy-protected and can't be read.", bg=BG, fg=FAINT,
                  font=(FONT, 9), wraplength=X(560), justify="left").pack(anchor="w", pady=(X(14), 0))
+        # an audiobook you already have, from MP3 to M4B or M4B to MP3 (the owner, 2026-11-20)
+        conv = look.Card(sp.pane(1), radius=14, pad=(18, 14))
+        conv.pack(fill="x", padx=(0, X(4)), pady=(X(18), 0))
+        look.Pill(conv.body, "Convert…", self.pick_convert, kind="secondary", size=10,
+                  pad=(16, 8)).pack(side="right")
+        words = tk.Frame(conv.body, bg=CARD)
+        words.pack(side="left", fill="x", expand=True, padx=(0, X(12)))
+        tk.Label(words, text="Already have the audiobook?", bg=CARD, fg=INK, font=(HEAD, 11),
+                 anchor="w").pack(anchor="w")
+        tk.Label(words, text="Turn an MP3 into an M4B, or an M4B into an MP3. Choose one file, or all "
+                 "of a book's MP3 chapter files.", bg=CARD, fg=MUTED, font=(FONT, 9), anchor="w",
+                 justify="left", wraplength=X(360)).pack(anchor="w", pady=(X(2), 0))
 
         # ----- step 2: the voice: the book's language, which reader (the owner chooses by book), then
         # which voice. The language is guessed from the book's own words (the owner, 2026-11-13,
@@ -899,8 +1074,10 @@ class App(tk.Tk):
 
     def pick_book(self):
         f = filedialog.askopenfilename(title="Choose the ebook", filetypes=BOOK_TYPES)
-        if not f:
-            return
+        if f:
+            self.open_book(f)
+
+    def open_book(self, f):
         self.book_lbl.config(text="Opening the book…", fg=MUTED)
         self.start_btn.config(state="disabled")
         # a scanned PDF has its pages read first, which takes a while: what it's doing shows under
@@ -932,6 +1109,71 @@ class App(tk.Tk):
                     return
                 self.q.put(("book_error", f"This book couldn't be opened ({ex}).", traceback.format_exc()))
         threading.Thread(target=go, daemon=True).start()
+
+    # ---------- converting an audiobook you already have (MP3 <-> M4B) ----------
+    def _converting(self):
+        t = getattr(self, "convert_thread", None)
+        return bool(t and t.is_alive())
+
+    def pick_convert(self):
+        if self.maker or self._converting():
+            return
+        fs = filedialog.askopenfilenames(
+            title="Choose the audiobook (one file, or all of its MP3 chapter files)", filetypes=AUDIO_TYPES)
+        if not fs:
+            return
+        try:
+            files, kind, out = engine.convert_plan(fs)
+        except engine.BookError as ex:
+            messagebox.showerror(APP, str(ex))
+            return
+        what = f"“{files[0].name}”" if len(files) == 1 else f"these {len(files)} files"
+        ask = (f"Make {'an MP3' if kind == 'mp3' else 'an M4B'} from {what}?\n\nIt's saved as "
+               f"“{out.name}” in the same folder. The original stays as it is.")
+        if out.exists():
+            ask += f"\n\n“{out.name}” is already there. It will be replaced."
+        if messagebox.askyesno(APP, ask):
+            self.run_convert(files, out)
+
+    def run_convert(self, files, out):
+        stop_playing()
+        p = self._new_page("Converting the audiobook…", "A long book takes a few minutes. You can keep "
+                           "using your computer meanwhile.", name=out.stem)
+        X = self._px
+        card = look.Card(p, radius=14, pad=(24, 22))
+        card.pack(fill="x", pady=(X(10), 0))
+        self.pb = ttk.Progressbar(card.body, style="Green.Horizontal.TProgressbar", maximum=1000, length=640)
+        self.pb.pack(fill="x")
+        self.status = tk.Label(card.body, text="Starting…", bg=CARD, fg=INK, font=(FONT, 12),
+                               wraplength=X(700), justify="left")
+        self.status.pack(anchor="w", pady=(X(14), 0))
+        self._logo(p)
+        ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self._cancel_convert).pack(side="right")
+        self.job_title = out.stem
+        self.job += 1
+        job = self.job
+
+        def tell(*msg):
+            self.q.put(("for_job", job, msg))
+
+        def go():
+            try:
+                with freezes.awake():
+                    res = engine.convert_audiobook(files, out, progress=lambda f, m: tell("progress", f, m, None),
+                                                   cancel=lambda: self.job != job)
+                tell("converted", res)
+            except engine.Stopped:
+                pass
+            except engine.BookError as ex:
+                tell("convert_error", str(ex), "")
+            except Exception as ex:
+                tell("convert_error", f"Couldn't convert it ({str(ex)[:300]}).", traceback.format_exc())
+        self.convert_thread = threading.Thread(target=go, daemon=True, name="convert")
+        self.convert_thread.start()
+
+    def _cancel_convert(self):
+        self.job += 1                       # it stops, and the half-made file is deleted
+        self.show_setup()
 
     def _cover_png(self, book):
         """A small PNG of the cover for the page (tkinter can't show a JPEG)."""
@@ -1252,6 +1494,9 @@ class App(tk.Tk):
             self.watch.stop()               # waiting below isn't the window freezing
         if self.maker:
             self.maker.stop()
+        if self._converting():              # stop the converting and delete the half-made file
+            self.job += 1
+            self.convert_thread.join(timeout=10)
         for w, e in self.ending:            # a book told to stop: let it close its reading programs
             e.join(timeout=30)
         self.destroy()
@@ -1291,7 +1536,8 @@ class App(tk.Tk):
                    command=self.another).pack(side="right")
         self._logo(p)
         try:   # the chapter files aren't needed once the audiobook is made
-            engine.clean_up(Path(self.done_jobdir))
+            if self.done_jobdir:
+                engine.clean_up(Path(self.done_jobdir))
         except Exception:
             pass
 
@@ -1336,6 +1582,15 @@ class App(tk.Tk):
                 if lang in engine.LANGS and lang != self._lang():
                     self.lang_var.set(lang)
                     self._lang_changed()
+                carry, self._carry_step = getattr(self, "_carry_step", None), None
+                if carry and getattr(self, "steps_page", None) is not None:   # just updated: the same step
+                    step, series, number = carry
+                    if series or number:
+                        self.series_var.set(series)
+                        self.number_var.set(number)
+                    self.steps_page.go(max(1, min(step, len(self.STEPS))))
+        elif kind in ("update_ready", "update_progress", "update_none", "update_fail", "updated"):
+            self._update_msg(kind, msg[1])
         elif kind == "book_msg":
             if getattr(self, "book_lbl", None) and self.book_lbl.winfo_exists():
                 self.book_lbl.config(text=msg[1], fg=MUTED)
@@ -1415,6 +1670,15 @@ class App(tk.Tk):
         elif kind == "made":
             self.done_jobdir = self.maker.jobdir if self.maker else None
             self.show_done(msg[1])
+        elif kind == "converted":
+            self.done_jobdir = None
+            self.show_done(msg[1])
+        elif kind == "convert_error":
+            if msg[2]:
+                self._poll_error(msg[2])
+            chime()
+            self.show_setup()
+            messagebox.showerror(APP, msg[1][:700])
         elif kind == "stopped":
             self.maker = None
             self.book = None

@@ -270,7 +270,7 @@ def test_the_logo_shows_on_the_empty_pages():
     png = win.logo_png(128)
     assert png and png[:4] == b"\x89PNG"
     src = (REPO / "ReadAloud.pyw").read_text("utf8")
-    assert '"Narrating the book…"' in src and src.count("self._logo(p") == 2   # reading (with the cleaner) and done
+    assert '"Narrating the book…"' in src and src.count("self._logo(p") == 3   # reading (with the cleaner), done, converting
 
 
 def test_the_set_up_message_never_points_at_a_hidden_button():

@@ -1519,6 +1519,30 @@ def probe_duration(path):
         return 0.0
 
 
+def _ffmpeg_progress(cmd, total, report, cancel=None):
+    """Run ffmpeg (cmd ends with the output file), calling report(0..1) as it goes; cancel() true
+    stops it (Stopped). Returns a CompletedProcess with what ffmpeg said in stderr."""
+    cmd = cmd[:-1] + ["-progress", "pipe:1", "-nostats", cmd[-1]]
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         encoding="utf8", errors="replace", **_NOWIN)
+    err = []
+    reader = threading.Thread(target=lambda: err.append(p.stderr.read()), daemon=True)
+    reader.start()
+    for line in p.stdout:
+        if cancel and cancel():
+            p.kill()
+            p.wait()
+            raise Stopped()
+        if line.startswith("out_time_us=") and total > 0:
+            try:
+                report(min(1.0, max(0.0, int(line.split("=", 1)[1]) / 1e6 / total)))
+            except ValueError:
+                continue
+    p.wait()
+    reader.join(timeout=5)
+    return subprocess.CompletedProcess(cmd, p.returncode, "", "".join(err))
+
+
 def _cover(jobdir):
     return next((p for p in (Path(jobdir) / "cover.jpg", Path(jobdir) / "cover.png") if p.exists()), None)
 
@@ -1566,22 +1590,8 @@ def assemble(jobdir, progress=None):
             return subprocess.run(cmd, capture_output=True, text=True, **_NOWIN)
         # the chapters are AAC, so the MP3 is made again from them: a few minutes for a long book
         cmd += ["-c:a", "libmp3lame", "-b:a", MP3_BITRATE, "-id3v2_version", "3", "-write_xing", "1",
-                "-f", "mp3", "-progress", "pipe:1", "-nostats", str(tmp)]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                             encoding="utf8", errors="replace", **_NOWIN)
-        err = []
-        reader = threading.Thread(target=lambda: err.append(p.stderr.read()), daemon=True)
-        reader.start()
-        for line in p.stdout:
-            if line.startswith("out_time_us=") and at > 0:
-                try:
-                    done = min(1.0, max(0.0, int(line.split("=", 1)[1]) / 1e6 / at))
-                except ValueError:
-                    continue
-                say(0.1 + 0.8 * done, f"Making the MP3 file… {int(done * 100)}%")
-        p.wait()
-        reader.join(timeout=5)
-        return subprocess.CompletedProcess(cmd, p.returncode, "", "".join(err))
+                "-f", "mp3", str(tmp)]
+        return _ffmpeg_progress(cmd, at, lambda d: say(0.1 + 0.8 * d, f"Making the MP3 file… {int(d * 100)}%"))
 
     cover = _cover(jobdir)
     r = join(cover)
@@ -1643,6 +1653,161 @@ def voice_label(job):
 def clean_up(jobdir):
     """Delete a finished job's chapter files (the audiobook itself is kept)."""
     shutil.rmtree(jobdir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Turning an audiobook you already have from MP3 into M4B, or M4B into MP3 (the owner, 2026-11-20:
+# "also add in the I can load either mp3 or m4b and convert"). One M4B or MP3, or a book's MP3
+# chapter files (each one a chapter), keeping the chapters, title, author and cover. The new file
+# goes next to the old, which is never changed.
+# ---------------------------------------------------------------------------
+AUDIO_IN = (".mp3", ".m4b", ".m4a", ".aac")
+CONVERT_WORK = APP_DATA / "readaloud_convert"
+
+
+def _probe_all(path):
+    try:
+        r = subprocess.run([tool("ffprobe"), "-v", "quiet", "-print_format", "json", "-show_format",
+                            "-show_streams", "-show_chapters", str(path)], capture_output=True, text=True,
+                           encoding="utf8", errors="replace", **_NOWIN)
+        return json.loads(r.stdout or "{}")
+    except (ValueError, OSError):
+        return {}
+
+
+def _natural(name):
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+def _chapter_name(stem):
+    """ "03 - The Storm" -> "The Storm"; "Track 03" stays as it is."""
+    s = re.sub(r"^\s*(?:disc\s*\d+\s*[-_. ]+)?\d{1,4}\s*[-_.)]+\s*", "", stem, flags=re.I).strip()
+    return s or stem
+
+
+def convert_plan(paths):
+    """What converting these files makes: (files in order, "mp3" or "m4b", the new file's path).
+    One M4B (or M4A) becomes an MP3; MP3s, or several M4A chapter files, become one M4B."""
+    files = sorted({Path(p) for p in paths}, key=lambda p: _natural(p.name))
+    if not files:
+        raise BookError("No audiobook was chosen.")
+    for p in files:
+        if p.suffix.lower() not in AUDIO_IN:
+            raise BookError(f"“{p.name}” isn't an MP3 or M4B audiobook.")
+    kind = "mp3" if len(files) == 1 and files[0].suffix.lower() != ".mp3" else "m4b"
+    if len(files) == 1:
+        return files, kind, files[0].with_suffix("." + kind)
+    tags = {k.lower(): v for k, v in ((_probe_all(files[0]).get("format") or {}).get("tags") or {}).items()}
+    sys.path.insert(0, str(HERE))
+    import cleanlisten as E
+    title = E.safe_name(tags.get("album") or files[0].parent.name)
+    return files, kind, files[0].parent / (title + "." + kind)
+
+
+def convert_audiobook(paths, out, progress=None, cancel=None):
+    """Make `out` (.m4b or .mp3) from the audiobook file(s). Returns what assemble() returns
+    ({"file", "chapters", "hours", ...})."""
+    sys.path.insert(0, str(HERE))
+    import cleanlisten as E
+    say = progress or (lambda f, m: None)
+    files = [Path(p) for p in paths]
+    out = Path(out)
+    as_mp3 = out.suffix.lower() == ".mp3"
+    say(0.02, "Looking at the audiobook…")
+    infos = [_probe_all(p) for p in files]
+    durs = [float((i.get("format") or {}).get("duration") or 0) for i in infos]
+    for p, d in zip(files, durs):
+        if d <= 0:
+            raise BookError(f"“{p.name}” couldn't be read as sound. It may be damaged, or protected "
+                            "(Audible's own files can't be converted).")
+    total = sum(durs)
+    first = {k.lower(): v for k, v in ((infos[0].get("format") or {}).get("tags") or {}).items()}
+    if len(files) == 1:
+        chapters = [(float(c.get("start_time") or 0), (c.get("tags") or {}).get("title", ""))
+                    for c in infos[0].get("chapters") or []]
+        title = first.get("album") or first.get("title") or files[0].stem
+    else:
+        chapters, at = [], 0.0
+        for p, i, d in zip(files, infos, durs):
+            t = {k.lower(): v for k, v in ((i.get("format") or {}).get("tags") or {}).items()}
+            chapters.append((at, t.get("title") or _chapter_name(p.stem)))
+            at += d
+        title = first.get("album") or files[0].parent.name
+    tags = E.m4b_tags(title, first.get("artist") or first.get("album_artist") or "")
+    for k in ("date", "comment", "composer", "grouping"):
+        if first.get(k):
+            tags[k] = first[k]
+    work = CONVERT_WORK / hashlib.sha1(str(out).encode("utf8")).hexdigest()[:12]
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        meta = work / "meta.txt"
+        n_ch = E.write_ffmeta(meta, tags, chapters, total)
+        # the cover: the picture inside the first file, else one in its folder
+        cover = None
+        pic = next((s for s in infos[0].get("streams") or [] if s.get("codec_type") == "video"), None)
+        if pic is not None:
+            ext = ".png" if pic.get("codec_name") == "png" else ".jpg"
+            c = work / ("cover" + ext)
+            subprocess.run([tool("ffmpeg"), "-y", "-v", "error", "-i", str(files[0]), "-map", f"0:{pic['index']}",
+                            "-frames:v", "1", "-c:v", "copy", str(c)], capture_output=True, **_NOWIN)
+            cover = c if c.exists() and c.stat().st_size > 0 else None
+        if cover is None:
+            cover = next((files[0].parent / n for n in ("cover.jpg", "folder.jpg", "front.jpg", "cover.png")
+                          if (files[0].parent / n).exists()), None)
+        # about as good as the old one sounded: its bit rate, kept between 64k and 192k
+        audio = next((s for s in infos[0].get("streams") or [] if s.get("codec_type") == "audio"), {})
+        try:
+            rate = int(audio.get("bit_rate") or (infos[0].get("format") or {}).get("bit_rate") or 0)
+        except ValueError:
+            rate = 0
+        kbps = max(64, min(192, int(round((rate or 96000) / 32000.0)) * 32))
+        if len(files) == 1:
+            source = ["-i", str(files[0])]
+        else:
+            lst = work / "list.txt"
+            lst.write_text("ffconcat version 1.0\n" + "".join(
+                "file '" + f.resolve().as_posix().replace("'", "'\\''") + "'\n" for f in files), encoding="utf8")
+            source = ["-f", "concat", "-safe", "0", "-i", str(lst)]
+        tmp = out.with_name("~saving~ " + out.name)
+        word = "MP3" if as_mp3 else "M4B"
+
+        def make(cover):
+            cmd = [tool("ffmpeg"), "-y", "-v", "error"] + source + ["-i", str(meta)]
+            if cover:
+                cmd += ["-i", str(cover), "-map", "0:a:0", "-map", "2:v", "-c:v", "copy",
+                        "-disposition:v:0", "attached_pic"]
+            else:
+                cmd += ["-map", "0:a:0"]
+            cmd += ["-map_metadata", "1", "-map_chapters", "1"]
+            if as_mp3:
+                cmd += ["-c:a", "libmp3lame", "-b:a", f"{kbps}k", "-id3v2_version", "3", "-write_xing", "1",
+                        "-f", "mp3", str(tmp)]
+            else:
+                cmd += ["-c:a", "aac", "-b:a", f"{kbps}k", "-movflags", "+faststart", "-f", "ipod", str(tmp)]
+            return _ffmpeg_progress(cmd, total, lambda d: say(0.05 + 0.93 * d,
+                                                              f"Making the {word} file… {int(d * 100)}%"), cancel)
+        try:
+            r = make(cover)
+            if r.returncode != 0 and cover:      # a cover it can't take: leave it off rather than fail
+                r = make(None)
+        except Stopped:
+            tmp.unlink(missing_ok=True)
+            raise
+        if r.returncode != 0:
+            tmp.unlink(missing_ok=True)
+            raise RuntimeError(f"Couldn't make the {word} file:\n{r.stderr[-500:]}")
+        try:
+            os.replace(tmp, out)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise RuntimeError(f"Couldn't save {out.name}: it's open in another program (a player?). "
+                               "Close it and try again.")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    say(1.0, "Done")
+    return {"file": str(out), "chapters": n_ch, "hours": round(total / 3600, 2), "mp3_dir": None,
+            "report": None, "finished": time.strftime("%Y-%m-%d %H:%M")}
 
 
 def out_path(book, folder, abs_layout=False, kind="m4b"):

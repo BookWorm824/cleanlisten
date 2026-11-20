@@ -29,7 +29,7 @@ def test_the_working_and_done_pages_show_it_bigger(window):
     room.destroy()
     src = (REPO / "ReadAloud.pyw").read_text("utf8")
     assert src.count("self._logo(p, sweeper=True)") == 1     # the reading page, with the cleaner
-    assert src.count("self._logo(p)") == 1                   # the done page, without
+    assert src.count("self._logo(p)") == 2                   # the done and converting pages, without
 
 
 def test_the_little_cleaner_sweeps_it_while_reading_and_leans_while_paused(window):
