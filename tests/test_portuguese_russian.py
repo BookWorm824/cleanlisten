@@ -29,7 +29,7 @@ def found(text, cats=EVERY):
 
 
 def test_both_are_on_the_list_and_in_the_drop_down():
-    assert list(cvlang.LANGS) == ["en", "es", "fr", "pt", "ru"]
+    assert list(cvlang.LANGS) == ["en", "es", "fr", "de", "it", "pt", "ru"]   # German, Italian: CleanView 1.18.145
     assert cvlang.LANGS["pt"] == "Portuguese" and cvlang.LANGS["ru"] == "Russian"
 
 

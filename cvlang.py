@@ -27,23 +27,28 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 # code -> name, in the order the start page shows them
-LANGS = {"en": "English", "es": "Spanish", "fr": "French", "pt": "Portuguese",
-         "ru": "Russian"}
+LANGS = {"en": "English", "es": "Spanish", "fr": "French", "de": "German", "it": "Italian",
+         "pt": "Portuguese", "ru": "Russian"}
 
 # what a sound track or subtitle track of this language is tagged as inside a video, and how
 # a subtitle file next to it is named ("Movie.es.srt", "Movie.spa.srt")
 TAGS = {"en": ("eng", "en"),
         "es": ("spa", "es", "esp", "es-es", "es-mx", "es-419", "spanish"),
         "fr": ("fre", "fra", "fr", "fr-fr", "fr-ca", "french"),
-        "pt": ("por", "pt", "pob", "pt-br", "pt-pt", "portuguese"),
+        "de": ("ger", "deu", "de", "de-de", "de-at", "de-ch", "german", "deutsch"),
+        "it": ("ita", "it", "it-it", "italian", "italiano"),
+        "pt":("por", "pt", "pob", "pt-br", "pt-pt", "portuguese"),
         "ru": ("rus", "ru", "russian")}
 FILE_TAGS = {"en": r"\.(en|eng|english)\b",
              "es": r"\.(es|spa|esp|spanish|español|espanol|castellano|latino)\b",
              "fr": r"\.(fr|fre|fra|french|français|francais|vf|vff|vfq)\b",
+             "de": r"\.(de|ger|deu|german|deutsch)\b",
+             "it": r"\.(it|ita|italian|italiano)\b",
              "pt": r"\.(pt|por|pob|ptbr|pt-br|pt-pt|portuguese|portugues|português)\b",
              "ru": r"\.(ru|rus|russian|русский)\b"}
 # for the subtitle finder (ISO 639-3)
-SUB_LANG = {"en": "eng", "es": "spa", "fr": "fra", "pt": "por", "ru": "rus"}
+SUB_LANG = {"en": "eng", "es": "spa", "fr": "fra", "de": "deu", "it": "ita", "pt": "por",
+            "ru": "rus"}
 
 
 # the language being cleaned now. One video's worker process cleans one language, and the
@@ -98,8 +103,7 @@ def needs_model(code):
 
 # languages the listening model hears that CleanView has no word lists for yet, by the
 # labels a sound track can carry
-OTHER_TAGS = {"ger": "German", "deu": "German", "de": "German", "ita": "Italian",
-              "it": "Italian", "dut": "Dutch", "nld": "Dutch", "nl": "Dutch", "pol": "Polish",
+OTHER_TAGS = {"dut": "Dutch", "nld": "Dutch", "nl": "Dutch", "pol": "Polish",
               "pl": "Polish", "swe": "Swedish", "sv": "Swedish", "dan": "Danish",
               "nor": "Norwegian", "fin": "Finnish", "ukr": "Ukrainian", "uk": "Ukrainian",
               "jpn": "Japanese", "ja": "Japanese", "kor": "Korean", "ko": "Korean",
@@ -157,6 +161,11 @@ LITTLE_WORDS = {
           "noi voi mi ti si mio mia tuo suo come più questo quello bene qui ho hai ha "
           "abbiamo perché anche niente tutto grazie signore dove chi cosa quando allora "
           "adesso della del nel alla fare può posso voglio vuoi dire detto sempre mai",
+    # a language CleanView doesn't clean, so it can be named rather than taken for German
+    "nl": "het een ik je jij niet dat wat op zijn met voor maar ook hij zij wij jullie ze er "
+          "hebben heb heeft kan wel nog nu daar goed dank bedankt alsjeblieft nee mijn jouw "
+          "haar ons geen als dan toch even waar wie waarom hoe moet wil weet zeggen gezegd "
+          "dit deze naar uit om bij heel veel van",
 }
 
 
@@ -168,7 +177,7 @@ def _plain(word):
 LITTLE_WORDS = {k: frozenset(_plain(w) for w in v.split()) for k, v in LITTLE_WORDS.items()}
 OWN_WORDS = {k: ws - frozenset().union(*(o for j, o in LITTLE_WORDS.items() if j != k))
              for k, ws in LITTLE_WORDS.items()}       # the ones no other language here has
-OTHER_HEARD = {"de": "German", "it": "Italian"}
+OTHER_HEARD = {"nl": "Dutch"}
 TOO_FEW_WORDS = 15          # fewer than this heard: only a very clear case is told
 LITTLE_SHARE = 0.2          # a language's everyday words are at least this much of its talk
 CLEAR_SHARE = 0.45          # ... and this much, to tell from just a few words (6 or more)
@@ -275,17 +284,25 @@ def install_model(progress=None, url=None):
 # ---------------------------------------------------------------------------
 # accents are taken off before matching ("cabrón" = "cabron", "cállate" = "callate"), because
 # subtitles and speech recognition often leave them out. Spanish ñ stays: "año" is a year.
-NO_ACCENTS = {"es", "fr", "pt"}
+NO_ACCENTS = {"es", "fr", "pt", "de", "it"}
+# German letters written out first, the way subtitles without them write them ("Scheiße" =
+# "Scheisse" = "scheisse", "Arschlöcher" = "arschloecher"); taking the dots off instead would
+# make "schwül" (humid) "schwul"
+SPELLED_OUT = {"de": {"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "ẞ": "ss"}}
 # letters written two ways that the lists have one way (Russian ё is usually printed е)
 SAME_LETTER = {"ru": {"ё": "е"}}
-# French joins short words on with an apostrophe ("l'idiot", "t'es", "qu'il", "j'm'en"): they
-# come off, so the word after them is the one matched
-ELIDED = {"fr": re.compile(r"^(?:[cdjlmnst]|qu|jusqu|lorsqu|puisqu|quelqu)'")}
+# French and Italian join short words on with an apostrophe ("l'idiot", "t'es", "qu'il",
+# "dell'idiota", "c'è", "all'inferno"): they come off, so the word after them is the one matched
+ELIDED = {"fr": re.compile(r"^(?:[cdjlmnst]|qu|jusqu|lorsqu|puisqu|quelqu)'"),
+          "it": re.compile(r"^(?:[lcdmtsvn]|un|dell|dall|nell|sull|all|coll|pell|quell|quest|"
+                           r"bell|sant|tutt|com|dov|cos)'")}
 
 
 def norm(w, lang="es"):
     """A word as the lists have it: small letters, no punctuation, no accents (ñ kept)."""
     w = unicodedata.normalize("NFC", str(w)).lower().replace("’", "'").replace("‘", "'")
+    for a, b in SPELLED_OUT.get(lang, {}).items():
+        w = w.replace(a, b)
     if lang in NO_ACCENTS:
         w = w.replace("ñ", "\0")
         w = "".join(c for c in unicodedata.normalize("NFD", w) if not unicodedata.combining(c))
@@ -635,12 +652,178 @@ RU_NOT_NEXT = {"блин": {"с", "со", "на", "из", "комом"}}
 RU_NOT_BEFORE = {"блин": {"один", "этот", "первый", "последний", "вкусный", "горячий",
                           "съел", "съела", "испек", "испекла", "как"}}
 
+# German (1.18.145; the owner, 2026-11-19: "i think german , italian, espanola"), written as
+# norm() leaves the words: ä ö ü ß spelled out (ae, oe, ue, ss), other accents off. Germany,
+# Austria and Switzerland. German joins words into one ("Scheißkerl", "Arschgesicht",
+# "Vollidiot"), so the roots take what comes after them.
+# Left out on purpose, because the everyday meaning is far more common than the rude one:
+# Schwanz (a tail), Sack (a bag), Sau and Schwein (a sow, a pig), Esel (a donkey), geil
+# (great, to the young), Möpse (pugs), Wichse (shoe polish), Blödsinn and Schwachsinn
+# (nonsense), behindert (disabled), Hölle and Teufel alone (hell, the devil: they count in
+# "zur Hölle", "zum Teufel"), Gott alone ("Grüß Gott" is hello). English swearing said in
+# German ("Shit", "Fuck") is on the list, as German speakers use it.
+DE = {
+    "strong": [
+        r"fick[a-z]*", r"(ge|ver|an|ab|durch)fick[a-z]*", r"fotzen?",
+        r"wichs(er|ers|erin|en|t|te|ten)", r"hurens(ohn|oehne|oehnen)", r"huren?",
+        r"hurenbock", r"nutten?", r"mutterficker", r"schwanzlutscher",
+        r"fuck(s|ed|ing|er|ers)?", r"motherfucker",
+    ],
+    "moderate": [
+        r"scheis[a-z]*", r"(be|ver|ange|ge)schiss(en|ene|ener|enes|enen)?",
+        r"bescheissen", r"schiss", r"arsch[a-z]*", r"kack[a-z]*", r"pisse",
+        r"piss(en|t|te|er|nelke|nelken)", r"(an|ver)piss[a-z]*", r"angepisst(e|er|es|en|em)?", r"schlampen?",
+        r"titten", r"mistkerle?", r"miststuecke?", r"mistvieh", r"mistding",
+        r"drecks(au|aeue|ack|aecke|kerl|kerle|stueck|loch)", r"dreckskerl", r"bastarde?",
+        r"spast(i|is|en)?", r"mongos?", r"schweinehunde?", r"shit", r"bitch(es)?",
+    ],
+    "mild": [r"verdammt(e|er|es|en|em)?", r"verdammich", r"verflucht(e|er|es|en|em)?"],
+    "minced": [
+        r"verflixt(e|er|es|en|em)?", r"mist", r"scheibenkleister", r"potztausend",
+        r"donnerwetter", r"donnerlittchen", r"menno", r"sapperlot", r"sackzement",
+    ],
+    "deity": [
+        r"herrgott[a-z]*", r"gottverdammt[a-z]*", r"gottverflucht[a-z]*", r"herrje",
+        r"herrjemine", r"jesses", r"kruzifix", r"kreuzkruzifix", r"sakrament", r"zefix",
+        r"gottogott", r"allmaechtiger", r"omg",
+    ],
+    "samesex": [
+        r"schwul(e|er|es|en|em)?", r"schwuchtel(n)?", r"homosexuell[a-z]*",
+        r"homosexualitaet", r"homos?", r"lesb(e|en|isch|ische|ischer|isches|ischen|ischem)",
+        r"bisexuell[a-z]*", r"tunten?", r"gays?", r"queers?",
+    ],
+    "rude": [
+        r"idiot(en|in|innen)?", r"vollidiot(en|in|innen)?", r"depp(en|ert|erte|erter)?",
+        r"trottel", r"bloed(e|er|es|en|em|mann|maenner|ian|iane)?",
+        r"dumm(e|er|es|en|em|kopf|koepfe|chen|erchen)?", r"doof(e|er|es|en|em|kopf)?",
+        r"bescheuert(e|er|es|en|em)?", r"dussel(ig|ige|iger)?", r"schwachkoepfe?",
+        r"schwachkopf", r"vollpfosten", r"knallkoepfe?", r"knallkopf", r"hohlkoepfe?",
+        r"hohlkopf", r"penner", r"verlierer(in)?", r"heulsusen?", r"memmen?", r"weicheier",
+        r"weichei", r"zicken?", r"loser", r"kotzbrocken",
+    ],
+    "sex": [
+        r"sex", r"sexuell[a-z]*", r"penis(se)?", r"vaginas?", r"orgasm(us|en)",
+        r"masturb[a-z]+", r"erektion(en)?", r"ejakul[a-z]+", r"sperma", r"kondome?",
+        r"porno[a-z]*", r"pornografie", r"prostituierten?", r"bums(en|t|te|ten)",
+        r"voegel(n|t|te|ten)", r"geschlechtsverkehr",
+    ],
+}
+DE_PHRASES = {
+    "mild": [("zum", "teufel"), ("teufel", "auch"), ("fahr", "zur", "hoelle"),
+             ("fahrt", "zur", "hoelle"), ("zur", "hoelle", "mit"), ("verdammt", "nochmal"),
+             ("verdammt", "noch", "mal")],
+    "minced": [("himmel", "nochmal"), ("himmel", "noch", "mal"), ("meine", "guete"),
+               ("ach", "du", "meine", "guete"), ("du", "liebe", "zeit"),
+               ("ach", "du", "schreck"), ("ach", "du", "liebes", "bisschen"),
+               ("mensch", "meier"), ("um", "himmels", "willen"),
+               ("heiliger", "strohsack"), ("heiliger", "bimbam")],
+    "deity": [("oh", "mein", "gott"), ("o", "mein", "gott"), ("mein", "gott"), ("oh", "gott"),
+              ("o", "gott"), ("ach", "gott"), ("ach", "du", "lieber", "gott"),
+              ("du", "lieber", "gott"), ("grosser", "gott"), ("gott", "im", "himmel"),
+              ("um", "gottes", "willen"), ("gott", "sei", "dank"), ("weiss", "gott"),
+              ("gott", "weiss"), ("bei", "gott"), ("ich", "schwoere", "bei", "gott"),
+              ("schwoere", "bei", "gott"), ("gott", "bewahre"), ("gott", "behuete"),
+              ("gott", "steh", "mir", "bei"), ("jesus", "maria", "und", "josef"),
+              ("jesus", "maria"), ("jesus", "christus"), ("herr", "jesus"), ("oh", "jesus")],
+    "rude": [("halt", "die", "klappe"), ("haltet", "die", "klappe"), ("halt", "den", "mund"),
+             ("halt", "dein", "maul"), ("halt's", "maul"), ("halts", "maul"),
+             ("haltet", "das", "maul"), ("halt", "die", "fresse"), ("halt", "die", "schnauze"),
+             ("maul", "halten"), ("klappe", "halten"), ("ich", "hasse", "dich")],
+}
+DE_NOT_NEXT = {"homo": {"sapiens", "erectus", "habilis", "faber"}}
+# "Mist" is also dung ("den Mist aufs Feld fahren")
+DE_NOT_BEFORE = {"mist": {"den", "dem", "der", "vom", "mit", "haufen", "auf", "viel", "kuh",
+                          "pferde", "fahren", "streuen"}}
+
+
+# Italian, written as norm() leaves the words: no accents ("perché" = "perche") and without the
+# short words joined on with an apostrophe ("dell'idiota" = "idiota", "vai all'inferno" = "vai
+# inferno").
+# Left out on purpose, because the everyday meaning is far more common than the rude one:
+# finocchio (fennel), sega (a saw), cagna (a female dog), palle (balls; "che palle" counts),
+# cavolo (a cabbage; "che cavolo" counts), checca (a name), bocchino (a cigarette holder),
+# Madonna alone (a name), diavolo and inferno alone (they count in "che diavolo", "vai
+# all'inferno"), zitto alone (silent; "stai zitto" counts), fallito (bankrupt).
+IT = {
+    "strong": [
+        r"cazz(o|i|ata|ate|ona|one|oni|uto|uta|uti|ute|eggi[a-z]*|ar[a-z]*)", r"incazz[a-z]+",
+        r"(vaf|af|a)?fancul(o|i|are)", r"vaffa",
+        r"fott(ere|i|iti|ito|ita|iti|ite|uto|uta|uti|ute|ete|iamo|ono|eva|endo|esene|ersene)",
+        r"stronz(o|a|i|e|ata|ate|aggine)", r"puttan(a|e|iere|ieri|ata|ate|ella)",
+        r"troi(a|e|ona|one)", r"minchi(a|e|ata|ate|one|oni)",
+        r"cogli(one|oni|ona|onata|onate)", r"scoglion[a-z]+", r"rompicoglioni",
+        r"incul(are|ato|ata|ati|ate|a|o)", r"fig(a|he)", r"mignott(a|e)", r"zoccol(a|e)",
+        r"pompin(o|i|ara)", r"sputtan[a-z]+",
+    ],
+    "moderate": [
+        r"merd(a|e|oso|osa|osi|ose|ata|ate|accia)", r"cul(o|i)", r"bastard(o|a|i|e|ata)",
+        r"pisci(are|a|ato|ata|ando)", r"tett(e|ona|one)", r"rompipalle",
+    ],
+    "mild": [r"maledett(o|a|i|e|amente)", r"maledizione", r"dannazione", r"dannat(o|a|i|e)"],
+    "minced": [
+        r"accidenti", r"mannaggia", r"caspita", r"cacchi(o|i)", r"cribbio", r"perdinci",
+        r"perbacco", r"diamine", r"accipicchia", r"acciderba", r"urca",
+    ],
+    "deity": [r"oddio", r"diomio", r"perdio", r"omg"],
+    "samesex": [
+        r"gays?", r"omosessual(e|i|ita)", r"lesbic(a|he|o|hi)", r"lesbicon(a|e)",
+        r"bisessual(e|i)", r"froc(io|i|ia|ie|etto)", r"ricchion(e|i)", r"recchion(e|i)",
+        r"culatton(e|i)", r"busone", r"queers?",
+    ],
+    "rude": [
+        r"stupid(o|a|i|e|aggine|aggini)", r"idiot(a|i|e)", r"cretin(o|a|i|e)",
+        r"scem(o|a|i|e|enza|enze)", r"imbecill(e|i)", r"deficient(e|i)",
+        r"sciocc(o|a|hi|he|hezza)", r"babbe(o|a|i|e)", r"tont(o|a|i|e)", r"ebete",
+        r"fess(o|a|i|e)", r"rimbambit(o|a|i|e)", r"pirla", r"zuccon(e|i)", r"perdent(e|i)",
+        r"frignon(e|a|i)", r"piagnucolon(e|a|i)", r"piagnon(e|a|i)", r"taci", r"tacete",
+    ],
+    "sex": [
+        r"sesso", r"sessual(e|i|ita)", r"pene", r"vagin(a|e)", r"orgasm(o|i)",
+        r"masturb[a-z]+", r"erezion(e|i)", r"eiacul[a-z]+", r"sperma", r"preservativ(o|i)",
+        r"profilattic(o|i)", r"coito", r"porno", r"pornografi(a|co|ca)",
+        r"prostitut(a|e|o|i)", r"scop(are|ata|ate|ato|arti|arla|arlo|arsela|ando|ano)",
+        r"tromb(are|ata|ato)",
+    ],
+}
+IT_PHRASES = {
+    "strong": [("figlio", "di", "troia"), ("figli", "di", "troia"), ("porca", "troia")],
+    "moderate": [("che", "palle"), ("rompere", "le", "palle"), ("rompi", "le", "palle"),
+                 ("mi", "rompi", "le", "palle"), ("rotto", "le", "palle")],
+    "mild": [("che", "diavolo"), ("cosa", "diavolo"), ("dove", "diavolo"), ("chi", "diavolo"),
+             ("come", "diavolo"), ("perche", "diavolo"), ("al", "diavolo"),
+             ("va", "al", "diavolo"), ("vai", "al", "diavolo"), ("andate", "al", "diavolo"),
+             ("vai", "inferno"), ("va", "inferno"), ("andate", "inferno")],
+    "minced": [("porca", "miseria"), ("porca", "vacca"), ("porca", "paletta"),
+               ("porca", "oca"), ("porco", "cane"), ("che", "cavolo"), ("col", "cavolo"),
+               ("cavoli", "tuoi"), ("santo", "cielo"), ("mannaggia", "la", "miseria")],
+    "deity": [("oh", "mio", "dio"), ("o", "mio", "dio"), ("mio", "dio"), ("dio", "mio"),
+              ("oh", "dio"), ("o", "dio"), ("santo", "dio"), ("dio", "santo"),
+              ("grazie", "a", "dio"), ("dio", "sa"), ("lo", "sa", "dio"), ("solo", "dio", "sa"),
+              ("per", "amor", "di", "dio"), ("per", "amore", "di", "dio"),
+              ("giuro", "su", "dio"), ("giuro", "davanti", "a", "dio"), ("dio", "non", "voglia"),
+              ("dio", "ce", "ne", "scampi"), ("dio", "benedetto"), ("dio", "onnipotente"),
+              ("porco", "dio"), ("dio", "cane"), ("dio", "porco"), ("porca", "madonna"),
+              ("madonna", "santa"), ("santa", "madonna"), ("madonna", "mia"),
+              ("oh", "madonna"), ("gesu", "cristo"), ("gesu", "giuseppe", "e", "maria"),
+              ("gesu", "maria"), ("cristo", "santo"), ("santo", "cristo"), ("per", "dio")],
+    "rude": [("stai", "zitto"), ("stai", "zitta"), ("state", "zitti"), ("sta", "zitto"),
+             ("sta", "zitta"), ("zitto", "tu"), ("chiudi", "il", "becco"),
+             ("chiudi", "la", "bocca"), ("chiudete", "la", "bocca"), ("ti", "odio"),
+             ("faccia", "da", "schiaffi")],
+}
+IT_NOT_NEXT = {}
+# "Troia" is also Troy ("il cavallo di Troia"); "figlio di troia" is a phrase above
+IT_NOT_BEFORE = {"troia": {"di", "a"}}
+
 WORDS = {code: {k: _c(v) for k, v in lists.items()}
-         for code, lists in (("es", ES), ("fr", FR), ("pt", PT), ("ru", RU))}
-PHRASES = {"es": ES_PHRASES, "fr": FR_PHRASES, "pt": PT_PHRASES, "ru": RU_PHRASES}
-NOT_NEXT = {"es": ES_NOT_NEXT, "fr": FR_NOT_NEXT, "pt": PT_NOT_NEXT, "ru": RU_NOT_NEXT}
-NOT_BEFORE = {"es": ES_NOT_BEFORE, "fr": FR_NOT_BEFORE, "pt": PT_NOT_BEFORE,
-              "ru": RU_NOT_BEFORE}
+         for code, lists in (("es", ES), ("fr", FR), ("de", DE), ("it", IT), ("pt", PT),
+                             ("ru", RU))}
+PHRASES = {"es": ES_PHRASES, "fr": FR_PHRASES, "de": DE_PHRASES, "it": IT_PHRASES,
+           "pt": PT_PHRASES, "ru": RU_PHRASES}
+NOT_NEXT = {"es": ES_NOT_NEXT, "fr": FR_NOT_NEXT, "de": DE_NOT_NEXT, "it": IT_NOT_NEXT,
+            "pt": PT_NOT_NEXT, "ru": RU_NOT_NEXT}
+NOT_BEFORE = {"es": ES_NOT_BEFORE, "fr": FR_NOT_BEFORE, "de": DE_NOT_BEFORE,
+              "it": IT_NOT_BEFORE, "pt": PT_NOT_BEFORE, "ru": RU_NOT_BEFORE}
 ORDER = ("strong", "moderate", "deity", "samesex", "mild", "minced", "rude")
 
 

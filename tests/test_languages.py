@@ -299,7 +299,13 @@ def test_the_language_is_guessed_from_the_books_own_words(tmp_path):
     assert E.guess_language(tmp_path / "missing.epub") is None
     de = "Der alte Mann saß in der Küche und sah die Kinder, die mit dem Ball auf dem Platz spielten."
     (tmp_path / "de.txt").write_text("\n\n".join([de] * 20), encoding="utf8")
-    assert E.guess_language(tmp_path / "de.txt") is None              # no lists for it
+    assert E.guess_language(tmp_path / "de.txt") == "de"              # German has lists now (CleanView 1.18.145)
+    it = "Il vecchio era seduto in cucina e guardava i bambini che giocavano con la palla nella piazza."
+    (tmp_path / "it.txt").write_text("\n\n".join([it] * 20), encoding="utf8")
+    assert E.guess_language(tmp_path / "it.txt") == "it"
+    nl_ = "De oude man zat in de keuken en hij keek naar de kinderen die met een bal op het plein speelden."
+    (tmp_path / "nl.txt").write_text("\n\n".join([nl_] * 20), encoding="utf8")
+    assert E.guess_language(tmp_path / "nl.txt") is None              # Dutch: no lists for it
 
 
 # ---------------------------------------------------------------------------
