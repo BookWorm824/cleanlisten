@@ -1,4 +1,4 @@
-"""Jason's requests of 2026-11-07 (via the owner and CleanView): CleanRead's filters on its main
+"""The tester's requests of 2026-11-07 (via the owner and CleanView): CleanRead's filters on its main
 page, the chat told who does what, the logo in the empty space, and a findings spreadsheet of
 just the book being reviewed."""
 import csv

@@ -1,4 +1,4 @@
-"""A book's name comes from its file, not the folder it sits in (Jason, 2026-11-06: a book
+"""A book's name comes from its file, not the folder it sits in (the tester, 2026-11-06: a book
 sitting straight in Downloads was called "Downloads"). The folder's name only for a folder of
 chapter files, or the folder above Disc 1, Disc 2..."""
 import importlib.machinery
@@ -17,7 +17,7 @@ def _app():
 
 
 APP = _app()
-DL = Path(r"C:\Users\Lauren\Downloads")
+DL = Path(r"C:\Users\owner\Downloads")
 
 
 def test_one_file_is_called_by_its_own_name():
@@ -43,8 +43,8 @@ def test_chapter_files_loose_in_downloads():
     assert APP.book_title(files) == "My Book"
     # names that don't agree: the first file's own name, never "Downloads"
     assert APP.book_title([DL / "a.mp3", DL / "b.mp3"]) == "a"
-    assert APP.book_title([Path(r"C:\Users\Lauren\Desktop\x 1.mp3"),
-                           Path(r"C:\Users\Lauren\Desktop\x 2.mp3")]) == "x"
+    assert APP.book_title([Path(r"C:\Users\owner\Desktop\x 1.mp3"),
+                           Path(r"C:\Users\owner\Desktop\x 2.mp3")]) == "x"
 
 
 def test_names_saved_by_older_versions_are_mended():

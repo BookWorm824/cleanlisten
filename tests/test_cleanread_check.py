@@ -1,4 +1,4 @@
-"""CleanRead's book check (Jason, 2026-11-03, "Wings of a Dream"): places in plain words, and
+"""CleanRead's book check (the tester, 2026-11-03, "Wings of a Dream"): places in plain words, and
 telling Claude what isn't a problem from the check page (marked and remembered like a click)."""
 import pytest
 
@@ -57,7 +57,7 @@ def test_tell_claude_whats_not_a_problem_on_the_check_page(book, tmp_path, monke
     chat = R.CheckChat(book, r, tmp_path / "chat")
     ans, changes, kept = chat.ask("The witches are fine")
     assert kept == [("A witch in a fairy tale is fine.", False)]
-    # the check page's rules, then who does what (Jason, 2026-11-07)
+    # the check page's rules, then who does what (the tester, 2026-11-07)
     assert asked[0][1].startswith(R.CHECK_SYSTEM) and "You (Claude) are only this chat" in asked[0][1]
     assert asked[0][2] is R.CHECK_SCHEMA
     found = (tmp_path / "chat" / "findings.txt").read_text(encoding="utf8")

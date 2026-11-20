@@ -75,7 +75,7 @@ CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "mild": "mil
              "crude": "drunk (crude humor)", "mine": "the family's own word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
 
-# What the family wants, filter by filter (from Lauren's own rules for CleanListen)
+# What the family wants, filter by filter (from the owner's own rules for CleanListen)
 KIND_RULES = {
     "sex": "Explicit sex scenes: cut the explicit part of the scene. Judge it by what is "
            "happening, not by where they are or whether they're dressed: a sex scene can happen "
@@ -579,7 +579,7 @@ STRICT_RELIGION_RULE = (
 PASSIONATE_KISS_RULE = (
     "Passionate kissing: cut sentences where a man and a woman kiss passionately or make out. A quick "
     "or gentle kiss, a peck, and a parent kissing a child are fine.")
-# The religion boxes the family left OFF (Jason, 2026-10-30: religion in parts)
+# The religion boxes the family left OFF (the tester, 2026-10-30: religion in parts)
 RELIGION_OFF = {
     "preach": "The family turned OFF preaching: keep people explaining, preaching, teaching or "
               "debating beliefs, scripture, statements of belief or testimony, and Providence.",

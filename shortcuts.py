@@ -11,7 +11,7 @@ LOCAL = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
 APP_DATA = LOCAL / "CleanListen"
 # CleanView is its own program now, with its own install (BookWorm824/cleanview,
 # "Install CleanView.bat"). CleanListen used to ship an old copy and make a "CleanView" icon
-# for it, with the same name as the real one's; whichever was made last won (Jason, 2026-10-30).
+# for it, with the same name as the real one's; whichever was made last won (the tester, 2026-10-30).
 CLEANVIEW = LOCAL / "CleanView"
 # The installed CleanListen (install.ps1 puts it here). Only it makes or moves the CleanRead
 # icon: a copy run from anywhere else (for testing) once made the icon on the owner's PC, and

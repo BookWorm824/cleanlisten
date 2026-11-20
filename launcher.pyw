@@ -29,7 +29,7 @@ def _ver(s):
 
 # ---------- each app's own name in Task Manager ----------
 # Task Manager names a program by its .exe's description, so CleanListen and CleanRead showed
-# as "Python" (Jason, 2026-11-03). As in CleanView 1.18.9: CleanListen.exe / CleanRead.exe are
+# as "Python" (the tester, 2026-11-03). As in CleanView 1.18.9: CleanListen.exe / CleanRead.exe are
 # copies of the venv's base pythonw.exe in venv\CleanListen and venv\CleanRead, with
 # python312.dll beside them and their description and icon changed; each finds the venv
 # through venv\pyvenv.cfg one folder up, like Scripts\pythonw.exe does. (Not in Scripts:
@@ -304,7 +304,7 @@ def as_own_exe(arg=""):
 def start_again(note):
     """After an update, start the launcher just downloaded (without checking again), so what's
     new in it works now: the first start after 1.13.0 still showed "Python" in Task Manager,
-    because this, the old launcher, opened the app itself (Jason, 2026-11-03)."""
+    because this, the old launcher, opened the app itself (the tester, 2026-11-03)."""
     import subprocess
     env = dict(os.environ, CLEANLISTEN_UPDATED=note, CLEANLISTEN_UPDATE_DONE="1")
     try:

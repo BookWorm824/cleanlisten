@@ -150,7 +150,7 @@ def phrase(m):
 
 def _count(table, name, it, now, yes, no):
     """Count one choice (True/False). Choices are learned when you leave the review ("Back to
-    start", Jason) and again when you save it, so a choice already counted only moves if you
+    start", the tester) and again when you save it, so a choice already counted only moves if you
     changed it since (it["_learned_as"]; CleanView's _count)."""
     prev = it.get("_learned_as")
     if prev == now:
@@ -282,7 +282,7 @@ MAX_NOTES = 40
 
 def add_note(text, title="", everywhere=False):
     """Something they told the chat to keep in mind from now on ("it's Aladdin, the Genie's
-    magic is fine"; Jason, 2026-10-30: the chat said it couldn't learn). Kept for this book
+    magic is fine"; the tester, 2026-10-30: the chat said it couldn't learn). Kept for this book
     (title) or for every book. Returns True if it's new."""
     text = " ".join(str(text).split())[:300]
     if not text:
@@ -439,12 +439,12 @@ def _write_csv(path, books):
 
 
 def write_all_csv():
-    """The spreadsheet of every book, the newest first (Jason, 2026-11-07, in CleanView)."""
+    """The spreadsheet of every book, the newest first (the tester, 2026-11-07, in CleanView)."""
     _write_csv(CSV_PATH, _book_files())
 
 
 def book_csv(book):
-    """A spreadsheet of just this book's findings (Jason, 2026-11-07, in CleanView: "it had every
+    """A spreadsheet of just this book's findings (the tester, 2026-11-07, in CleanView: "it had every
     movie"); None if Claude/ChatGPT/Gemini hasn't checked it yet."""
     name = re.sub(r"[^A-Za-z0-9._ -]+", "_", book or "") or "book"
     f = FINDINGS / f"{name}.json"

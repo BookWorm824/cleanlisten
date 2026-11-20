@@ -72,7 +72,7 @@ def save_places(d):
 
 def chime():
     """The Windows "information" sound, so a question is heard like the other boxes
-    (a yes/no box is silent on Windows; Jason missed the "Send it in now?" one)."""
+    (a yes/no box is silent on Windows; the tester missed the "Send it in now?" one)."""
     try:
         import winsound
         winsound.MessageBeep(winsound.MB_ICONASTERISK)
@@ -179,7 +179,7 @@ def job_key(files):
 
 
 # folders that hold all sorts of things, never one book (a book sitting straight in Downloads
-# was called "Downloads": Jason, 2026-11-06)
+# was called "Downloads": the tester, 2026-11-06)
 NOT_BOOK_FOLDERS = {"downloads", "desktop", "documents", "my documents", "music", "audiobooks",
                     "audible", "onedrive", "temp", "tmp"}
 
@@ -407,7 +407,7 @@ class App(tk.Tk):
         self.footer = tk.Frame(self.page, bg=BG)
         self.footer.pack(side="bottom", fill="x", pady=(8, 0))
         tk.Frame(self.footer, bg=LINE, height=1).pack(side="top", fill="x", pady=(0, self._px(10)))
-        if name:                # which book this is (Jason: "you don't know what you've cleaned")
+        if name:                # which book this is (the tester: "you don't know what you've cleaned")
             tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
                      wraplength=F.wrap(560), justify="left").pack(anchor="w", pady=(0, 2))
         tk.Label(self.page, text=title, bg=BG, fg=INK, font=(HEAD, 21)).pack(anchor="w")
@@ -815,7 +815,7 @@ class App(tk.Tk):
                                          "players that can't skip chapters)",
                                          variable=self.split_var, command=self._places_shown)
         self.split_chk.pack(anchor="w", pady=(6, 0))
-        # where they go: the usual place, or a folder they choose (Lauren, 2026-11-04)
+        # where they go: the usual place, or a folder they choose (the owner, 2026-11-04)
         places = load_places()
         self.chapters_dir = places.get("chapters_dir") or None
         self.m4b_dir = places.get("m4b_dir") or None
@@ -839,7 +839,7 @@ class App(tk.Tk):
                    command=self.pick_cover).pack(side="right")
         self._can_drop = any([dropfiles.accept(w, self._cover_dropped)
                               for w in (zone, self.cover_lbl, self.cover_img_lbl)])
-        # no cover in the book or its folder: look it up online (Lauren, 2026-11-04)
+        # no cover in the book or its folder: look it up online (the owner, 2026-11-04)
         self.cover_online_var = tk.BooleanVar(value=bool(places.get("cover_online", True)))
         ttk.Checkbutton(self.m4b_box, text="When the book has no cover, find one online  (by its "
                         "title and author)",
@@ -1571,11 +1571,11 @@ class App(tk.Tk):
             self.show_setup()
 
     def _back_to_start(self):
-        """Leave the review without saving an audiobook (Jason, 2026-10-30: a parent may only
+        """Leave the review without saving an audiobook (the tester, 2026-10-30: a parent may only
         want to see what's in a book). The review is kept: the book stays on "Your books" as
         ready to review, ticks and all."""
         self._sync_ticks()
-        self._learn_choices()            # checking without saving still teaches it (Jason)
+        self._learn_choices()            # checking without saving still teaches it (the tester)
         try:
             self._queue_this_review()
         except BQ.Busy:
@@ -2079,7 +2079,7 @@ class App(tk.Tk):
         self.show_review(True)
 
     def _will_remember(self, kept):
-        """Say what the chat will keep in mind for later checks (Jason, 2026-10-30)."""
+        """Say what the chat will keep in mind for later checks (the tester, 2026-10-30)."""
         for note, everywhere in kept or ():
             text = ("\u2713 CleanListen will remember" +
                     (" for every book" if everywhere else " for this book") + ": " + note)
@@ -2413,7 +2413,7 @@ class App(tk.Tk):
         self.status.pack(anchor="w", pady=(12, 0))
         self.cancel_btn = ttk.Button(self.footer, text="Cancel", style="Plain.TButton", command=self.cancel)
         self.cancel_btn.pack(side="right")
-        # the empty space (Jason, 2026-11-07), 50% bigger (2026-11-15), with CleanView's little cleaner
+        # the empty space (the tester, 2026-11-07), 50% bigger (2026-11-15), with CleanView's little cleaner
         # sweeping it (the owner, 2026-11-15: "Yes, all apps")
         LOGO.put_logo(p, "icon.ico", BG, LOGO.WORKING_LOGO, sweeper=True)
 
@@ -2426,7 +2426,7 @@ class App(tk.Tk):
 
     def _poll(self):
         """From now on freezes.drain runs the queue: a flood of messages can't keep the window
-        busy, and one bad message can't stop it updating (Jason, 2026-11-03)."""
+        busy, and one bad message can't stop it updating (the tester, 2026-11-03)."""
         freezes.drain(self, self.q, self._handle, self._poll_error, self.watch)
 
     def _poll_error(self, details):
@@ -3162,7 +3162,7 @@ class App(tk.Tk):
                    command=self._save_from_review).pack(side="right")
         ttk.Button(row, text="Change filters & re-check", style="Plain.TButton",
                    command=self.recheck_same).pack(side="right", padx=(0, 10))
-        # a way out without saving (Jason): the review is kept to pick up again
+        # a way out without saving (the tester): the review is kept to pick up again
         ttk.Button(row, text="\u25c0 My books", style="Plain.TButton",
                    command=self._back_to_start).pack(side="left")
         # send it in now, without saving the audiobook first (the ticks as they are now count)
@@ -3170,7 +3170,7 @@ class App(tk.Tk):
                    command=self._send_report_now).pack(side="left", padx=(8, 0))
         body = self._scroll_area(p, stacked=True)     # body(): the block for the next thing
         multi = len(a["parts"]) > 1
-        # "at 0:12:34" (how far into the book), so it isn't read as a clock (Jason, 2026-11-03)
+        # "at 0:12:34" (how far into the book), so it isn't read as a clock (the tester, 2026-11-03)
         where = lambda x: (f"Part {x['part'] + 1}, " if multi else "") + "at " + engine.fmt_t(x["s"])
 
         def section(title, short, count, var_list):
@@ -3352,7 +3352,7 @@ class App(tk.Tk):
             self.after(delay, go)
 
     def _open_findings(self, this_book=False):
-        """Claude's findings as a spreadsheet: this book's (Jason, 2026-11-07, in CleanView: "it
+        """Claude's findings as a spreadsheet: this book's (the tester, 2026-11-07, in CleanView: "it
         had every movie"), or every book's, newest first."""
         try:
             import cleanlisten_learn as learn

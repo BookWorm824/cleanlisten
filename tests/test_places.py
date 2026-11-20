@@ -1,5 +1,5 @@
 """Choosing where the chapter files and the M4B go, and an Audiobookshelf library's folders
-(Lauren, 2026-11-04: "allow me to choose where to save the files ... it needs to set the folder
+(the owner, 2026-11-04: "allow me to choose where to save the files ... it needs to set the folder
 up for audiobookshelf")."""
 from pathlib import Path
 

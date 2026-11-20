@@ -1,4 +1,4 @@
-"""The filters CleanListen and CleanRead both offer: the same as CleanView's, for books (Lauren,
+"""The filters CleanListen and CleanRead both offer: the same as CleanView's, for books (the owner,
 2026-10-30: "CleanRead needs all the same filters as CleanListen and CleanView").
 
 - SECTIONS: every box, grouped as in CleanView, with this family's book standard (the Adults
@@ -491,7 +491,7 @@ def build_boxes(parent, cur, mywords, on_change=None, padx=0, wrap=560, opened=N
             ttk.Checkbutton(grid, text=label, variable=v).grid(
                 row=n // cols, column=n % cols, sticky="w", padx=(0, X(24)), pady=X(2))
             n += 1
-            if key == "religion":                   # its parts (Jason)
+            if key == "religion":                   # its parts (the tester)
                 row = tk.Frame(grid, bg=CARD)
                 row.grid(row=n // cols, column=0, columnspan=cols, sticky="w", padx=(X(24), 0))
                 boxes = []

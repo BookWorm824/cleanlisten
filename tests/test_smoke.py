@@ -213,7 +213,7 @@ def test_disrespect_is_cut_only_when_ticked(tmp_path):
 
 
 def test_religion_parts_and_cleanreads_filters(tmp_path):
-    """Religion in parts (Jason), and CleanRead's filters for audiobooks too (Lauren)."""
+    """Religion in parts (the tester), and CleanRead's filters for audiobooks too (the owner)."""
     audio, work, _ = _book(tmp_path, [
         (0.5, "I hate God for taking her away."),
         (3.0, "Thank God you're safe, she said."),

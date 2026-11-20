@@ -1,7 +1,7 @@
 """Make readaloud_voices.npz: each voice clip's "fingerprint" for the Qwen acting reader.
 
 The acting reader (Qwen3-TTS VoiceDesign) is given the voice's clip as well as the acting note, so a
-character keeps one voice from line to line (Lauren, 2026-11-06: "its switching voices even though
+character keeps one voice from line to line (the owner, 2026-11-06: "its switching voices even though
 the same person is speaking": described afresh for every line, a voice came out a little different
 each time; measured with Chatterbox's voice encoder, the narrator's lines were 0.77 alike, and 0.88
 with the clip). The clip has to be turned into codec codes plus a speaker embedding, and only the

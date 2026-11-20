@@ -1,4 +1,4 @@
-"""The book queue (Lauren, 2026-11-04: "queue several books, a row per book, 3-4 at a time").
+"""The book queue (the owner, 2026-11-04: "queue several books, a row per book, 3-4 at a time").
 
 Each book you start becomes a row on the "Your books" page. It is prepared (listened to and
 checked: cleanlisten.analyze) in its own worker process (bookrunner.py), up to "Books at once"
@@ -83,7 +83,7 @@ def plain_error(text):
     recognizer says); anything else as it was."""
     t = str(text or "")
     # ffmpeg says "Cannot allocate memory" when a filter is too long for it, not when the PC is
-    # out of memory (CleanView 1.18.26: Jason was told his PC ran out at 33% in use)
+    # out of memory (CleanView 1.18.26: the tester was told his PC ran out at 33% in use)
     if "error initializing filters" in t.lower() or "' for enable" in t.lower():
         return t
     if any(w in t.lower() for w in ("bad allocation", "bad_alloc", "memoryerror", "out of memory",

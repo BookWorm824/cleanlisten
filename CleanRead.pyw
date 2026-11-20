@@ -23,7 +23,7 @@ import freezes  # noqa: E402  (noticing a freeze or a crash, shared with CleanLi
 
 def chime():
     """The Windows "information" sound, so a question is heard like the other boxes
-    (a yes/no box is silent on Windows; Jason missed the "Send it in now?" one)."""
+    (a yes/no box is silent on Windows; the tester missed the "Send it in now?" one)."""
     try:
         import winsound
         winsound.MessageBeep(winsound.MB_ICONASTERISK)
@@ -227,7 +227,7 @@ class App(tk.Tk):
         self.footer.pack(side="bottom", fill="x", pady=(X(10), 0))
         tk.Frame(self.footer, bg=LINE, height=1).pack(side="top", fill="x", pady=(0, X(12)))
         self.name_lbl = None
-        if name:                # which book this is (Jason: "you don't know what you've cleaned")
+        if name:                # which book this is (the tester: "you don't know what you've cleaned")
             self.name_lbl = tk.Label(self.page, text=name, bg=BG, fg=ACCENT, font=(HEAD, 11),
                                      wraplength=F.wrap(760), justify="left")
             self.name_lbl.pack(anchor="w", pady=(0, X(2)))
@@ -236,7 +236,7 @@ class App(tk.Tk):
         if subtitle:
             tk.Label(self.page, text=subtitle, bg=BG, fg=MUTED, font=(FONT, 10),
                      wraplength=F.wrap(740), justify="left").pack(anchor="w", pady=(X(4), X(14)))
-        # the version and "Check for updates" on every page, as in CleanListen (Jason,
+        # the version and "Check for updates" on every page, as in CleanListen (the tester,
         # 2026-11-06: "Clean read doesn't have anything on top that says current version")
         self._page_title = title
         self._upd_lbl = tk.Label(self.page, text=f"v{app_version()} \u00b7 Check for updates",
@@ -616,7 +616,7 @@ class App(tk.Tk):
             self.book_lbl.config(text=Path(self.book_path).name, fg=INK)
             self.start_btn.config(state="normal")
         self._pdf_note()
-        # the same words as CleanView and CleanListen (Jason, 2026-11-06: "The other 2 say
+        # the same words as CleanView and CleanListen (the tester, 2026-11-06: "The other 2 say
         # start cleaning"); checking only makes a report, so it says that
         self.start_btn.config(text="Start checking" if self.mode.get() == "check" else "Start cleaning")
         if self.mode.get() == "clean" and getattr(self, "out_lbl", None) and self.out_lbl.winfo_exists():
@@ -737,7 +737,7 @@ class App(tk.Tk):
         self.pause_btn = ttk.Button(self.footer, text="Pause", style="Plain.TButton",
                                     command=self.toggle_pause)
         self.pause_btn.pack(side="right", padx=(0, 10))
-        # the empty space (Jason, 2026-11-07), 50% bigger (2026-11-15), with CleanView's little cleaner
+        # the empty space (the tester, 2026-11-07), 50% bigger (2026-11-15), with CleanView's little cleaner
         # sweeping it (the owner, 2026-11-15: "Yes, all apps")
         LOGO.put_logo(p, "cleanread.ico", BG, LOGO.WORKING_LOGO, sweeper=True,
                       paused=lambda: bool(getattr(self, "paused", False)))   # he leans on his broom
@@ -863,7 +863,7 @@ class App(tk.Tk):
 
     def _poll(self):
         """From now on freezes.drain runs the queue: a flood of messages can't keep the window
-        busy, and one bad message can't stop it updating (Jason, 2026-11-03)."""
+        busy, and one bad message can't stop it updating (the tester, 2026-11-03)."""
         freezes.drain(self, self.q, self._handle, self._poll_error, self.watch)
 
     def _poll_error(self, details):
@@ -954,7 +954,7 @@ class App(tk.Tk):
         body = self._scroll_area(p)
         tip = tk.Frame(body, bg=TINT, padx=12, pady=8)
         tip.pack(fill="x", pady=(0, 8))
-        # Jason, 2026-11-03: "It says send what you marked. But I can't mark anything" - say
+        # The tester, 2026-11-03: "It says send what you marked. But I can't mark anything" - say
         # where the button is
         tk.Label(tip, text="Something here isn't a problem? Click “Show examples” under it, then the "
                  "“Not a problem” button beside a sentence (or “None of these are a problem”). Or "
@@ -1090,7 +1090,7 @@ class App(tk.Tk):
     def _example(self, holder, c, it):
         head = tk.Frame(holder, bg=CARD)
         head.pack(fill="x", pady=(8, 0))
-        # a real button on the left, where it's seen (Jason couldn't find the old link at the right)
+        # a real button on the left, where it's seen (the tester couldn't find the old link at the right)
         mark = ttk.Button(head, text="", style="Small.TButton", command=lambda: flip())
         mark.pack(side="left")
         self._link(head, f"Ask {self._ai_name()}", bg=CARD,
@@ -1377,7 +1377,7 @@ class App(tk.Tk):
         self.pause_btn.destroy()          # quick, and nothing to stop it at
         threading.Thread(target=self._write_thread, args=(cuts, mutes), daemon=True).start()
 
-    # ---------- ask Claude about the cuts (Jason, 2026-11-03: "like the view one") ----------
+    # ---------- ask Claude about the cuts (the tester, 2026-11-03: "like the view one") ----------
     def _ai_name(self):
         """What CleanRead calls whichever of Claude, ChatGPT or Gemini is helping: "AI"
         (1.17.34, as CleanView 1.18.86; the owner, 2026-11-13: "instead of saying "claude" say
@@ -1482,7 +1482,7 @@ class App(tk.Tk):
             self._ask_about(about)
 
     def _ask_about(self, about):
-        """The next message is about this one (Jason: "ask claude under each line"): the chat is
+        """The next message is about this one (the tester: "ask claude under each line"): the chat is
         told which it is, so they only type the question."""
         kind, *rest = about
         if kind == "finding":

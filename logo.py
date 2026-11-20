@@ -1,4 +1,4 @@
-"""The program's logo in the empty part of a page (Jason, 2026-11-07: "I was just looking at a lot
+"""The program's logo in the empty part of a page (the tester, 2026-11-07: "I was just looking at a lot
 of dead space ... the logo of the program in the middle"), as in CleanView 1.18.23. The picture
 is taken out of the program's .ico (its pictures are PNGs, which tk shows without PIL)."""
 import base64

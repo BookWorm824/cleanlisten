@@ -62,7 +62,7 @@ def test_screw_as_hardware(text):
     assert hits(text) == []
 
 
-# "screw" the prison guard (CleanView 1.18.27, Jason's Shawshank review)
+# "screw" the prison guard (CleanView 1.18.27, the tester's Shawshank review)
 @pytest.mark.parametrize("text", [
     "courtesy of the hardest screw that ever walked a turn at Shawshank",
     "the meanest screw that ever lived", "no screw that I know of",
@@ -86,7 +86,7 @@ def test_screw_that_is_still_the_insult(text):
     ("She kicked him right in the nuts.", "nuts"),
     ("Quit busting my balls.", "balls"),
     ("It's cold enough to freeze my nuts off.", "nuts"),
-    ("They found the body, cut his balls off.", "balls"),   # one Lauren muted by hand
+    ("They found the body, cut his balls off.", "balls"),   # one the owner muted by hand
     ("Man up and grow a pair.", "pair"),
     ("That took brass balls.", "balls"),
     ("Nobody has the cojones to say it.", "cojones"),
@@ -491,7 +491,7 @@ def test_cleanread_keeps_bleeped_words_whole():
     assert toks("well-- maybe f--k") == ["well", "maybe", "f--k"]
 
 
-# --- more of the same kind (CleanView 1.17, Lauren's review 2026-10-28/29) --------------
+# --- more of the same kind (CleanView 1.17, the owner's review 2026-10-28/29) --------------
 @pytest.mark.parametrize("text, phrase", [
     ("Golly, that's big", "golly"), ("Jeepers!", "jeepers"), ("Crikey, mate", "crikey"),
     ("Blimey", "blimey"), ("Cripes almighty", "cripes"), ("Well, doggone it", "doggone"),
@@ -723,7 +723,7 @@ def test_sod_meaning_turf_may_be_left_in():
     assert "sod" in E.INNOCENT_WORDS
 
 
-# CleanView 1.18.13: prayers Lauren kept in Wings of a Dream (CleanRead, 2026-11-04)
+# CleanView 1.18.13: prayers the owner kept in Wings of a Dream (CleanRead, 2026-11-04)
 @pytest.mark.parametrize("text", [
     "Oh God. Help me know what to do.", "Please, please, dear Jesus.",
     "Had I let Jesus illuminate my path", "May You never be ashamed that I call You my God.",

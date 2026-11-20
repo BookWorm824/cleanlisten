@@ -1,6 +1,6 @@
 """
 ReadAloud's reading director: Claude (or ChatGPT, Gemini) reads the book before the voice does
-and marks how to read it. Lauren, 2026-11-06: "have claude or chat go through the book - remove
+and marks how to read it. The owner, 2026-11-06: "have claude or chat go through the book - remove
 anything that shouldn't be read, look at the context of the book and give the reading directions
 for the reader ai to know how to read".
 
@@ -225,7 +225,7 @@ def cast(job, chapters, cache):
 
 
 # ---------------------------------------------------------------------------
-# Names: how to say them, looked up (Lauren, 2026-11-06: "when there are names, look up how to
+# Names: how to say them, looked up (the owner, 2026-11-06: "when there are names, look up how to
 # pronounce"). The answer is in the voice's own sound symbols, so Kokoro says it exactly (a
 # lexicon file read before its own), not a respelling it has to guess at.
 # ---------------------------------------------------------------------------
@@ -590,7 +590,7 @@ def apply(jobdir, job, chapters, cast_data, results, names_data=None):
                     report["fixed"].append(f"{c['title']}: {text}\n    -> {fix}")
                     text = fix
                 elif only_removed(text, fix):
-                    # part of a paragraph that isn't the story (Lauren's script: the cast list in the
+                    # part of a paragraph that isn't the story (the owner's script: the cast list in the
                     # title line, "Melissa whispered, Melissa:"); as much as a whole paragraph may be
                     report["skipped"].append(f"{c['title']} (from a paragraph): {only_removed(text, fix)}")
                     text = fix

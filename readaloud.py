@@ -4,7 +4,7 @@ ReadAloud's engine: turns an ebook you own (EPUB, PDF, Word or text) into an aud
 a natural-sounding voice that runs on this PC (Kokoro, through sherpa-onnx, the same speech
 engine CleanListen uses). Free, offline, no account.
 
-Lauren, 2026-11-04: "there are some books I have that they didn't make audiobooks for... I don't
+The owner, 2026-11-04: "there are some books I have that they didn't make audiobooks for... I don't
 want stilted computer voices... but I also don't want to pay $100 per."
 
 How it works:
@@ -463,7 +463,7 @@ def _read_docx(path):
 
 
 # ---------------------------------------------------------------------------
-# PDFs: pages, not a story. Lauren's Vermilion.pdf (a 1981 book scanned by the Internet Archive)
+# PDFs: pages, not a story. The owner's Vermilion.pdf (a 1981 book scanned by the Internet Archive)
 # came out with "Vermilion" and "Phyllis A. Whitney" read at the top of every page, every page
 # number, and every printed line as its own paragraph ("the woman who" / pause / "hadn't wanted
 # me"), so it sounded stilted. Read page by page instead: drop the running heads and page
@@ -569,7 +569,7 @@ def _pdf_author(a):
 
 def _pdf_title(raw, path):
     """The title in a PDF's details, without what the program that made it added: "Microsoft Word -
-    The_Mystery_of_the_Old_Schoolhouse" (Lauren's script) -> "The Mystery of the Old Schoolhouse"."""
+    The_Mystery_of_the_Old_Schoolhouse" (the owner's script) -> "The Mystery of the Old Schoolhouse"."""
     t = " ".join(str(raw or "").split())
     t = re.sub(r"^(Microsoft (Word|PowerPoint)|Word|Writer|Untitled)\s*-\s*", "", t, flags=re.I)
     t = re.sub(r"\.(docx?|odt|rtf|pdf|txt)$", "", t, flags=re.I)
@@ -1312,7 +1312,7 @@ class Maker:
     def run(self):
         """Read every chapter not read yet, then make the audiobook. Returns assemble()'s result."""
         # "Stop for now" left a stop note; carrying on must clear it, or every worker stops at
-        # once and the book is put together with chapters missing (Lauren's first try, 1.15.0)
+        # once and the book is put together with chapters missing (the owner's first try, 1.15.0)
         (self.jobdir / "stop").unlink(missing_ok=True)
         job = json.loads((self.jobdir / "job.json").read_text(encoding="utf8"))
         gpu = job.get("reader") in ("acting", "steady", "chatterbox")

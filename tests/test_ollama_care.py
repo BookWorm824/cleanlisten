@@ -1,4 +1,4 @@
-"""Ollama only while CleanView, CleanListen or CleanRead are open (Lauren, 2026-11-05). The real
+"""Ollama only while CleanView, CleanListen or CleanRead are open (the owner, 2026-11-05). The real
 Ollama on this PC is never stopped here: stop() is a stand-in."""
 import os
 import subprocess

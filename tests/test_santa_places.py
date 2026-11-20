@@ -1,4 +1,4 @@
-"""Santa before a place name isn't Christmas (CleanView 1.18.20; Jason, That Thing You Do:
+"""Santa before a place name isn't Christmas (CleanView 1.18.20; the tester, That Thing You Do:
 "Santa Anita" and "Santa Monica" were flagged as Christmas), nor is Christmas Island."""
 import cleanlisten as E
 import cleanlisten_claude as cc

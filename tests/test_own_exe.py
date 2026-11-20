@@ -1,4 +1,4 @@
-"""CleanListen's and CleanRead's own names in Task Manager (Jason, 2026-11-03: they showed as
+"""CleanListen's and CleanRead's own names in Task Manager (the tester, 2026-11-03: they showed as
 "Python"). launcher.pyw makes CleanListen.exe / CleanRead.exe, copies of pythonw.exe with the
 app's description and icon, and only uses one once a test run of it worked."""
 import ctypes
@@ -101,7 +101,7 @@ def test_the_cleanread_shortcut_uses_the_venvs_pythonw(tmp_path):
         assert shortcuts._pythonw() == scripts / "pythonw.exe"
 
 
-# The first start after an update showed "Python" (Jason, 2026-11-03): the old launcher
+# The first start after an update showed "Python" (the tester, 2026-11-03): the old launcher
 # downloaded the new one but opened the app itself. Now it starts the new launcher.
 def _main(lm, argv, env=None, new=None):
     calls = {}

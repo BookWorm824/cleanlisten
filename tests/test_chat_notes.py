@@ -1,4 +1,4 @@
-"""The chat can learn (CleanView 1.18.1, Jason): rules they give it are kept and followed later."""
+"""The chat can learn (CleanView 1.18.1, the tester): rules they give it are kept and followed later."""
 import pytest
 
 import cleanlisten as E

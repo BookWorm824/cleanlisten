@@ -1,5 +1,5 @@
 """
-ReadAloud's graphics-card readers. Lauren, 2026-11-06: "I like the idea of multi voices...but i'm
+ReadAloud's graphics-card readers. The owner, 2026-11-06: "I like the idea of multi voices...but i'm
 afraid our choice of voices is still cheap" and, after hearing the four tests, "I do like the qwen
 acting better....could we have all 4 versions? let me choose by book".
 
@@ -159,7 +159,7 @@ def gpu_check():
     except ValueError:
         major = 999
     if major < 570:
-        # Jason (GTX 1660 Ti) read "570" as "270", searched it, and found 270 doesn't support his card:
+        # The tester (GTX 1660 Ti) read "570" as "270", searched it, and found 270 doesn't support his card:
         # say plainly that the card is fine and only its driver is old, and how to get the new one.
         # Then (1.17.3) he searched "570 driver", found the old GTX 570 card's legacy drivers and
         # thought nothing newer fits his: say it's a year and the driver's own number, not a card
@@ -215,7 +215,7 @@ def _base_python():
     """The Python CleanListen's own venv was made from (a venv can't make a venv of itself)."""
     # Started as ReadAloud.exe (its own name in Task Manager, a copy of pythonw.exe), Python gives
     # "...\Python312\ReadAloud.exe" as the base, which doesn't exist: Set up failed at once with
-    # "[WinError 2] The system cannot find the file specified" (Lauren, 2026-11-09). So look for
+    # "[WinError 2] The system cannot find the file specified" (the owner, 2026-11-09). So look for
     # python.exe itself
     seen = []
     for p in (getattr(sys, "_base_executable", ""), Path(sys.base_prefix) / "python.exe", sys.executable):
@@ -311,7 +311,7 @@ def install(reader, progress=None, stop=None):
 
 def install_all(first=None, progress=None, stop=None):
     """Set up every new voice not set up yet, `first` first: one press of Set up for all three
-    (Lauren had to press it for each, 2026-11-09). A voice already done stays done if a later one
+    (the owner had to press it for each, 2026-11-09). A voice already done stays done if a later one
     fails."""
     say = progress or (lambda f, m: None)
     todo = sorted(not_ready(), key=lambda r: r != first)
@@ -589,7 +589,7 @@ class Voice:
 
     def say(self, units):
         # lines of about the same length are read together: a short line ("How many?") read in one
-        # batch with long ones lost words (21 re-reads in Lauren's script; 0 of 36 read with lines
+        # batch with long ones lost words (21 re-reads in the owner's script; 0 of 36 read with lines
         # like it), and the batch waits for its longest line anyway
         order = sorted(range(len(units)), key=lambda k: len(units[k]["text"]))
         units = [units[k] for k in order]
@@ -693,7 +693,7 @@ def _num(n):
 
 def say_numbers(text):
     """Numbers in words for the new voices: written as digits, a short line with a number ("Since
-    1924.", "White, 4.") came out wrong three times running in Lauren's script."""
+    1924.", "White, 4.") came out wrong three times running in the owner's script."""
     text = re.sub(r"#\s?(\d{1,4})\b", lambda m: "number " + _num(int(m.group(1))), text)
     return re.sub(r"(?<![\d,.])(\d{1,4})(?![\d,.]\d)", lambda m: _num(int(m.group(1))), text)
 

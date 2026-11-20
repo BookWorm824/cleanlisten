@@ -192,7 +192,7 @@ def test_lines_of_a_length_are_read_together_and_come_back_in_order():
 
 
 def test_an_old_driver_says_the_card_is_fine_and_how_to_update(monkeypatch):
-    # Jason's GTX 1660 Ti: he read "570" as "270" and thought his card couldn't do it
+    # The tester's GTX 1660 Ti: he read "570" as "270" and thought his card couldn't do it
     class R:
         stdout = "NVIDIA GeForce GTX 1660 Ti, 6144, 466.77\n"
     monkeypatch.setattr(G.subprocess, "run", lambda *a, **k: R())
@@ -228,7 +228,7 @@ def test_no_voice_clip_is_too_long():
 
 
 def test_a_busy_graphics_card_is_waited_for(tmp_path, monkeypatch):
-    # Premiere Pro took the card's memory midway through Lauren's book: wait, then carry on
+    # Premiere Pro took the card's memory midway through the owner's book: wait, then carry on
     if not shutil_which_ffmpeg():
         pytest.skip("needs ffmpeg")
     monkeypatch.setattr(R, "JOBS", tmp_path / "jobs")
@@ -252,7 +252,7 @@ def test_a_busy_graphics_card_is_waited_for(tmp_path, monkeypatch):
 
 def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path):
     # As ReadAloud.exe, Python's base was "...\Python312\ReadAloud.exe", which doesn't exist:
-    # Set up failed at once with WinError 2 (Lauren, 2026-11-09)
+    # Set up failed at once with WinError 2 (the owner, 2026-11-09)
     base = tmp_path / "Python312"
     base.mkdir()
     (base / "python.exe").write_text("")
@@ -264,7 +264,7 @@ def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path
 
 def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path):
     # As ReadAloud.exe, Python's base was "...\Python312\ReadAloud.exe", which doesn't exist:
-    # Set up failed at once with WinError 2 (Lauren, 2026-11-09)
+    # Set up failed at once with WinError 2 (the owner, 2026-11-09)
     base = tmp_path / "Python312"
     base.mkdir()
     (base / "python.exe").write_text("")
@@ -275,7 +275,7 @@ def test_set_up_finds_python_when_started_as_readaloud_exe(monkeypatch, tmp_path
 
 
 def test_one_set_up_gets_all_the_new_voices(monkeypatch):
-    # Lauren had to press Set up for each of the three new voices (2026-11-09)
+    # The owner had to press Set up for each of the three new voices (2026-11-09)
     done, said = set(), []
     monkeypatch.setattr(G, "ready", lambda r: not G.is_gpu(r) or r in done)
     monkeypatch.setattr(G, "software_ready", lambda: bool(done))

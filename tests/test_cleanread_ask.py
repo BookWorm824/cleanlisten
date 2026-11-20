@@ -1,4 +1,4 @@
-"""CleanRead (Jason, 2026-11-03: "Can it have the ask claude under each line"): the "Ask Claude"
+"""CleanRead (the tester, 2026-11-03: "Can it have the ask claude under each line"): the "Ask Claude"
 link beside a finding, heading, cut or word opens the chat about that one, so only the question
 is typed, and the chat is told which one it is."""
 import importlib.machinery

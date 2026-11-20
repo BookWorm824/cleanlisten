@@ -1,5 +1,5 @@
 """A lone "the affair" / "an affair" is sleeping around, in CleanRead and CleanListen, as in
-CleanView 1.18.51 (Lauren's Castle S1E5: "How long was the affair?" wasn't caught). The owner,
+CleanView 1.18.51 (the owner's Castle S1E5: "How long was the affair?" wasn't caught). The owner,
 2026-11-09: "add it to the next update"."""
 import pytest
 

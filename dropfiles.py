@@ -3,7 +3,7 @@
 
     dropfiles.accept(widget, on_drop)     # on_drop(list_of_paths), called on the window's thread
 
-Lauren, 2026-11-04: "have where I can drag and drop the cover photo".
+The owner, 2026-11-04: "have where I can drag and drop the cover photo".
 """
 import os
 

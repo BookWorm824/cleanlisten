@@ -1,6 +1,6 @@
 """ReadAloud 1.16: PDFs read as a story, and the reading director (readaloud_ai).
 
-Lauren, 2026-11-06, after Vermilion.pdf (a scanned 1981 book): "it reads things its not supposed
+The owner, 2026-11-06, after Vermilion.pdf (a scanned 1981 book): "it reads things its not supposed
 too, and its very stilted ... maybe have claude or chat go through the book - remove anything that
 shouldn't be read, look at the context of the book and give the reading directions"."""
 import json
@@ -309,7 +309,7 @@ def test_graphics_card_voices_are_cast_by_age_and_gender():
 
 
 def test_two_children_never_share_a_voice():
-    # Lauren's script: Melissa (10) and Lucy (8) both got Lily
+    # The owner's script: Melissa (10) and Lucy (8) both got Lily
     cast = {"first_person": False, "characters": [
         {"name": "Melissa", "gender": "female", "age": "child"}, {"name": "Lucy", "gender": "female", "age": "child"},
         {"name": "Ava", "gender": "female", "age": "child"}]}

@@ -1,6 +1,6 @@
 """Noticing a freeze or a crash, for CleanListen and CleanRead (as in CleanView 1.18.9).
 
-Jason, 2026-11-03: CleanView stopped responding during a movie and didn't say why. If the
+The tester, 2026-11-03: CleanView stopped responding during a movie and didn't say why. If the
 window doesn't answer for STALL_SECS, what every part of the app was doing is written to
 <prefix>stopped_last_time.txt; a hard crash is written by faulthandler to <prefix>crash_log.txt.
 Next start they're asked whether to send it in (kind "problem", to CleanListen's inbox).

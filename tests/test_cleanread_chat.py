@@ -1,4 +1,4 @@
-"""CleanRead (Jason, 2026-11-03): a long sentence loses only the part with the problem, and you
+"""CleanRead (the tester, 2026-11-03): a long sentence loses only the part with the problem, and you
 can tell Claude what's fine - it changes the list and remembers the lesson."""
 import pytest
 

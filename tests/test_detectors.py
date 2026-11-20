@@ -215,7 +215,7 @@ def test_not_crude(text):
     assert not E.crude_hit(words(text))
 
 
-# --- sentences Lauren KEPT in real books (shared_learned.json) that used to be flagged ----
+# --- sentences the owner KEPT in real books (shared_learned.json) that used to be flagged ----
 def test_came_out_to_a_place_is_not_a_relationship():
     assert not E.relationship_hit(words(
         "it's coming up to twelve and i haven't done any work since i came out to my office at nine"))
@@ -320,7 +320,7 @@ def test_strict_religion_catches(text):
     "Good heavens!",
     "Holy cow!",
     "She had a lot of faith in her team.",
-    "My heart gives an almighty thud.",     # from Lauren's kept sentences
+    "My heart gives an almighty thud.",     # from the owner's kept sentences
 ])
 def test_strict_religion_leaves_generic(text):
     assert not E.strict_religion_hit(words(text))
@@ -358,7 +358,7 @@ def test_kid_topics_found(kind, text):
     ("darkmagic", "He cursed under his breath."), ("darkmagic", "Their spirits were high."),
     ("magic", "It was magic."), ("magic", "Say the magic word."),
     ("magic", "Can you spell your name?"), ("darkmagic", "He's a wizard with numbers."),
-    ("magic", "The old wizard frowned."),     # wizards are dark magic (Lauren, 2026-10-29)
+    ("magic", "The old wizard frowned."),     # wizards are dark magic (the owner, 2026-10-29)
     ("vampires", "Vampire bats live in caves."), ("vampires", "A wolf howled at the moon."),
     ("vampires", "The wolves ran by."),
 ])
@@ -410,7 +410,7 @@ def test_disrespect_is_known_to_every_reader():
 
 
 def test_sex_scenes_are_judged_by_what_happens():
-    # Lauren, 2026-10-30 (CleanView 1.18.3): clothed or sitting can still be a sex scene; oral and
+    # The owner, 2026-10-30 (CleanView 1.18.3): clothed or sitting can still be a sex scene; oral and
     # hand count; two people only talking in bed don't
     import cleanlisten_claude as cc
     import cleanread

@@ -120,9 +120,9 @@ def test_a_word_file_is_read_with_its_headings_as_chapters(tmp_path):
     with zipfile.ZipFile(p, "w") as z:
         z.writestr("word/document.xml", f'<w:document><w:body>{body}</w:body></w:document>')
         z.writestr("docProps/core.xml", "<cp:coreProperties><dc:title>My Story</dc:title>"
-                   "<dc:creator>Lauren</dc:creator></cp:coreProperties>")
+                   "<dc:creator>Jane Doe</dc:creator></cp:coreProperties>")
     b = R.load_book(p)
-    assert (b["title"], b["author"]) == ("My Story", "Lauren")
+    assert (b["title"], b["author"]) == ("My Story", "Jane Doe")
     assert [c["title"] for c in b["chapters"]] == ["Chapter 1", "Chapter 2"]
     assert b["chapters"][1]["paras"][-1] == ["p", "The end & all."]
 
@@ -253,7 +253,7 @@ def test_every_voice_is_in_the_model():
 
 
 def test_a_pdf_title_without_the_program_that_made_it():
-    # Lauren's script: "Microsoft Word - The_Mystery_of_the_Old_Schoolhouse"
+    # The owner's script: "Microsoft Word - The_Mystery_of_the_Old_Schoolhouse"
     assert R._pdf_title("Microsoft Word - The_Mystery_of_the_Old_Schoolhouse", "x.pdf") == "The Mystery of the Old Schoolhouse"
     assert R._pdf_title("Microsoft Word - Vermilion.docx", "x.pdf") == "Vermilion"
     assert R._pdf_title("Vermilion", "x.pdf") == "Vermilion"
@@ -262,7 +262,7 @@ def test_a_pdf_title_without_the_program_that_made_it():
 
 
 def test_the_logo_shows_on_the_empty_pages():
-    # Jason: "a lot of dead space"; the logo comes out of readaloud.ico as a PNG tk can show
+    # The tester: "a lot of dead space"; the logo comes out of readaloud.ico as a PNG tk can show
     import importlib.util
     spec = importlib.util.spec_from_file_location("ReadAloudWindow", REPO / "ReadAloud.pyw")
     win = importlib.util.module_from_spec(spec)
@@ -274,7 +274,7 @@ def test_the_logo_shows_on_the_empty_pages():
 
 
 def test_the_set_up_message_never_points_at_a_hidden_button():
-    # Jason (old graphics driver) was told to press Set up, but the button is only shown when the
+    # The tester (old graphics driver) was told to press Set up, but the button is only shown when the
     # card is ready for it: the message must say what's really in the way
     src = (REPO / "ReadAloud.pyw").read_text("utf8")
     start = src[src.index("    def start(self):"):src.index("    def resume(")]
@@ -291,7 +291,7 @@ def test_the_pc_stays_awake_while_reading_and_setting_up():
 
 
 def test_stop_for_now_goes_home_at_once():
-    # Lauren (2026-11-09): Stop took a while to go back to the first page. It now goes home at once;
+    # The owner (2026-11-09): Stop took a while to go back to the first page. It now goes home at once;
     # the book stops in the background, and what it says afterwards is ignored by its job number
     import importlib.util
     spec = importlib.util.spec_from_file_location("ReadAloudWindow2", REPO / "ReadAloud.pyw")

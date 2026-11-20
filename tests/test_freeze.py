@@ -1,4 +1,4 @@
-"""Noticing a freeze or a crash in CleanListen and CleanRead (as in CleanView 1.18.9; Jason,
+"""Noticing a freeze or a crash in CleanListen and CleanRead (as in CleanView 1.18.9; the tester,
 2026-11-03), and a window that a flood of messages, or one bad one, can't stop."""
 import json
 import queue

@@ -207,7 +207,7 @@ class App(tk.Tk):
         self.gpu_ok = None            # (ok, message) once checked
         self.installing = None        # the reader being set up
         # each book being made has a number; Stop for now moves it on, so the page goes home at once
-        # and anything the stopped book still says afterwards is ignored (Lauren, 2026-11-09: "it
+        # and anything the stopped book still says afterwards is ignored (the owner, 2026-11-09: "it
         # taking a while to actually cancel and go back to home screen")
         self.job = 0
         self.ending = []              # (worker thread, stopping thread) of books told to stop
@@ -274,7 +274,7 @@ class App(tk.Tk):
         return self.page
 
     def _logo(self, parent, sweeper=False):
-        """The logo in the middle of the empty space below (Jason: "a lot of dead space"), 50% bigger
+        """The logo in the middle of the empty space below (the tester: "a lot of dead space"), 50% bigger
         (the owner, 2026-11-15: 192 px, shrunk smoothly; logo.py, as CleanListen's and CleanRead's).
         sweeper: CleanView's little cleaner sweeps it while the book is read (the owner, 2026-11-15:
         "Yes, all apps"), leaning on his broom while it's paused."""
@@ -491,7 +491,7 @@ class App(tk.Tk):
                  "copy here. Kindle books are copy-protected and can't be read.", bg=BG, fg=FAINT,
                  font=(FONT, 9), wraplength=X(560), justify="left").pack(anchor="w", pady=(X(14), 0))
 
-        # ----- step 2: the voice: the book's language, which reader (Lauren chooses by book), then
+        # ----- step 2: the voice: the book's language, which reader (the owner chooses by book), then
         # which voice. The language is guessed from the book's own words (the owner, 2026-11-13,
         # after CleanView's "Language spoken in the video").
         lang = (self.book or {}).get("language") or st.get("language")
@@ -747,7 +747,7 @@ class App(tk.Tk):
         elif gpu.ready(r):
             self.reader_lbl.config(text="✓ Ready.  " + speed, fg=ACCENT_DK)
         else:
-            # Set up gets all the new voices at once (Lauren had to press it for each), so the size
+            # Set up gets all the new voices at once (the owner had to press it for each), so the size
             # is for all of them
             self.reader_lbl.config(text=f"Needs a one-time download of about {gpu.setup_all_size_gb():.0f} GB "
                                         f"before its first book.  {speed}", fg=INK)
@@ -1127,7 +1127,7 @@ class App(tk.Tk):
         how = (f"Reading with the {gpu.READERS[reader][0]} voice on the graphics card. Each line is "
                "listened to and read again if a word came out wrong." if gpu.is_gpu(reader) else
                f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
-        tk.Label(p, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=X(740),     # Jason: "bigger"
+        tk.Label(p, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=X(740),     # The tester: "bigger"
                  justify="left").pack(anchor="w", pady=(X(16), 0))
         self._logo(p, sweeper=True)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
@@ -1343,7 +1343,7 @@ class App(tk.Tk):
                 self.ai_btn.pack(side="left", padx=self._px(10))
         elif kind == "gpu_check":
             self.gpu_ok = msg[1]
-            # no graphics card for the new voices (Lauren's sister?): start on the Quick one, unless
+            # no graphics card for the new voices (the owner's sister?): start on the Quick one, unless
             # a reader was chosen before
             if not self.gpu_ok[0] and not self.settings.get("reader") and getattr(self, "reader_var", None):
                 try:

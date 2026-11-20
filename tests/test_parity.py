@@ -1,5 +1,5 @@
-"""CleanListen and CleanRead offer the same filters (Lauren, 2026-10-30), religion comes in parts,
-and Jesus or Christ said with reverence isn't muted as a swear (Jason, 2026-10-30)."""
+"""CleanListen and CleanRead offer the same filters (the owner, 2026-10-30), religion comes in parts,
+and Jesus or Christ said with reverence isn't muted as a swear (the tester, 2026-10-30)."""
 import re
 from pathlib import Path
 
@@ -19,7 +19,7 @@ def test_both_apps_use_the_shared_filters():
     for app in ("CleanListen.pyw", "CleanRead.pyw"):
         src = (ROOT / app).read_text(encoding="utf8")
         # CleanListen's card opens the boxes in a window; CleanRead shows them on its page
-        # (Jason, 2026-11-07); both are built by filters.build_boxes()
+        # (the tester, 2026-11-07); both are built by filters.build_boxes()
         assert "import filters as F" in src and ("F.FilterCard(" in src or "F.FilterPanel(" in src), app
 
 
@@ -125,7 +125,7 @@ def test_exclamations_and_idioms_are_not_religious_talk():
 
 
 def test_the_ai_looks_for_same_sex_content_but_only_ticks_what_the_lists_see(book, monkeypatch):
-    # Lauren, 2026-10-30: "I still want it to look for those in books"; but the small AI once
+    # The owner, 2026-10-30: "I still want it to look for those in books"; but the small AI once
     # ticked 56 ordinary man-and-woman lines of one romance
     found = {}
 

@@ -1,4 +1,4 @@
-"""A chapter with more than 100 mutes or cuts (CleanView 1.18.26, Jason's Shawshank Redemption):
+"""A chapter with more than 100 mutes or cuts (CleanView 1.18.26, the tester's Shawshank Redemption):
 ffmpeg can't read a sum of more than 100 between() terms and says "Error initializing filters ...
 Cannot allocate memory", which also read as "This computer ran out of memory"."""
 import json

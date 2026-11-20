@@ -382,12 +382,12 @@ MODERATE_PHRASES += [(y, o, c) for y in ("yank", "yanks", "yanked", "yanking", "
                      for c in ("chain", "chains")]
 # "what the fudge", "what the flip": stand-ins for the f-word (muted with the soft swears).
 # And the same for God's name, Jesus and son of a bitch: "good grief", "for Pete's sake",
-# "holy cow" (Lauren, 2026-10-29: "Holy cow and Holy molly are not fine"). Same as CleanView's
+# "holy cow" (the owner, 2026-10-29: "Holy cow and Holy molly are not fine"). Same as CleanView's
 # cvcore.MINCED_SLANG.
 MINCED_PHRASES = [("what", "the", w) for w in ("fudge", "flip", "fork", "frack", "fuh", "devil",
                                                  "dickens", "deuce", "blazes")]
 # "how the dickens", "scared the dickens out of me", "hurts like the dickens", "oh dickens"
-# (Julie & Julia; Lauren 2026-11-03), never "Charles Dickens" or "the Dickens novel"
+# (Julie & Julia; the owner 2026-11-03), never "Charles Dickens" or "the Dickens novel"
 # (CleanView 1.18.11)
 MINCED_PHRASES += [(wh, *i_, "the", w) for wh in ("how", "who", "where", "why", "when")
                    for i_ in ((), ("in",)) for w in ("dickens", "deuce", "blazes")]
@@ -464,7 +464,7 @@ DEITY_PHRASES = [
 ]
 DEITY_WORDS = [r"jesus", r"christ", r"lordy", r"omg", r"oh?m[iy]god", r"goddamn.*"]
 # "Jesus" and "Christ" said with reverence aren't swearing ("the love of Christ", "to know Jesus",
-# "Jesus told us"; Jason, 2026-10-30: 34 in one Christian novel were muted as swears, and someone
+# "Jesus told us"; the tester, 2026-10-30: 34 in one Christian novel were muted as swears, and someone
 # who only wants the cursing out shouldn't lose them). An oath is said on its own ("Jesus!",
 # "Christ, that hurt"); the name after one of these words, or before one of these verbs, is
 # talk about Him. (The religion filter still decides about faith talk.)
@@ -1354,7 +1354,7 @@ SHUT_UP_SAFE_NEXT = {"in", "inside", "shop", "house", "the", "his", "her", "my",
                      "there", "like"}
 PHRASES["rude"] = RUDE_PHRASES
 # "Suck" meaning "is bad" ("life sucks", "he sucks at math", "that sucked"), with the rude words
-# (Lauren, 2026-10-29). Not sucking something ("suck it up", "sucking his thumb", "the vacuum
+# (the owner, 2026-10-29). Not sucking something ("suck it up", "sucking his thumb", "the vacuum
 # sucks up dirt"). ("Sucking" is left out: "the baby keeps sucking".) Same as CleanView's
 # cvcore.suck_swear.
 SUCK_WORDS = {"suck", "sucks", "sucked"}
@@ -2306,7 +2306,7 @@ GOD_NOT_OATH = {"save", "bless", "blessed", "willing"}   # "oh God" / "my God" b
 KNOWS_NOT_OATH = {"best"}
 # CleanView 1.18.13: "Lord, help me to trust", "Oh God. Help me know what to do" are prayers
 # (never "Lord help me, I'll strangle him"); "that I call You my God", "You are my God" too
-# (CleanRead: Wings of a Dream, kept by Lauren 2026-11-04)
+# (CleanRead: Wings of a Dream, kept by the owner 2026-11-04)
 HELP_NOT_OATH = {"to", "know", "understand", "find", "see", "trust", "forgive", "accept"}
 MY_GOD_AFTER = {"are", "art", "be"}
 CALL_YOU = {("call", "you"), ("call", "thee"), ("called", "you"), ("calls", "you")}
@@ -2363,7 +2363,7 @@ def sex_score(words):
     return s if len(explicit) >= 2 else 0
 
 
-# Sex drugs are sexual references (CleanView 1.18.15; Lauren, 2026-11-04: "add sexual drugs to
+# Sex drugs are sexual references (CleanView 1.18.15; the owner, 2026-11-04: "add sexual drugs to
 # sexual reference filter"). A passage is cut; the words aren't muted on their own (they aren't
 # in the "sexual" word group). Only "little blue pill": "the blue pill" alone is The Matrix.
 SEX_DRUG_WORDS = {"viagra", "cialis", "levitra", "aphrodisiac", "aphrodisiacs"}
@@ -2792,7 +2792,7 @@ def bully_hit(words):
 # Disrespect: a child talking back to or disobeying a parent ("you can't tell me what to do",
 # "you're not my real mom"). Only lines that are hard to mistake; the AI helper and Claude catch
 # the rest (sassing, sneaking out, lying to them). Not "whatever" or "make me": too common.
-# The same list as CleanView's LINE_WORDS["disrespect"] (Lauren, 2026-10-30).
+# The same list as CleanView's LINE_WORDS["disrespect"] (the owner, 2026-10-30).
 DISRESPECT = re.compile(
     r"\b(you can'?t tell me what to do|you'?re not the boss of me|"
     r"you'?re not my (real )?(mom|mum|dad|mother|father|boss)|"
@@ -2808,15 +2808,15 @@ def disrespect_hit(words):
 # Holidays, candles on a birthday cake, magic, dark magic, and vampires and werewolves (for
 # young kids; all off unless ticked). Only phrases that are hard to mistake; the AI helper and Claude catch the rest.
 # The same lists as CleanView's LINE_WORDS, matched on the normalised words (so "x-mas" is
-# "xmas" and "jack-o'-lantern" is "jacko'lantern"). Thanksgiving is fine (Lauren).
-# "Santa" before a place name isn't Christmas (CleanView 1.18.20; Jason, That Thing You Do:
+# "xmas" and "jack-o'-lantern" is "jacko'lantern"). Thanksgiving is fine (the owner).
+# "Santa" before a place name isn't Christmas (CleanView 1.18.20; the tester, That Thing You Do:
 # "Santa Anita", "Santa Monica"), nor is "Christmas Island"
 SANTA_PLACES = (r"(anita|monica|barbara|fe|cruz|clara|clarita|rosa|ana|maria|catalina|ynez|"
                 r"paula|teresa|lucia|marta|isabel|elena|cecilia)")
 TOPIC_WORDS = {
     # Christmas, Halloween, Valentine's Day, Easter and St. Patrick's Day: one tick box
     # (not "elves", "stockings" or "make a wish": too often something else; not "Rudolph" on its
-    # own: a name in one of Lauren's books)
+    # own: a name in one of the owner's books)
     "holiday": re.compile(
         r"\b(christmas(?! island)|xmas|santa(?! " + SANTA_PLACES + r"\b)( claus)?|saint nick|"
         r"north pole|reindeers?|rudolph the|"
@@ -2845,7 +2845,7 @@ TOPIC_WORDS = {
         r"easter\b(?! island)|egg hunts?|"
         r"(st|saint) (patrick|paddy|patty)'?s( day)?\b(?! (cathedral|church|school|hospital))|"
         r"leprechauns?|pot of gold)\b"),
-    # only the candles: "happy birthday", birthday parties and cake are fine (Lauren)
+    # only the candles: "happy birthday", birthday parties and cake are fine (the owner)
     "birthday": re.compile(
         r"\b((blow(s|ing|n)?|blew) out (the|your|my|his|her|their|all the|all your) candles|"
         r"birthday candles?|candles on (the|your|my|his|her|a|that) (birthday )?cake)\b"),
@@ -2857,7 +2857,7 @@ TOPIC_WORDS = {
         r"put a curse|cast a curse|occult|satanic|satanists?|devil worship\w*|pentagrams?|"
         r"fortune ?tell(er|ers|ing)|tarot|"
         r"summon(s|ed|ing)? (a |the )?(demons?|spirits?|the dead|dead)|"
-        # wizards are dark magic (Lauren, 2026-10-29); not "a wizard with numbers"
+        # wizards are dark magic (the owner, 2026-10-29); not "a wizard with numbers"
         r"wizards?(?! (with|at|of))|wizardry)\b"),
     # not "magic" alone ("it was magic", "the magic word") or "spell" (spelling)
     "magic": re.compile(
@@ -3293,7 +3293,7 @@ AI_TYPES = {
            "reacts to a joke, plainly mentioning underwear, ordinary romance, "
            "affection and kissing, pregnancy or babies, 'sex' meaning men or women ('the fair "
            "sex'), a polite 'it's a pleasure', a body part in a threat, or a coroner's, medical examiner's, doctor's or detective's case talk about a body or a crime (findings, rape or sexual assault, sex offenders, evidence), which is a separate choice, are NOT this; but explicit sexual detail in such talk, like vaginal or anal bruising or tearing or forced penetration, IS this)",
-    # judged by what's happening, not by where they are or what they wear (Lauren, 2026-10-30:
+    # judged by what's happening, not by where they are or what they wear (the owner, 2026-10-30:
     # "sometimes a sex scene is just sitting and wearing clothes", and oral/hand pleasures)
     "sex": "part of a sex scene, judged by what is happening, not by where they are or whether "
            "they are dressed: it includes oral sex and touching someone's private parts (two "
@@ -3587,7 +3587,7 @@ def may_untick_word(m, words=None):
     return any(w in INNOCENT_WORDS for w in ws)
 
 
-# Religious content comes in parts, each its own box (Jason, 2026-10-30: "leave the category as
+# Religious content comes in parts, each its own box (the tester, 2026-10-30: "leave the category as
 # a whole that can be clicked off if wanted, but maybe some subcategories"; one Christian novel had
 # 69 religion flags, nearly all prayers). Preaching and anger at God are on by default; prayers &
 # verses is the old "strict" box.
@@ -3999,7 +3999,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     ai = _ai_module()
     say = progress or (lambda f, m: None)
     ai.ensure_ai(lambda f, m: say(f, m))
-    # same-sex relationships too (Lauren, 2026-10-30: "I still want it to look for those"), but
+    # same-sex relationships too (the owner, 2026-10-30: "I still want it to look for those"), but
     # the small AI here flags many man-and-woman scenes there; like all its finds (1.17.44), they
     # come in unticked for you to decide
     kinds = [k for k in kinds if k in AI_TYPES]
@@ -4689,7 +4689,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
                 continue  # already inside a scene being cut
             scenes.append({"kind": "ref", "part": part, "s": s_, "e": e_,
                            "text": " ".join(w["t"] for w in asr[a_:b_ + 1])})
-    # which kinds of religious content (Jason, 2026-10-30): preaching, anger at God, and prayers
+    # which kinds of religious content (the tester, 2026-10-30): preaching, anger at God, and prayers
     # & verses (the old "strict" box); without religion_parts it's preaching and anger, plus
     # prayers when strict_religion
     rparts = set(religion_parts if religion_parts is not None else
@@ -4787,7 +4787,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
     ai_defs = ai_defs_for(rparts, kiss, kiss_ss)
     ai_job = None
     if use_ai and use_claude:
-        # both look (Lauren, 2026-10-29), at the same time: the AI on this PC reads its own copy
+        # both look (the owner, 2026-10-29), at the same time: the AI on this PC reads its own copy
         # of what was found while Claude/ChatGPT/Gemini reads the book, then the two are merged
         # (_merge_ai). Not one after the other: that was the same slow step twice.
         for sc in scenes:
@@ -5233,7 +5233,7 @@ def find_cover(parts):
 
 
 def book_pictures(parts, folder, most=12):
-    """Every picture that could be the cover, to choose from (Lauren, 2026-11-05: "I need to be
+    """Every picture that could be the cover, to choose from (the owner, 2026-11-05: "I need to be
     able to choose the picture if 2 accidentally got placed"): each picture inside the first
     book file (saved as JPGs in `folder`), then the pictures in the book's folder.
     [{"file", "label"}]."""
@@ -5301,7 +5301,7 @@ def cover_file(cover, workdir):
 
 
 # ---------------------------------------------------------------------------
-# A cover from the internet when the book has none (Lauren, 2026-11-04: "anyway we can have the
+# A cover from the internet when the book has none (the owner, 2026-11-04: "anyway we can have the
 # cover picture an option for automatic?"). Only the title and author are sent. Audible first
 # (square audiobook covers, 1215 px), then Apple Books, then Open Library (printed covers).
 # ---------------------------------------------------------------------------
@@ -6138,7 +6138,7 @@ def render(workdir, outdir, cuts=None, progress=None, log=print, chapters=False,
     file per chapter (Yoto-friendly). m4b=True also makes one M4B with chapters and a cover
     (cover: a picture's path; otherwise the book's own, or one in its folder; author: for the
     tags, otherwise the book's own).
-    Where they go (Lauren, 2026-11-04: "allow me to choose where to save the files"): the chapter
+    Where they go (the owner, 2026-11-04: "allow me to choose where to save the files"): the chapter
     files in outdir/Chapters, or chapters_dir/<book>; the M4B in outdir, or m4b_dir, and with
     abs_layout in m4b_dir/Author/Series/Book 2 - Title, the way Audiobookshelf reads a library.
     cover_online: no cover chosen and none in the book or its folder -> look one up online.

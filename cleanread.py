@@ -448,7 +448,7 @@ class Book:
         return self.chapters[self.paras[q].chapter] if self.chapters else ""
 
     def where(self, q):
-        """Where it is, in plain words (Jason, 2026-11-03: "What do the percents mean?" - and
+        """Where it is, in plain words (the tester, 2026-11-03: "What do the percents mean?" - and
         some books name their chapters with just a number, so "45 · 16%" meant nothing)."""
         pct = int(100 * q / max(1, len(self.paras)))
         place = f"{pct}% of the way through the book"
@@ -2343,7 +2343,7 @@ def _sentence_runs(book, hit):
     return runs
 
 
-# In a long sentence, cut only the part with the problem (Jason, 2026-11-03: "some sentences
+# In a long sentence, cut only the part with the problem (the tester, 2026-11-03: "some sentences
 # are longer"): "He came home, poured himself a whiskey, and sat down to read the paper." loses
 # just "poured himself a whiskey". Kinds about what a sentence means (a joke, innuendo, an
 # affair, anger at God) still take the whole sentence, as in CleanView.
@@ -2592,7 +2592,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
     not_these = [(t, e[1]) for t in types for e in fine.get(t, [])[-4:] if e[1]][-12:]
     teach = ("\n\nThis family marked sentences like these as NOT a problem, so don't flag ones "
              "like them:\n" + "\n".join(f'- "{x}" (not "{t}")' for t, x in not_these)) if not_these else ""
-    if notes:               # what they told the chat (Jason, 2026-11-03)
+    if notes:               # what they told the chat (the tester, 2026-11-03)
         teach = "\n\n" + notes + teach
 
     def cands_key(t):
@@ -3309,7 +3309,7 @@ def analyze(book, opts, progress=None, cancel=None):
     opts = _upgrade(opts)
     cats = [c for g in ("swearing", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
             for c in E.GROUPS[g]]
-    # religion in parts, as in CleanListen (Jason): preaching, anger at God, prayers & verses
+    # religion in parts, as in CleanListen (the tester): preaching, anger at God, prayers & verses
     rparts = religion_parts(opts)
     if opts.get("samesexwords"):        # words about same-sex relationships (gay, lesbian...)
         cats.append("orientation")
@@ -3653,7 +3653,7 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
 
 # ---------------------------------------------------------------------------
 # Ask Claude (or ChatGPT / Gemini, as chosen in CleanListen) about the cuts, as in CleanListen
-# and CleanView. Jason, 2026-11-03: "most of the sentences it cuts are fine, but it thinks they
+# and CleanView. The tester, 2026-11-03: "most of the sentences it cuts are fine, but it thinks they
 # aren't" - so you can tell it, it changes the list right away, and it keeps the lesson
 # (CleanListen's notes: for this book or every book) for the AI helper and later chats.
 # ---------------------------------------------------------------------------
@@ -3741,7 +3741,7 @@ can't remember things. Make the change on this list too, and say in your answer 
 remember. Only a plain "keep this one" with no reason needs no rule; otherwise leave \
 "remember" empty when they didn't correct or explain anything."""
 
-# who does what, so the chat can answer "is the AI helper you, or CleanRead?" (Jason, 2026-11-07:
+# who does what, so the chat can answer "is the AI helper you, or CleanRead?" (the tester, 2026-11-07:
 # "when the AI helper is on is that you doing it or clean read? or does clean read do it and you
 # double check?"; the chat said it couldn't see how CleanRead works)
 HOW_IT_WORKS = """How CleanRead works, so you can answer questions about it (for example "is the \
@@ -3941,7 +3941,7 @@ class Chat:
         return done
 
 
-# Ask Claude on the book-check page (Jason, 2026-11-03: "I can't mark anything. No where to
+# Ask Claude on the book-check page (the tester, 2026-11-03: "I can't mark anything. No where to
 # click or tell Claude"): it reads the book and the findings, marks what they say isn't a
 # problem (learned like a "Not a problem" click), and keeps their lessons, as the clean chat does.
 CHECK_SYSTEM = """You help a family check what's in a book before their child reads it. In your \

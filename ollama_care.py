@@ -1,7 +1,7 @@
 """Ollama (the local AI helper) only while CleanView, CleanListen or CleanRead are open.
 
 Ollama's installer starts it with Windows and it sat in memory all day (about 4 GB once it had
-loaded a model; Lauren, 2026-11-05: "can this be where it only runs when CleanView/Listen/Read
+loaded a model; the owner, 2026-11-05: "can this be where it only runs when CleanView/Listen/Read
 are being used"). The apps start it themselves when they need it (cleanview_ai.start_ollama), so:
 
 - autostart_off(): every time an app opens, take Ollama's shortcut out of the Startup folder

@@ -1,4 +1,4 @@
-"""A cover from the internet when the book has none (Lauren, 2026-11-04: "anyway we can have
+"""A cover from the internet when the book has none (the owner, 2026-11-04: "anyway we can have
 the cover picture an option for automatic?"). No real internet here: the searches and the
 download are stand-ins."""
 import json
