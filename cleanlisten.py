@@ -6036,6 +6036,85 @@ def send_to_phone_wifi(workdir, phone, title="", author="", profile="", summary=
     return d.get("title") or title
 
 
+# A tablet anywhere, through an always-on home computer (the owner, 2026-11-20: her niece's tablet, "push books
+# to it from her PC even when the niece is at her own house"; "I wouldn't necessarily use this computer"). The
+# book file goes to the home computer (her "ryzen") with Tailscale's own "Send file" (Taildrop: only between
+# devices on her own Tailscale account, nothing opened to the internet). That computer keeps it in the folder
+# it shares over Tailscale (CleanRead Mobile's tools/ryzen), and the tablet fetches new books from it when the
+# app opens and about once an hour. Any of her devices can send the same way (Share -> Tailscale -> ryzen).
+def tailscale_exe():
+    """Tailscale's command-line program, or None when Tailscale isn't on this PC."""
+    p = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tailscale" / "tailscale.exe"
+    return str(p) if p.exists() else shutil.which("tailscale")
+
+
+def parse_tailscale_targets(text):
+    """`tailscale file cp --targets` ("100.73.211.119\\tryzen", "...\\teluktronic\\toffline; last seen 1d ago")
+    -> [{"name", "online"}], the ones that are on first."""
+    out = []
+    for line in text.splitlines():
+        bits = line.strip().split("\t")
+        if len(bits) >= 2 and bits[1].strip():
+            out.append({"name": bits[1].strip(), "online": not (len(bits) > 2 and "offline" in bits[2].lower())})
+    return sorted(out, key=lambda d: (not d["online"], d["name"]))
+
+
+def tailscale_devices(exe=None):
+    """This Tailscale account's own devices that can take a file, as `tailscale file cp` names them
+    ([{"name": "ryzen", "online": True}, ...]). Plain words in a RuntimeError when Tailscale can't be used."""
+    exe = exe or tailscale_exe()
+    if not exe:
+        raise RuntimeError("Tailscale isn't on this computer. Install it and sign in, then try again.")
+    try:
+        r = subprocess.run([exe, "file", "cp", "--targets"], capture_output=True, timeout=20, **_NOWIN)
+    except (OSError, subprocess.SubprocessError) as ex:
+        raise RuntimeError("Tailscale didn't answer. Open Tailscale on this computer and try again.") from ex
+    if r.returncode != 0:
+        raise RuntimeError("Tailscale isn't connected on this computer. Open Tailscale and make sure it's "
+                           "connected (a VPN like NordVPN can stop it), then try again.")
+    return parse_tailscale_targets(r.stdout.decode("utf8", "replace"))
+
+
+def send_by_tailscale(path, device, exe=None, timeout=3600):
+    """Send one file to one of this account's devices with Tailscale's "Send file". Plain words in a
+    RuntimeError when it can't."""
+    exe = exe or tailscale_exe()
+    if not exe:
+        raise RuntimeError("Tailscale isn't on this computer. Install it and sign in, then try again.")
+    try:
+        r = subprocess.run([exe, "file", "cp", str(path), f"{device}:"], capture_output=True, timeout=timeout,
+                           **_NOWIN)
+    except subprocess.TimeoutExpired as ex:
+        raise RuntimeError(f"Sending to {device} took too long and was stopped. Try again.") from ex
+    except OSError as ex:
+        raise RuntimeError("Tailscale couldn't be started on this computer.") from ex
+    if r.returncode == 0:
+        return
+    said = (r.stderr + r.stdout).decode("utf8", "replace").strip()
+    low = said.lower()
+    if "offline" in low or "timeout" in low or "no route" in low or "unreachable" in low:
+        raise RuntimeError(f"{device} isn't answering. Make sure it's switched on and Tailscale is running on "
+                           "it, then press Send again.")
+    if "unknown target" in low or "invalid" in low or "not found" in low or "no matching peer" in low:
+        raise RuntimeError(f"Tailscale doesn't know a computer called {device}. Choose it again.")
+    raise RuntimeError(f"Tailscale couldn't send the book to {device}."
+                       + (f" ({said.splitlines()[-1][:160]})" if said else ""))
+
+
+def send_to_mailbox(workdir, device, title="", author="", profile="", summary="", made_by="", progress=None,
+                    cancel=None, exe=None):
+    """Make the book file and send it to the home computer [device] for the tablet. Returns the file's name."""
+    import tempfile
+    say = progress or (lambda f, m: None)
+    with tempfile.TemporaryDirectory(prefix="cleanlisten-send-") as tmp:
+        out = save_phone_file(workdir, tmp, title, author, profile, summary, made_by,
+                              progress=lambda f, m: say(0.9 * f, m), cancel=cancel)
+        say(0.92, f"Sending it to {device} with Tailscale…")
+        send_by_tailscale(out, device, exe=exe)
+    say(1.0, "Sent.")
+    return out.name
+
+
 def book_title_guess(parts):
     p = Path(parts[0]) if parts else Path("Audiobook")
     return p.stem if len(parts) == 1 else p.parent.name

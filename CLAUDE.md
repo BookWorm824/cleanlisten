@@ -841,6 +841,15 @@ Every way to the phone (the owner, 2026-11-14: "lets do every way wifi bluetooth
 - **Save a book file:** `save_phone_file()` writes `<title>.cleanshelf`, one file for Google Drive,
   Bluetooth, a USB cable or email; then "Send it by Bluetooth…" opens Windows' own sender
   (`fsquirt.exe`; slow for a big book).
+- **To a tablet anywhere** (2026-11-20, the owner's niece's tablet at her own house; "I wouldn't
+  necessarily use this computer"): `send_to_mailbox()` saves the book file to a temp folder and sends it
+  with Tailscale's own "Send file" (`tailscale file cp <file> ryzen:`, `send_by_tailscale`) to her
+  always-on home computer ("ryzen", chosen once from `tailscale_devices()` = `tailscale file cp --targets`,
+  kept in `save_places()["mailbox"]`). Taildrop only works between her own devices; nothing is opened to
+  the internet. Ryzen moves it into the folder it shares over Tailscale (CleanRead Mobile's
+  `tools/ryzen`), and the tablet (on its own Tailscale account, ryzen shared with it) fetches new books
+  when CleanRead Mobile opens and about once an hour. Any of her devices can send the same way (Share ->
+  Tailscale -> ryzen). NordVPN on her PC stops Tailscale connecting. `tests/test_tablet_anywhere.py`.
 Both use the same stream (`phone_book`, `phone_stream`): `PHONE_MAGIC`, the list's length, the list, the
 original files (CleanShelf's FORMAT.md). `tests/test_phone_ways.py`.
 

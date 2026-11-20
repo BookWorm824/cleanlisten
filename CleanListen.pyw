@@ -1786,6 +1786,7 @@ class App(tk.Tk):
                      justify="left", anchor="w").pack(anchor="w", pady=(self._px(2), 0))
             ttk.Button(row, text="Send" if head == "Over Wi-Fi" else "Save…", style="Accent.TButton",
                        command=cmd).pack(side="right")
+        self._phone_anywhere_card(w, pad)
         self._phone_status = tk.Label(w, text="", bg=BG, fg=ACCENT_DK, font=(FONT, 10),
                                       wraplength=self._px(420), justify="left")
         self._phone_status.pack(anchor="w", pady=(0, self._px(4)), **pad)
@@ -1823,6 +1824,75 @@ class App(tk.Tk):
             took = engine.send_to_phone_wifi(wd, phone, progress=say, **b)
             return f"✓ “{took}” is on {phone['name']}."
         self._phone_run(job, "Looking for CleanRead Mobile on this Wi-Fi…")
+
+    def _phone_anywhere_card(self, w, pad):
+        """To a tablet anywhere: the book goes to the always-on home computer with Tailscale's "Send file", and
+        the tablet fetches it from there (engine.send_to_mailbox). The computer is chosen once and remembered."""
+        box = CL.card(w, pad=(16, 12))
+        box.pack(fill="x", pady=(0, self._px(10)), **pad)
+        row = tk.Frame(box.body, bg=CARD)
+        row.pack(fill="x")
+        words = tk.Frame(row, bg=CARD)
+        words.pack(side="left", fill="x", expand=True, padx=(0, self._px(12)))
+        tk.Label(words, text="To a tablet anywhere", bg=CARD, fg=INK, font=(HEAD, 11), anchor="w").pack(anchor="w")
+        tk.Label(words, text="Sends it to your always-on home computer with Tailscale. The tablet picks it up "
+                 "by itself, wherever it is, next time CleanRead Mobile opens.", bg=CARD, fg=MUTED,
+                 font=(FONT, 9), wraplength=self._px(290), justify="left", anchor="w").pack(
+                     anchor="w", pady=(self._px(2), 0))
+        ttk.Button(row, text="Send", style="Accent.TButton", command=self._phone_anywhere).pack(side="right")
+        pick = tk.Frame(box.body, bg=CARD)
+        pick.pack(fill="x", pady=(self._px(8), 0))
+        tk.Label(pick, text="Home computer:", bg=CARD, fg=MUTED, font=(FONT, 9)).pack(side="left")
+        self._mailbox = tk.StringVar(value=load_places().get("mailbox") or "")
+        self._mailbox_box = ttk.Combobox(pick, textvariable=self._mailbox, state="readonly", width=18,
+                                         font=(FONT, 9), values=[self._mailbox.get()] if self._mailbox.get() else [])
+        self._mailbox_box.pack(side="left", padx=(self._px(6), 0))
+        self._mailbox_box.bind("<<ComboboxSelected>>", lambda e: self._mailbox_keep())
+        self._mailbox_note = tk.Label(pick, text="", bg=CARD, fg=MUTED, font=(FONT, 9))
+        self._mailbox_note.pack(side="left", padx=(self._px(8), 0))
+
+        def fill():                       # Tailscale's list of this account's devices (a second or two)
+            try:
+                found = engine.tailscale_devices()
+                self.q.put(("phone_devices", found, ""))
+            except Exception as ex:
+                self.q.put(("phone_devices", [], str(ex)))
+        threading.Thread(target=fill, daemon=True).start()
+
+    def _mailbox_keep(self):
+        places = load_places()
+        places["mailbox"] = self._mailbox.get()
+        save_places(places)
+
+    def _phone_devices(self, found, problem):
+        box = getattr(self, "_mailbox_box", None)
+        if box is None or not box.winfo_exists():
+            return
+        names = [d["name"] for d in found]
+        box.config(values=names)
+        if not self._mailbox.get() and names:
+            # first time: the always-on one if it's called ryzen, else the first that's on
+            self._mailbox.set("ryzen" if "ryzen" in names else names[0])
+            self._mailbox_keep()
+        off = {d["name"] for d in found if not d["online"]}
+        self._mailbox_note.config(text=problem and "Tailscale isn't connected" or
+                                  ("(off right now)" if self._mailbox.get() in off else ""))
+
+    def _phone_anywhere(self):
+        if getattr(self, "_phone_busy", False):
+            return
+        device = self._mailbox.get().strip()
+        if not device:
+            self._phone_msg("phone_fail", "Choose your home computer first (Tailscale must be on and connected "
+                            "on this PC).")
+            return
+        b, wd = self._phone_book, self.workdir
+
+        def job(say):
+            engine.send_to_mailbox(wd, device, progress=say, **b)
+            return (f"✓ “{b['title']}” is on {device}. The tablet picks it up next time CleanRead Mobile is "
+                    "opened on it, wherever it is.")
+        self._phone_run(job, "Getting the book ready…")
 
     def _phone_file(self):
         if getattr(self, "_phone_busy", False):
@@ -2454,6 +2524,8 @@ class App(tk.Tk):
             self._sent(msg[1], msg[2])
         elif kind in ("phone_progress", "phone_done", "phone_fail"):
             self._phone_msg(kind, msg[1])
+        elif kind == "phone_devices":
+            self._phone_devices(msg[1], msg[2])
         elif kind == "claude_done":
             if msg[1] == getattr(self, "claude_job", None) and self.page_name == "working":
                 self.analysis = msg[2]
