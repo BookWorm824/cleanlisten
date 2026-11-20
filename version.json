@@ -1,5 +1,5 @@
 {
- "version": "1.17.86",
+ "version": "1.17.87",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -73,7 +73,7 @@
   "cleanview_ai.py": "ecaefc9d222996363744a03de709f923aaef0f17f4d3e190fa473512b3befaa1",
   "CleanView.pyw": "f65ef6d2df533d04828b603120a268a9a338d1d3c9e1ed4bcb7714f899f402c3",
   "filters.py": "5754f0afb3c72b99414568fe7b65a6a87f623eb21d7d9df99be41df25ddbf7bb",
-  "cllook.py": "1e9cc3d22690bb4439e8b6eef8ebc02ccbefb8dddd09acfe840e6321a2a710a6",
+  "cllook.py": "daea11679a497ee4596715be1eb25fcbd2147362463814764d2e1afe2a975982",
   "cvlook.py": "4c720d1916cbc27191101b74e1a75734695e1b152f0e114ca4f5862dae4b4df4",
   "cvlang.py": "39ff256ea14dfbfaa830149e51feab70e39ab8b444bcde278058725b3d1f18c9",
   "logo.py": "4740dff71a36c79ea72a97faf79e63ddd7b2533cd85cbd3d668dd5221f3af034",
@@ -92,7 +92,7 @@
   "cleanread_logo.png": "6b7b20b35fd64b1fa6b7ba7ebc42c99cda783c0e0562ef94681f97ccd6933fa3",
   "update.json": "c1b41ea93743b2a35aaaa1586189f94d9daeef73e9e43b15719cc04e8edd73ea",
   "readaloud.py": "9fde553f78815f76abf26623c2901c2aca6ed3338e9d13ed932bf9811c656e21",
-  "ReadAloud.pyw": "5403bf2ade81295814f4b646cbde6b8d611dd6f072ec4a0b89d6339f308c0a0a",
+  "ReadAloud.pyw": "7003373b4b3dbf0693677c2d5d5ccf39d16625d659ffb4e6c6afff5c11794087",
   "readaloud.ico": "c0fc299697a8745bf5db3bbcbbf1038a85dc25ddcc2399d8314d00fc9fd89bbb",
   "readaloud_logo.png": "77f2168599aca3666c0f7d17e5cd80f9de6cf71c773ac102ca9e5e65dd78b06a",
   "readaloud_ai.py": "b14aeb91db7ab4980b2a0a8b52eed79957fac48fbd24eef054092ade8d473372",
