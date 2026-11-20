@@ -874,10 +874,24 @@ class App(tk.Tk):
             return
         self.book_lbl.config(text="Opening the book…", fg=MUTED)
         self.start_btn.config(state="disabled")
+        # a scanned PDF has its pages read first, which takes a while: what it's doing shows under
+        # the button, and choosing another book stops it (the owner, 2026-11-19: "it won't open a pdf")
+        self._opening = token = object()
+        try:
+            lang = self._lang()
+        except Exception:
+            lang = "en"
+
+        def doing(frac, words):
+            if self._opening is token:
+                self.q.put(("book_msg", f"{words}  ({int(frac * 100)}%)" if 0 < frac < 1 else words))
 
         def go():
             try:
-                book = engine.load_book(f)
+                book = engine.load_book(f, progress=doing, cancel=lambda: self._opening is not token,
+                                        language=lang)
+                if self._opening is not token:
+                    return
                 if not book.get("cover"):
                     engine.cover_online(book)
                 cover = self._cover_png(book)
@@ -885,6 +899,8 @@ class App(tk.Tk):
             except engine.BookError as ex:
                 self.q.put(("book_error", str(ex), ""))
             except Exception as ex:
+                if self._opening is not token:     # stopped: another book was chosen
+                    return
                 self.q.put(("book_error", f"This book couldn't be opened ({ex}).", traceback.format_exc()))
         threading.Thread(target=go, daemon=True).start()
 
@@ -1291,6 +1307,9 @@ class App(tk.Tk):
                 if lang in engine.LANGS and lang != self._lang():
                     self.lang_var.set(lang)
                     self._lang_changed()
+        elif kind == "book_msg":
+            if getattr(self, "book_lbl", None) and self.book_lbl.winfo_exists():
+                self.book_lbl.config(text=msg[1], fg=MUTED)
         elif kind == "book_error":
             self._poll_error(msg[2]) if msg[2] else None
             if getattr(self, "book_lbl", None) and self.book_lbl.winfo_exists():

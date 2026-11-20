@@ -630,8 +630,7 @@ def read_pdf(path):
         had_head.append(head)
     long_lines = sorted(len(l) for lines in body for l in lines if len(l) > 20)
     if not long_lines:
-        raise BookError("No text was found in this PDF. (A scanned PDF needs its text recognized "
-                        "first; this one has only pictures of the pages.)")
+        raise BookError(SCANNED + " (It has only pictures of the pages.)")
     full = long_lines[len(long_lines) * 3 // 4]      # a full line of print
     counts = sorted(len(b) for b in body if len(b) > 5)
     usual = counts[len(counts) // 2] if counts else 30
@@ -715,17 +714,54 @@ def mend_paragraphs(paras):
     return out
 
 
-def load_book(path):
+SCANNED = "No text was found in this PDF."
+
+
+def scanned_pdf(path, progress=None, cancel=None, language="en"):
+    """A PDF that is only pictures of its pages (an old book scanned) read the way CleanRead does
+    (pdfbook: Windows' own text recognition, offline) into an EPUB kept with ReadAloud's work, not
+    next to the PDF. The owner, 2026-11-19: "it won't open a pdf". Returns the EPUB's path."""
+    sys.path.insert(0, str(HERE))
+    import pdfbook
+    out = pdfbook.WORK / pdfbook._key(path) / (Path(path).stem + ".epub")
+    try:
+        return Path(pdfbook.convert(path, out=out, progress=progress, cancel=cancel,
+                                    language=language)["out"])
+    except pdfbook.ConvertError as ex:
+        raise BookError(str(ex))
+
+
+def _pictures_only(path):
+    """True when most of a PDF's pages are pictures with no text in them (pdfbook.kind)."""
+    try:
+        sys.path.insert(0, str(HERE))
+        import pdfbook
+        return pdfbook.kind(path) == "pictures"
+    except Exception:
+        return False
+
+
+def load_book(path, progress=None, cancel=None, language="en"):
     """The book as {"title", "author", "series", "number", "cover" (bytes), "cover_ext", "path",
     "chapters": [{"title", "paras": [[kind, text]], "words", "read"}]}, kind = "h" heading,
     "p" paragraph, "b" scene break. "read" is False for parts nobody wants read aloud (the table
-    of contents, the copyright page, "Also by")."""
+    of contents, the copyright page, "Also by"). A scanned PDF (pictures of pages) has its words
+    recognised first (scanned_pdf; progress(fraction, words) meanwhile, cancel() stops it)."""
     path = Path(path)
     fmt = path.suffix.lower()
     chapters = []
     title, author, series, number, cover, cover_ext = path.stem, "", "", "", None, ""
     if fmt == ".pdf":
-        title, author, cover, chapters = read_pdf(path)
+        try:
+            if _pictures_only(path):            # mostly scans (a few pages of text don't count)
+                raise BookError(SCANNED)
+            title, author, cover, chapters = read_pdf(path)
+        except BookError as ex:
+            if not str(ex).startswith(SCANNED):
+                raise
+            book = load_book(scanned_pdf(path, progress, cancel, language))
+            book["path"] = str(path)            # the audiobook goes next to the PDF, as any book
+            return book
         cover_ext = ".jpg" if cover else ""
     elif fmt == ".docx":
         t, a, paras = _read_docx(path)
