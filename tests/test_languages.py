@@ -140,7 +140,7 @@ def test_another_language_is_listened_to_with_its_own_model_and_kept_apart(tmp_p
     asked, loaded = [], []
     monkeypatch.setattr(E, "get_language_model", lambda say, cancel, log: asked.append(1))
     monkeypatch.setattr(E, "load_recognizer", lambda d, threads=None: loaded.append(d) or "rec")
-    monkeypatch.setattr(E, "transcribe", lambda p, rec, prog=None, cancel=None: [
+    monkeypatch.setattr(E, "transcribe", lambda p, rec, prog=None, cancel=None, **kw: [
         {"t": "¡Mierda!", "s": 0.0, "e": 0.4}, {"t": "Vamos.", "s": 0.5, "e": 0.9}])
     monkeypatch.setattr(E, "probe_duration", lambda p: 1.0)
     monkeypatch.setattr(E, "snap_edges", lambda part, s, e, est=False: (s, e))

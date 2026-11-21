@@ -68,8 +68,12 @@ Python 3.12 on the user's PC (private venv). Dependencies: `sherpa-onnx`, `numpy
   (`chapters_dir`, `m4b_dir`, `abs`)
 - `queue.json` — the "Your books" list (each book's files, filters, analyze arguments, step,
   status, results) and "Books at once"; a book that was preparing or saving when the window
-  closed (or updated) goes back in line and carries on (`BookQueue.resume`; listening resumes
-  per file from `transcript.json`, so the file it was on starts over)
+  closed (or updated) goes back in line and carries on (`BookQueue.resume`): finished files from
+  `transcript.json`, and the file it was in the middle of from `listening.json` (1.17.95;
+  `transcribe(start=, heard=, keep=)` saves the words so far every ~5 min of audio and when
+  stopped, at a chunk edge, and carries on there; a one-file M4B no longer starts over. Real
+  model on a 14.6-min narration stopped at 8.4 min: same 1,735 words, times within 0.08 s, one
+  comma became a full stop at the seam, as MP3 seeking isn't sample-exact)
 - `settings.json` (`claude_model`, `reviewer` = claude|chatgpt), `resume.json` (reopen onto the
   same review after an update or after closing the window), `left_review.json` (a review left
   with "◀ Back to start"; the start page offers "Pick up where I left off" for 14 days)

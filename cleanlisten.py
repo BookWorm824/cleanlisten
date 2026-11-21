@@ -3092,16 +3092,27 @@ def tokens_to_words(res, offset):
     return [w for w in words if w["t"]]
 
 
-def transcribe(path, rec, progress=None, chunk=30.0, overlap=2.0, cancel=None):
+def transcribe(path, rec, progress=None, chunk=30.0, overlap=2.0, cancel=None, start=0.0,
+               heard=(), keep=None, keep_every=300.0):
     """Stream audio through ffmpeg in overlapping chunks (long books never
-    need to fit in memory)."""
-    proc = popen([_tool("ffmpeg"), "-v", "error", "-i", str(path), "-ac", "1",
+    need to fit in memory).
+
+    Carrying on inside a file (a one-file book stopped part-way used to start over): start =
+    where to carry on (a chunk edge keep() was given), heard = the words before it. keep(words,
+    next_start) is called about every keep_every seconds of audio and when it's cancelled, so
+    what was heard so far can be saved."""
+    seek = ["-ss", f"{start:.3f}"] if start > 0 else []
+    proc = popen([_tool("ffmpeg"), "-v", "error", *seek, "-i", str(path), "-ac", "1",
                   "-ar", str(SR), "-f", "f32le", "-"], stdout=subprocess.PIPE)
     C, O = int(chunk * SR), int(overlap * SR)
-    buf, offset, first, eof, out = np.zeros(0, dtype=np.float32), 0.0, True, False, []
+    buf, eof = np.zeros(0, dtype=np.float32), False
+    offset, first, out = float(start), not start, list(heard)
+    kept_at = offset
     try:
         while True:
             if cancel and cancel():
+                if keep and offset > kept_at:
+                    keep(out, offset)            # the next chunk starts here
                 raise KeyboardInterrupt
             while not eof and len(buf) < C:
                 data = proc.stdout.read((C - len(buf)) * 4)
@@ -3125,6 +3136,9 @@ def transcribe(path, rec, progress=None, chunk=30.0, overlap=2.0, cancel=None):
             buf = buf[C - O:]
             offset += (C - O) / SR
             first = False
+            if keep and offset - kept_at >= keep_every:
+                keep(out, offset)
+                kept_at = offset
     finally:
         proc.kill()
         proc.wait()
@@ -4521,17 +4535,37 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
         t0 = time.time()
         before = sum(durs[p] for p in parts if p in done)
         heard = 0.0
+        # the file it was in the middle of last time (stopped, closed or updated): carry on
+        pfile = work / lang_file("listening.json")
+        try:
+            part_way = json.loads(pfile.read_text())
+            if part_way.get("part") not in todo:
+                part_way = {}
+        except (OSError, ValueError):
+            part_way = {}
+        if part_way:
+            log(f"Carrying on with {Path(part_way['part']).name} from "
+                f"{fmt_t(part_way['next'])}")
         for n, p in enumerate(todo, 1):
-            def prog(sec, p=p, n=n):
-                got = heard + sec
+            start, kept = (part_way["next"], part_way["words"]) if part_way.get("part") == p else (0.0, [])
+
+            def prog(sec, p=p, n=n, start=start):
+                got = heard + sec - start            # heard this time (the rate)
                 rate = got / max(time.time() - t0, 1e-6)
-                left = (total - before - got) / max(rate, 1e-6)
-                frac = (before + got) / total
+                left = (total - before - heard - sec) / max(rate, 1e-6)
+                frac = (before + heard + sec) / total
                 eta = f"about {left / 60:.0f} min left" if got > 60 else "estimating time…"
                 say(0.92 * frac, f"Listening to part {n} of {len(todo)} · {eta}")
-            done[p] = transcribe(p, rec, prog, cancel=cancel)
+
+            def keep(words, nxt, p=p):
+                write_safely(pfile, json.dumps({"part": p, "next": nxt, "words": words}))
+            done[p] = transcribe(p, rec, prog, cancel=cancel, start=start, heard=kept, keep=keep)
             heard += durs[p]
             write_safely(tfile, json.dumps(done))
+            try:
+                pfile.unlink()
+            except OSError:
+                pass
             log(f"Listened to {Path(p).name}: {len(done[p])} words")
 
     asr = [{**w, "part": pi, "n": norm(w["t"])} for pi, p in enumerate(parts) for w in done[p]]

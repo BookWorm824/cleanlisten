@@ -1,5 +1,5 @@
 {
- "version": "1.17.94",
+ "version": "1.17.95",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -61,7 +61,7 @@
   "readaloud_voices.npz"
  ],
  "sha256": {
-  "cleanlisten.py": "99d734deea71a873485591a9d410b51085586ebccb528b1c85ad1a3fc4d76b9f",
+  "cleanlisten.py": "e2583c0823c85891bd5de9f7bca7c6cf462d9dcea66e58b88e802c0e53fedfec",
   "CleanListen.pyw": "5747b4acc85b7e8351432485036ea6c4055b92446473ddb48a7c325d01eb69ed",
   "cleanlisten_claude.py": "c80a668ff188a9e87ab93ab5823fcd1aeb47c2c9fd89b1506adf0391e49bd93b",
   "shared_learned.json": "9eaac90b12aa6a9da8741d0335c6235ecfe29751e224b194eb6f351eaaa565d8",
