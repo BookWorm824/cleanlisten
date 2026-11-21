@@ -743,7 +743,10 @@ SCREWED_SAFE_NEXT = {"in", "into", "on", "onto", "down", "together", "shut", "ti
 # "jerked off the road", "jacked off his feet": a place or thing follows, so it's literal
 OFF_SAFE_NEXT = {"the", "a", "an", "his", "her", "its", "their", "my", "your", "our", "of", "to",
                  "into", "onto", "from", "at", "toward", "towards", "course", "balance", "guard",
-                 "track", "road", "path", "ground", "floor", "table", "shelf", "wall", "hook"}
+                 "track", "road", "path", "ground", "floor", "table", "shelf", "wall", "hook",
+                 # (CleanView 1.18.157's, with "jerk me off")
+                 "feet", "chair", "bed", "couch", "stage", "bike", "horse", "seat", "ledge", "edge",
+                 "roof", "ladder"}
 # "screw" is a thing (a loose screw, tighten the screw) or a prison guard ("the hardest screw that
 # ever walked a turn at Shawshank", CleanView 1.18.27) when one of these comes just before it, or
 # a word like hardest / meanest / toughest (but "to be honest, screw that" is still the insult)
@@ -1742,6 +1745,10 @@ SEXUAL_TERMS = [
     # by themselves
     r"spank ?bank", r"jerk(?:s|ed|ing)? the gherkin", r"jerk(?:s|ed|ing)? off",
     r"jack(?:s|ed|ing)? off", r"jork(?:s|ed|ing)? it",
+    # CleanView 1.18.157 (the owner, in the CleanStream chat: "jerk me off should go in the sex catogory
+    # for all"); not "jerked him off his feet", "jerked her off the ledge" (OFF_SAFE_NEXT)
+    r"(?:jerk|jack)(?:s|ed|ing|in)? (?:me|him|you|ya|her|them|us|myself|yourself|himself|herself|"
+    r"themselves|each other) off",
     r"beat(?:s|ing)? " + _P + r" meat", r"beat the meat",
     r"(?:beat|beats|beating|whack|whacks|whacked|whacking|wank|wanks|wanked|wanking) off"
     r"(?![ \t]+(?:the|a|an|his|her|their|its|my|your|our|them|him|those|these|all|any|every)\b)",
@@ -1863,6 +1870,10 @@ CASUAL_TERMS = [
     r"side (?:chicks?|pieces?)", r"bit on the side", r"booty calls",
     r"friend with benefits", r"fwb",
     r"notch(?:es)? on (?:the|my|his|her|your) bedpost", r"gyall?is", r"loose characters?", r"ladies'? man",
+    # CleanView 1.18.152 (Criminal Minds S1E20: "obsessed with thinking she was unfaithful", "his issues
+    # with infidelity"; the owner: "All of them", here "Yes, both"); not "the unfaithful servant". The
+    # one use in the free classics' books means an affair too (A Girl of the Limberlost)
+    r"unfaithful(?:ness)?(?! servants?\b)", r"infidelit(?:y|ies)",
 ]
 
 # graphic case talk (with rape and the rest, 1.18.125)
@@ -1880,6 +1891,47 @@ def _terms_rx(pats):
 SEXUAL_TERMS_RX = _terms_rx(SEXUAL_TERMS)
 CASUAL_TERMS_RX = _terms_rx(CASUAL_TERMS)
 FORENSIC_TERMS_RX = _terms_rx(FORENSIC_TERMS)
+# Case talk an AI called a sexual reference (CleanView 1.18.152, Criminal Minds S1E20, coroner talk off:
+# "That sounds like statutory rape. I'm not surprised. You talk to Hotch?" was muted whole; the owner:
+# "All of them", here "Yes, both"). With Medical off, a passage cut as a sexual reference whose only
+# sexual words are case talk (rape, sexual assault, sex offenders...) and no explicit finding is offered
+# unticked: it may still hold innuendo, which she can tick (apply_case_talk).
+CASE_TALK_RX = _terms_rx([r"sexual(?:ly)? assault(?:s|ed)?", r"(?:sex|sexual) offen(?:ders?|ses?|ces?)",
+                          r"sex crimes?", r"sex criminals?", r"rape kits?", r"raped", r"rapes?", r"rapists?",
+                          r"raping", r"sexually (?:abused|molested)", r"sex(?:ual)? abuse"] + FORENSIC_TERMS)
+CASE_TALK_UNTICKED = ("case talk (rape, sexual assault...) and Medical (coroner and doctor talk) isn't "
+                      "ticked, so it's only cut if you tick it")
+
+
+def case_talk_only(words):
+    """True if these normalised words have case talk in them, no explicit finding, and nothing the
+    word lists count as a sexual reference once the case talk is taken out."""
+    text = " ".join(words)
+    if not CASE_TALK_RX.search(text) or explicit_finding_words(words):
+        return False
+    rest = CASE_TALK_RX.sub(" ", text).split()
+    return not (find_language(rest, ["sexual"]) or any(is_explicit([w]) for w in rest)
+                or sex_drug_spans(rest))
+
+
+def apply_case_talk(st, asr):
+    """With Medical off, a passage an AI (or Claude) cut as a sexual reference that's only case talk
+    starts unticked (not what you set yourself, or what was learned from your choices). Returns how
+    many it unticked."""
+    kinds = set((st.get("filters") or {}).get("kinds") or [])
+    if "medical" in kinds:
+        return 0
+    n = 0
+    for sc in st.get("scenes", []):
+        if (sc.get("kind") != "ref" or not sc.get("cut", True) or sc.get("by_you") or sc.get("learned")
+                or not (sc.get("ai") or sc.get("claude"))):
+            continue
+        words = [w.get("n") or norm(w["t"]) for w in asr
+                 if w["part"] == sc["part"] and sc["s"] - 0.01 <= w["s"] <= sc["e"] + 0.01]
+        if case_talk_only(words):
+            sc["cut"], sc["ai_note"] = False, CASE_TALK_UNTICKED
+            n += 1
+    return n
 # "an orgy of eating", "a key party to the deal", "male members of the family", "the girl on top of the
 # wall", "a bit on the side of the road", "the sun went down on them", "the car jerked off the road"
 TERM_NOT_NEXT = {"orgy": {"of"}, "orgies": {"of"}, "party": {"to", "in", "of", "for", "on", "at"},
@@ -4991,6 +5043,7 @@ def analyze(parts, workdir, ebook=None, groups=("swearing", "mild", "deity", "se
             log(st["ai_note"])
     # last of all: the hard-rule words (fart, condom, semen) whatever the AI, Claude or learning said
     apply_hard_rule(st, asr)
+    apply_case_talk(st, asr)             # case talk an AI called a sexual reference (CleanView 1.18.152)
     apply_explicit_findings(st, asr)     # explicit coroner findings stay cut (2026-11-13)
     try:
         st["heads_up"] = listen_heads_up(st)

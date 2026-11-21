@@ -1017,6 +1017,7 @@ def review(st, asr, progress=None, cancel=None):
         note += (f" {len(unread)} of {len(secs)} sections couldn't be checked ({errors[0]}); "
                  "there the word lists and the AI on this PC decide.")
     E.apply_hard_rule(st, asr)          # fart, condom, semen stay muted whatever it said (2026-11-13)
+    E.apply_case_talk(st, asr)          # case talk it called a sexual reference (CleanView 1.18.152)
     E.apply_explicit_findings(st, asr)  # and explicit coroner findings stay cut
     st["claude_note"] = note
     st["claude_checked"] = True

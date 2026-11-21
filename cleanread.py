@@ -3486,6 +3486,11 @@ def analyze(book, opts, progress=None, cancel=None):
         c.setdefault("cut", True)
     for n, m in enumerate(mutes, 1):
         m["id"] = n
+    # case talk an AI called a sexual reference, with Medical off, starts unticked (CleanView 1.18.152)
+    if not opts.get("medical"):
+        for c in cuts:
+            if c["kind"] == "ref" and c.get("cut", True) and c.get("ai") and E.case_talk_only(_words(c)):
+                c["cut"], c["ai_note"] = False, E.CASE_TALK_UNTICKED
     # an explicit finding stays cut whatever the AI said (your own past choice, below, still wins)
     for c in cuts:
         if c["kind"] == "ref" and not c.get("cut", True) and explicit & set(c.get("sents") or ()):
