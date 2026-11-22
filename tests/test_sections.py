@@ -14,7 +14,7 @@ import pytest
 import filters as F
 
 SECTIONS = ["Bad language", "Sex and nudity", "Romance and relationships", "Violence", "Medical",
-            "Attitude", "Smoking, drinking and drugs", "Faith, holidays and magic"]
+            "Attitude", "Smoking and drinking", "Drugs", "Faith, holidays and magic"]
 
 
 @pytest.fixture
@@ -57,7 +57,7 @@ def test_every_filter_in_a_section_same_keys_as_before():
     keys = [k for _, _, items in F.SECTIONS for k, _, _ in items]
     assert len(keys) == len(set(keys)) == len(F.STANDARD) - 3     # the religion parts aside
     assert set(F.PRESETS["young"]) == set(F.STANDARD)
-    assert [k for k, _, _ in F.SECTIONS[4][2]] == ["medical"]     # Medical on its own
+    assert [k for k, _, _ in F.SECTIONS[4][2]] == ["medical", "forensic"]     # and coroner talk (1.17.97)
     assert set(F.SECTION_ICONS) == set(SECTIONS)
 
 
@@ -65,9 +65,12 @@ def test_counts_and_the_three_looks(root, saved):
     p = panel(root)
     switch, count, tick_all, show = p.heads["Medical"]
     p.vars["medical"].set(False)
+    p.vars["forensic"].set(False)                    # (Coroner and doctor talk beside it, 1.17.97)
     assert count.cget("text") == "Off" and switch.state == "off"
     p.vars["medical"].set(True)
-    assert count.cget("text") == "1 of 1 on" and switch.state == "on"
+    assert count.cget("text") == "1 of 2 on" and switch.state == "some"
+    p.vars["forensic"].set(True)
+    assert count.cget("text") == "2 of 2 on" and switch.state == "on"
     switch, count, tick_all, show = p.heads["Violence"]
     p.vars["violence"].set(False)
     p.vars["gore"].set(True)
@@ -110,7 +113,7 @@ def test_counts_follow_the_age_and_reset_to_standard(root, saved):
     p.profile.set("young")
     p._profile_changed()
     root.update()
-    assert p.heads["Medical"][1].cget("text") == "1 of 1 on"
+    assert p.heads["Medical"][1].cget("text") == "2 of 2 on"
     p.profile.set("adults")
     p._profile_changed()
     root.update()

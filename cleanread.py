@@ -1518,10 +1518,14 @@ _MEDICAL = Matcher(
              "stitched|stitching|sutured the|his|her|my|your|a wound|cut|cuts|gash|arm|leg|head|forehead|face|hand|lip|chin",
              "stitch|stitched|stitching him|her|me|you up",
              "needed|need|needs|got|get|getting few|five|six|seven|eight|ten|twelve stitches",
-             "needed|need|needs|got|get|getting stitches",
-             # coroner and doctor case talk (CleanView 1.18.72's list); not "a tox screen", "he'll be
-             # fine", "time to go home", "a wound to my pride"
-             "sexual|sexually assault|assaults|assaulted", "sex|sexual offender|offenders",
+             "needed|need|needs|got|get|getting stitches"],
+    words=[r"syringes?", r"hypodermics?", r"novocaine?", r"lidocaine", r"scalpels?", r"incisions?",
+           r"sutur(e|es|ed|ing)"])
+# Coroner and doctor talk: its own box since 1.17.97, as CleanView's (it was part of Medical; the owner,
+# 2026-11-21: "1,2,3,"). Coroner and doctor case talk (CleanView 1.18.72's list); not "a tox screen",
+# "he'll be fine", "time to go home", "a wound to my pride"
+_FORENSIC = Matcher(
+    phrases=["sexual|sexually assault|assaults|assaulted", "sex|sexual offender|offenders",
              "sex crime|crimes|criminal|criminals",     # CleanView 1.18.149 (Criminal Minds S1E19)
              "rape kit|kits", "cause|time of death",
              "stab|gunshot|exit|entry|defensive wound|wounds", "blunt force trauma|injury|injuries",
@@ -1529,17 +1533,21 @@ _MEDICAL = Matcher(
              "single|fatal|massive|single blow|wound|wounds to the head|chest|back|neck|throat"],
     # rape, raped, rapist, raping in case talk (CleanView 1.18.125, Criminal Minds; was only "was raped").
     # Whole words: not therapist, grape, rapeseed or rapier
-    words=[r"rapes?", r"raped", r"rapists?", r"raping",
-           r"syringes?", r"hypodermics?", r"novocaine?", r"lidocaine", r"scalpels?", r"incisions?",
-           r"sutur(e|es|ed|ing)", r"autops(y|ies)", r"postmortems?", r"lividity", r"gsw"])
+    words=[r"rapes?", r"raped", r"rapists?", r"raping", r"autops(y|ies)", r"postmortems?", r"lividity",
+           r"gsw"])
 DRUG_NEEDLE = {"heroin", "junkie", "junkies", "addict", "addicts", "addiction", "dope", "smack", "meth",
                "crack", "cocaine", "speedball", "overdose", "overdosed", "high"}
 
 
+def FORENSIC(words, near=None):
+    """Coroner and doctor talk: crime case talk, with CleanView 1.18.127's researched words (incest,
+    bestiality, a child molester...)."""
+    return _FORENSIC(words) + E.term_spans(words, E.FORENSIC_TERMS_RX)
+
+
 def MEDICAL(words, near=None):
-    """A needle going in or a wound being stitched (not drug use); and crime case talk, with CleanView
-    1.18.127's researched words (incest, bestiality, a child molester...)."""
-    sp = _MEDICAL(words) + E.term_spans(words, E.FORENSIC_TERMS_RX)
+    """A needle going in or a wound being stitched (not drug use)."""
+    sp = _MEDICAL(words)
     # a tree tapped: "I made deep incisions in the trunks", "incisions made in the bark" (The Swiss Family
     # Robinson, the night run's report, 2026-11-17)
     if sp and {"bark", "trunk", "trunks", "tree", "trees", "palm", "palms", "stem", "stems", "branch",
@@ -2175,9 +2183,9 @@ SCAN = [
              phrases=["beat|beats|beating|beaten him|her|them|me|you|us up", "beat up",
                       "shot him|her|them|me|you|at", "slit his|her|their throat"])),
     ("gore", 3, "Gory descriptions", "graphic, bloody descriptions of injuries or bodies", None),
-    ("medical", 3, "Medical scenes",
-     "surgery, autopsies, wounds being treated, needles and shots, coroner and doctor case talk",
-     MEDICAL),
+    ("medical", 3, "Medical scenes", "surgery, wounds being treated, needles and shots", MEDICAL),
+    ("forensic", 3, "Coroner and doctor talk", "graphic findings, autopsies, rape or assault case talk",
+     FORENSIC),
     ("scary", 3, "Scary & creepy moments", "monsters, nightmares, terror, screaming, skeletons",
      Except(scary_innocent, words=[r"monsters?", r"monstrous", r"nightmares?", r"terrif(ied|ying)", r"terror",
                     r"horrif(ied|ying)", r"horrors?", r"creep(y|ier|iest)", r"scream(s|ed|ing)?",
@@ -2354,7 +2362,8 @@ def _sentence_runs(book, hit):
 # just "poured himself a whiskey". Kinds about what a sentence means (a joke, innuendo, an
 # affair, anger at God) still take the whole sentence, as in CleanView.
 PART_KINDS = {"kiss", "kiss_ss", "flirt", "nudity", "implied", "immodest", "violence", "graphic",
-              "disturbing", "medical", "smoking", "drinking", "drugs", "gestures", "bully", "disrespect",
+              "disturbing", "medical", "forensic", "smoking", "drinking", "drugs", "gestures", "bully",
+              "disrespect",
               "holiday", "birthday", "magic", "darkmagic", "vampires"}
 PART_MIN_WORDS = 14      # shorter sentences are cut whole
 PART_KEEP_WORDS = 5      # and so is one where less than this would be left
@@ -3286,7 +3295,8 @@ CLEAN_LABELS = {"sex": "Explicit scenes", "ref": "Sexual references", "gore": "G
                 "sleeping": "Sleeping around & affairs", "unmarried": "Unmarried couples together",
                 "nudity": "Nudity", "implied": "Implied nudity", "immodest": "Immodest clothing",
                 "smoking": "Smoking", "drinking": "Drinking", "drugs": "Drug use",
-                "gestures": "Rude gestures", "medical": "Medical scenes", **E.TOPIC_LABELS}
+                "gestures": "Rude gestures", "medical": "Medical scenes",
+                "forensic": "Coroner and doctor talk", **E.TOPIC_LABELS}
 
 
 def _upgrade(opts):
@@ -3298,6 +3308,8 @@ def _upgrade(opts):
             opts.setdefault(k, opts["substances"])
     opts.setdefault("graphic", opts.get("gore"))
     opts.setdefault("medical", bool(opts.get("gore") or opts.get("graphic")))   # before 1.17.21
+    opts.setdefault("forensic", bool(opts.get("medical")))   # part of Medical before 1.17.97
+    opts.setdefault("drugtalk", True)                         # its own box since 1.17.97
     opts.setdefault("samesexwords", opts.get("relationships"))
     opts.setdefault("slurs", True)      # its own box since 1.17.91 (CleanView 1.18.150)
     return opts
@@ -3317,7 +3329,7 @@ def analyze(book, opts, progress=None, cancel=None):
     say = progress or (lambda f, m: None)
     E.use_language(getattr(book, "language", "en"))     # as the book was read
     opts = _upgrade(opts)
-    cats = [c for g in ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
+    cats = [c for g in ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude", "drugtalk") if opts.get(g)
             for c in E.GROUPS[g]]
     # religion in parts, as in CleanListen (the tester): preaching, anger at God, prayers & verses
     rparts = religion_parts(opts)
@@ -3487,7 +3499,7 @@ def analyze(book, opts, progress=None, cancel=None):
     for n, m in enumerate(mutes, 1):
         m["id"] = n
     # case talk an AI called a sexual reference, with Medical off, starts unticked (CleanView 1.18.152)
-    if not opts.get("medical"):
+    if not opts.get("forensic"):
         for c in cuts:
             if c["kind"] == "ref" and c.get("cut", True) and c.get("ai") and E.case_talk_only(_words(c)):
                 c["cut"], c["ai_note"] = False, E.CASE_TALK_UNTICKED
@@ -3707,7 +3719,7 @@ def kinds_on(opts):
 def chat_filters(opts):
     """The ticks in the form CleanListen's Claude rules (rules_text) read."""
     opts = _upgrade(opts)
-    cats = [c for g in ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude") if opts.get(g)
+    cats = [c for g in ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude", "drugtalk") if opts.get(g)
             for c in E.GROUPS[g]] + (["orientation"] if opts.get("samesexwords") else [])
     return {"kinds": kinds_on(opts), "cats": cats, "religion_parts": religion_parts(opts),
             "kiss": opts.get("kiss", "keep"), "kiss_ss": opts.get("kiss_ss", "keep")}

@@ -67,7 +67,7 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "sleeping": "sleeping around or an affair",
               "unmarried": "unmarried couple living or sleeping together",
               "graphic": "graphic violence", "violence": "violence", "disturbing": "disturbing violence",
-              "medical": "medical scene",
+              "medical": "medical scene", "forensic": "coroner or doctor talk",
               "nudity": "nudity", "implied": "implied nudity", "immodest": "immodest clothing",
               "smoking": "smoking", "drinking": "drinking", "drugs": "drug use",
               "gestures": "rude gesture",
@@ -75,6 +75,7 @@ KIND_NAMES = {"sex": "explicit sex scene", "ref": "sexual reference", "gore": "g
               "magic": "magic", "vampires": "vampires and werewolves",
               "added": "passage you chose to cut"}
 CAT_NAMES = {"strong": "swearing (strong)", "moderate": "swearing", "slurs": "slur", "mild": "mild word",
+             "drugtalk": "drug word",
              "deity": "God's name as a swear", "minced": "soft substitute", "sexual": "sexual word", "rude": "rude word",
              "crude": "crude word", "mine": "the family's own word",
              "orientation": "orientation word", "ai": "word found by AI", "claude": "word found by Claude"}
@@ -175,13 +176,16 @@ KIND_RULES = {
     "medical": "Medical scenes: cut graphic medical description - surgery or an operation, an "
                "autopsy or a body on a morgue table, a doctor, nurse or medic stitching or treating "
                "a bloody wound - and a needle going in: a shot, an injection, a blood draw, an IV "
-               "being put in, the dentist's needle, insulin - and a coroner's, medical examiner's, "
-               "doctor's or detective's case talk about a body or a victim: wounds and injuries, "
-               "blood, organs, cause or time of death, an autopsy or what was done to the body, or "
-               "rape, sexual assault, sex offenders or sexual evidence. A diagnosis, a doctor's visit, being in "
+               "being put in, the dentist's needle, insulin. A coroner's or detective's case talk is "
+               "a separate choice (coroner and doctor talk). A diagnosis, a doctor's visit, being in "
                "hospital, or only mentioning pills, an IV bag or a pharmacy is fine. An attack or a "
                "crime scene is not medical even with medics there, and injecting illegal drugs is "
                "drug use, not this.",
+    "forensic": "Coroner and doctor talk: cut a coroner's, medical examiner's, doctor's or detective's "
+                "case talk about a body or a victim: wounds and injuries, blood, organs, cause or time "
+                "of death, an autopsy or what was done to the body, or rape, sexual assault, sex "
+                "offenders or sexual evidence. Simply saying someone died, was killed or was found "
+                "dead is fine.",
     "disturbing": "Disturbing violence: cut torture, executions, cruelty to someone helpless or to "
                   "an animal, and the bloody aftermath of an accident (a car crash, a fall).",
     "nudity": "Nudity: cut sentences describing someone naked or their private parts shown or "
@@ -254,6 +258,10 @@ CAT_RULES = {
               "body parts ('check out those melons', 'pop her cherry', 'kneed him in the grapes', 'is "
               "that a banana in your pocket'): mute just that word (cherry pie and ripe melons are "
               "fine).",
+    "drugtalk": "Drug talk and slang: stoned, junkie, crackhead, cokehead, shrooms, getting high, high "
+                "on drugs, strung out, shooting up and the like - mute just the word. The drugs' own "
+                "names said by police or doctors, 'stoned to death', 'an adrenaline junkie', 'got high "
+                "marks' and flames 'shooting up' are fine.",
     "orientation": "Orientation words: gay, lesbian, homosexual, bisexual, queer - mute "
                    "the word (e.g. 'Are you gay?'). 'Gay' meaning cheerful or bright is fine.",
 }

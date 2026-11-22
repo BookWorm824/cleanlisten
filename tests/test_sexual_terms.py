@@ -59,9 +59,9 @@ def test_sleeping_around_and_case_talk():
         assert R.SLEEPING(words(text)), text
     for text in ("He was a pedophile.", "a convicted child molester", "Charged with indecent exposure.",
                  "bestiality and incest"):
-        assert R.MEDICAL(words(text)), text
+        assert R.FORENSIC(words(text)), text
     # "molest" meaning bother, as older books use it, isn't case talk
-    assert not R.MEDICAL(words("No one shall molest you on the road."))
+    assert not R.FORENSIC(words("No one shall molest you on the road."))
 
 
 @pytest.mark.parametrize("text", [

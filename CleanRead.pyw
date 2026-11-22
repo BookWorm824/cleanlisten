@@ -1242,6 +1242,7 @@ class App(tk.Tk):
         self.cut_vars = []
         order = ["sex", "nudity", "implied", "immodest", "ref", "sleeping", "unmarried", "kiss",
                  "kiss_ss", "flirt", "relationship", "violence", "graphic", "gore", "disturbing", "medical",
+                 "forensic",
                  "religion", "crude", "bully", "disrespect", "smoking", "drinking", "drugs", "gestures",
                  "holiday", "birthday", "magic", "darkmagic", "vampires"]
         for c in cuts:          # what was found, so what you change yourself is remembered

@@ -98,4 +98,4 @@ def test_what_each_age_mutes():
 
 def test_cleanread_uses_the_slurs_box():
     src = (E.Path(R.__file__)).read_text(encoding="utf8")
-    assert src.count('("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude")') == 2
+    assert src.count('("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "crude", "drugtalk")') == 2

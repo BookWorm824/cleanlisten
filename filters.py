@@ -68,15 +68,20 @@ SECTIONS = [
         ("gore", "Gore  (insides showing, dismemberment)", True),
         ("disturbing", "Disturbing  (torture, executions, cruelty, bloody accidents)", False)]),
     ("Medical", 1, [
-        ("medical", "Medical  (surgery, autopsies, coroner and doctor talk, wounds being treated, "
-                    "needles)", False)]),
+        ("medical", "Medical  (surgery, wounds being treated, needles)", False),
+        # its own box since 1.17.97, as CleanView's (the owner, 2026-11-21, of the CleanView chat's list for the same filters in every app: \"1,2,3,\"; in CleanView Save: \"CleanListen should have all your filters\")
+        ("forensic", "Coroner and doctor talk  (graphic findings, autopsies, rape or assault case talk)",
+         False)]),
     ("Attitude", 1, [
         ("bully", "Bullying and mocking", False),
         ("disrespect", "Disrespect  (bratty, talking back, disobeying parents)", False),
         ("crude", "Crude humor  (toilet and gross-out jokes)", True)]),
-    ("Smoking, drinking and drugs", 3, [
-        ("smoking", "Smoking", False), ("drinking", "Drinking alcohol", False),
-        ("drugs", "Drug use", False)]),
+    ("Smoking and drinking", 2, [
+        ("smoking", "Smoking", False), ("drinking", "Drinking alcohol", False)]),
+    # a section of its own with Drug talk and slang (1.17.97, as CleanView 1.18.137)
+    ("Drugs", 1, [
+        ("drugs", "Drug use  (taking pills, needles, smoking pot, snorting)", False),
+        ("drugtalk", "Drug talk and slang  (stoned, junkie, crackhead, shrooms, getting high…)", True)]),
     ("Faith, holidays and magic", 1, [
         ("religion", "Religious content", True),
         ("holiday", "Holidays  (Christmas, Halloween, Easter, Valentine's Day, St. Patrick's Day)",
@@ -90,7 +95,7 @@ BOXES = [key for _, _, items in SECTIONS for key, _, d in items if isinstance(d,
 LEVELS = [key for _, _, items in SECTIONS for key, _, d in items if isinstance(d, str)]
 LABELS = {key: label for _, _, items in SECTIONS for key, label, _ in items}
 TOPICS = ("holiday", "birthday", "magic", "darkmagic", "vampires")
-WORD_GROUPS = ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude")
+WORD_GROUPS = ("swearing", "slurs", "mild", "deity", "minced", "sexual", "rude", "drugtalk")
 
 STANDARD = {key: d for _, _, items in SECTIONS for key, _, d in items}
 STANDARD.update({"religion_preach": True, "religion_anger": True, "religion_prayers": False})
@@ -125,6 +130,9 @@ def _upgrade(ticks):
     if t:
         # saved before the Slurs box (1.17.91): ticked, as slurs were muted with Swearing before
         t.setdefault("slurs", True)
+        t.setdefault("drugtalk", True)                  # its own box since 1.17.97
+        if "medical" in t:                              # part of Medical before 1.17.97
+            t.setdefault("forensic", bool(t["medical"]))
     return {k: v for k, v in t.items() if k in STANDARD}
 
 
@@ -327,7 +335,7 @@ def listen_kwargs(t, mywords=()):
         find_bully=bool(t.get("bully")), find_disrespect=bool(t.get("disrespect")),
         find_flirt=bool(t.get("flirt")), find_topics=[k for k in TOPICS if t.get(k)],
         more=[k for k in ("sleeping", "unmarried", "nudity", "implied", "immodest", "violence",
-                          "disturbing", "medical", "smoking", "drinking", "drugs", "gestures")
+                          "disturbing", "medical", "forensic", "smoking", "drinking", "drugs", "gestures")
               if t.get(k)],
         kiss=t.get("kiss", "keep"), kiss_ss=t.get("kiss_ss", "keep"), mine=own_phrases(mywords))
 
@@ -397,7 +405,7 @@ class FilterCard:
 
 SECTION_ICONS = {"Bad language": "mute", "Sex and nudity": "eye", "Romance and relationships": "heart",
                  "Violence": "warning", "Medical": "health", "Attitude": "smile",
-                 "Smoking, drinking and drugs": "cup", "Faith, holidays and magic": "star"}
+                 "Smoking and drinking": "cup", "Drugs": "block", "Faith, holidays and magic": "star"}
 # "Cut" on the buttons, as CleanView 1.18.103 (the owner: "keep" "passonate" "all kisses" "arent
 # the 2 redundant": "Passionate" didn't say it cuts only those). The levels saved are as before.
 KISS_SHORT = {"Keep": "Keep", "Cut passionate kisses": "Cut passionate", "Cut all kisses": "Cut all kisses"}

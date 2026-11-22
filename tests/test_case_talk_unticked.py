@@ -1,4 +1,5 @@
-"""CleanView 1.18.152 (Criminal Minds S1E20; the owner: "All of them", here "Yes, both"):
+"""CleanView 1.18.152 (Criminal Minds S1E20; the owner: "All of them", here "Yes, both"; Coroner and
+doctor talk its own box since 1.17.97):
 "unfaithful" and "infidelity" are sleeping around; with Medical off, a passage an AI cut as a sexual
 reference whose only sexual words are case talk ("That sounds like statutory rape. I'm not surprised.
 You talk to Hotch?") is offered unticked."""
@@ -41,7 +42,7 @@ def test_an_ai_cut_is_offered_unticked_with_medical_off():
 
 
 def test_left_as_it_was():
-    st, asr = review(["ref", "medical"], ai=True)                 # Medical ticked: case talk goes
+    st, asr = review(["ref", "forensic"], ai=True)                # Coroner and doctor talk ticked: it goes
     assert E.apply_case_talk(st, asr) == 0 and st["scenes"][0]["cut"]
     st, asr = review(["ref"], ai=True, by_you=True)               # her own choice
     assert E.apply_case_talk(st, asr) == 0 and st["scenes"][0]["cut"]

@@ -29,9 +29,12 @@ def test_the_box_sits_after_gore_and_follows_the_ages():
     # its own section, right after Violence (as CleanView 1.18.74's "Medical")
     heads = [h for h, _, _ in F.SECTIONS]
     assert heads.index("Medical") == heads.index("Violence") + 1
-    assert [k for k, _, _ in F.SECTIONS[heads.index("Medical")][2]] == ["medical"]
-    assert F.LABELS["medical"].startswith("Medical  (surgery, autopsies")
-    assert [F.PRESETS[p]["medical"] for p in ("young", "kids", "teens", "adults")] == [True, True, True, False]
+    # with Coroner and doctor talk beside it since 1.17.97 (as CleanView's)
+    assert [k for k, _, _ in F.SECTIONS[heads.index("Medical")][2]] == ["medical", "forensic"]
+    assert F.LABELS["medical"].startswith("Medical  (surgery, wounds")
+    assert F.LABELS["forensic"].startswith("Coroner and doctor talk")
+    for k in ("medical", "forensic"):
+        assert [F.PRESETS[p][k] for p in ("young", "kids", "teens", "adults")] == [True, True, True, False]
     assert F.PRESETS["adults"]["gore"]                     # Gore stays ticked for Adults
     assert "medical" in F.listen_kwargs(dict(F.PRESETS["kids"]))["more"]
     assert "medical" not in F.listen_kwargs(dict(F.PRESETS["adults"]))["more"]
@@ -148,9 +151,10 @@ def test_the_ai_and_claude_know_it():
     assert "drug use" in E.AI_TYPES["medical"] and "drug use" in cc.KIND_RULES["medical"]
 
 
-# Coroner, medical examiner, doctor and detective case talk is part of Medical (CleanView 1.18.72 made
-# it its own box; for books the owner chose "Part of Medical, no new box", 2026-11-12). With Medical
-# off it's left alone, and "sexual" in it isn't muted as a sexual word.
+# Coroner, medical examiner, doctor and detective case talk: its own box, Coroner and doctor talk, since
+# 1.17.97 (it was part of Medical: "Part of Medical, no new box", 2026-11-12; then for the same filters as
+# CleanView, 2026-11-21: "1,2,3,"). With it off it's left alone, and "sexual" in it isn't muted as a
+# sexual word.
 CASE = "Any signs of sexual assault?"
 
 
@@ -162,14 +166,14 @@ CASE = "Any signs of sexual assault?"
     "Ligature marks on her neck.", "Lividity says she was moved.", "Rigor mortis has set in.",
     "Defensive wounds on her hands.", "The post-mortem is tomorrow.", "GSW to the abdomen.",
     "Bringing in the sex criminals.", "Six sex crimes in two years."])
-def test_case_talk_is_medical(line):
-    assert R.MEDICAL(words(line))
+def test_case_talk_is_coroner_talk(line):
+    assert R.FORENSIC(words(line)) and not R.MEDICAL(words(line))
 
 
 @pytest.mark.parametrize("line", ["I ran a tox screen.", "He'll be fine.", "Time to go home.",
                                   "She's stable now.", "That was a big wound to my pride."])
 def test_everyday_talk_isnt(line):
-    assert not R.MEDICAL(words(line))
+    assert not R.MEDICAL(words(line)) and not R.FORENSIC(words(line))
 
 
 def test_sexual_in_case_talk_isnt_a_sexual_word():
@@ -180,8 +184,9 @@ def test_sexual_in_case_talk_isnt_a_sexual_word():
         assert not E.find_language(words(line), ["sexual"]) and not R._ref_hit(words(line))
     for line in ("They had sex.", "She looked sexy.", "a sexual joke", "The criminal had sex."):
         assert E.find_language(words(line), ["sexual"])
-    assert "case talk" in E.AI_TYPES["ref"] and "case talk" in E.AI_TYPES["medical"]
-    assert "case talk" in cc.KIND_RULES["ref"] and "case talk" in cc.KIND_RULES["medical"]
+    assert "case talk" in E.AI_TYPES["ref"] and "case talk" in E.AI_TYPES["forensic"]
+    assert "case talk" in cc.KIND_RULES["ref"] and "case talk" in cc.KIND_RULES["forensic"]
+    assert "separate choice" in E.AI_TYPES["medical"] and "separate choice" in cc.KIND_RULES["medical"]
 
 
 def test_case_talk_with_medical_off_and_on(tmp_path):
@@ -190,5 +195,7 @@ def test_case_talk_with_medical_off_and_on(tmp_path):
     book = R.Book(str(p))
     off = R.analyze(book, {"sexual": True, "refs": True, "medical": False})
     assert not off["cuts"] and not off["mutes"]                 # left alone
-    on = R.analyze(book, {"sexual": True, "refs": True, "medical": True})
-    assert [c["kind"] for c in on["cuts"]] == ["medical"] and not on["mutes"]
+    only_medical = R.analyze(book, {"sexual": True, "refs": True, "medical": True, "forensic": False})
+    assert not only_medical["cuts"] and not only_medical["mutes"]      # not Medical's any more
+    on = R.analyze(book, {"sexual": True, "refs": True, "forensic": True})
+    assert [c["kind"] for c in on["cuts"]] == ["forensic"] and not on["mutes"]

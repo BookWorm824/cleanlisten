@@ -145,6 +145,7 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("violence", "Violence to cut", "Violence"),
                 ("disturbing", "Disturbing violence to cut", "Disturbing"),
                 ("medical", "Medical scenes to cut", "Medical"),
+                ("forensic", "Coroner and doctor talk to cut", "Coroner talk"),      # (1.17.97)
                 ("nudity", "Nudity to cut", "Nudity"), ("implied", "Implied nudity to cut", "Implied"),
                 ("immodest", "Immodest clothing to cut", "Immodest"),
                 ("flirt", "Flirting to cut", "Flirting"), ("kiss", "Man & woman kissing to cut", "Kissing"),
@@ -160,7 +161,7 @@ REVIEW_KINDS = (("sex", "Explicit scenes to cut", "Explicit"),
                 ("added", "Added by you (or cut before)", "Added"))
 CAT_LABELS = {"strong": "swearing", "moderate": "swearing", "mild": "mild word", "deity": "God's name",
               "minced": "soft swear", "sexual": "sexual word", "orientation": "orientation", "slurs": "slur",
-              "rude": "rude word", "crude": "crude word", "mine": "your own word"}
+              "rude": "rude word", "crude": "crude word", "mine": "your own word", "drugtalk": "drug word"}
 
 
 def natural_key(p):
@@ -3652,6 +3653,7 @@ class App(tk.Tk):
                  "kiss": "KISSING", "kiss_ss": "SAME-SEX KISSING", "sleeping": "SLEEPING AROUND",
                  "unmarried": "UNMARRIED COUPLE", "graphic": "GRAPHIC VIOLENCE",
                  "violence": "VIOLENCE", "disturbing": "DISTURBING", "medical": "MEDICAL",
+                 "forensic": "CORONER TALK",
                  "nudity": "NUDITY",
                  "implied": "IMPLIED NUDITY", "immodest": "IMMODEST CLOTHING", "smoking": "SMOKING",
                  "drinking": "DRINKING", "drugs": "DRUGS", "gestures": "RUDE GESTURE",

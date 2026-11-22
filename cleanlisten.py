@@ -1024,9 +1024,10 @@ def gay_happy(words, i):
         words[i + 1:i + 2] == ["and"] and i + 2 < len(words) and words[i + 2] in GAY_HAPPY_WORDS)
 
 
-# Coroner, medical examiner, doctor and detective case talk is part of Medical (CleanView 1.18.72
-# made it a box, "Coroner and doctor talk"; for books the owner chose, 2026-11-12, "Part of Medical,
-# no new box"). With Medical off it is left alone: not muted as a sexual word either.
+# Coroner, medical examiner, doctor and detective case talk: its own box, "Coroner and doctor talk",
+# since 1.17.97, as CleanView's (it was part of Medical: the owner, 2026-11-12, "Part of Medical, no new
+# box"; then 2026-11-21, for the same filters as CleanView, "1,2,3,"). With it off, case talk is left
+# alone: not muted as a sexual word either.
 CASE_TALK_NEXT = {"assault", "assaults", "assaulted", "offender", "offenders", "offense", "offenses",
                   "offence", "offences", "crime", "crimes", "trafficking", "trafficker", "traffickers",
                   "abuse", "abused", "abuser", "abusers", "predator", "predators", "harassment",
@@ -1899,7 +1900,7 @@ FORENSIC_TERMS_RX = _terms_rx(FORENSIC_TERMS)
 CASE_TALK_RX = _terms_rx([r"sexual(?:ly)? assault(?:s|ed)?", r"(?:sex|sexual) offen(?:ders?|ses?|ces?)",
                           r"sex crimes?", r"sex criminals?", r"rape kits?", r"raped", r"rapes?", r"rapists?",
                           r"raping", r"sexually (?:abused|molested)", r"sex(?:ual)? abuse"] + FORENSIC_TERMS)
-CASE_TALK_UNTICKED = ("case talk (rape, sexual assault...) and Medical (coroner and doctor talk) isn't "
+CASE_TALK_UNTICKED = ("case talk (rape, sexual assault...) and Coroner and doctor talk isn't "
                       "ticked, so it's only cut if you tick it")
 
 
@@ -1915,11 +1916,11 @@ def case_talk_only(words):
 
 
 def apply_case_talk(st, asr):
-    """With Medical off, a passage an AI (or Claude) cut as a sexual reference that's only case talk
+    """With Coroner and doctor talk off, a passage an AI (or Claude) cut as a sexual reference that's only case talk
     starts unticked (not what you set yourself, or what was learned from your choices). Returns how
     many it unticked."""
     kinds = set((st.get("filters") or {}).get("kinds") or [])
-    if "medical" in kinds:
+    if "forensic" in kinds:          # Coroner and doctor talk ticked: case talk goes (1.17.97)
         return 0
     n = 0
     for sc in st.get("scenes", []):
@@ -2016,6 +2017,110 @@ def term_spans(words, rx):
     return out
 
 GROUPS["orientation"] = ["orientation"]
+
+# Drug talk and slang: its own box in a Drugs section, ticked for every age, just the word muted, as
+# CleanView 1.18.137's (the owner there: "start a new menu area where you can turn on or off drugs. put
+# all drug names and reference there", "do a search on common drug reference and slang", "group 1
+# only"; here, 2026-11-21: "1,2,3,"). Slang that only means drugs, not the drugs' own names (police and
+# doctor talk) nor everyday words (pot, joint, rock, snow, high). Matched on the normalised words, so
+# "k-hole" is "khole" and "jonesin'" is "jonesin". The guards are CleanView's: drug_talk_innocent.
+DRUG_SLANG = [
+    r"reefers?", r"ganja", r"spliffs?", r"bong (?:hits?|rips?)", r"kush", r"stoners?",
+    r"pot ?heads?", r"tok(?:e|es|ed|ing)", r"high as a kite", r"wake and bake",
+    r"nose candy", r"booger sugar", r"crack ?heads?", r"coke ?heads?", r"freebas(?:e|ed|es|ing)",
+    r"lines? of (?:coke|cocaine|blow)", r"junkies?", r"dope ?fiends?", r"oxys?", r"oxies",
+    r"oxycontin", r"oxycotton", r"percs", r"hillbilly heroin", r"black tar heroin", r"sizzurp",
+    r"purple drank", r"speedball(?:s|ing)?", r"shoot(?:s|ing)? up", r"track marks",
+    r"crystal meth", r"meth ?heads?", r"tweakers?", r"(?:xanax|xan|z) ?-?bars", r"xannies",
+    r"zannies", r"ludes", r"quaaludes?", r"ruffies", r"rohypnol", r"lsd", r"shrooms",
+    r"magic mushrooms", r"angel dust", r"k-?holes?", r"trip(?:ping)? balls",
+    r"(?:get|gets|getting|got|gotten) high", r"high on (?:drugs|coke|cocaine|crack|meth|"
+    r"heroin|pot|weed|pills|acid|ecstasy|percocet|oxy|smack|dope|something)",
+    r"strung out", r"jones(?:ing|in'?)"]
+# the owner, in CleanView's Play chat: "perkaset", "roofie", "roofies" (always: no medical use)
+DRUG_TALK_RX = _terms_rx([r"stoned", r"percocets?", r"perkasets?", r"roofies?", r"roofied", r"roofy"]
+                         + DRUG_SLANG)
+GROUPS["drugtalk"] = ["drugtalk"]
+# the words as the Drugs section lists them
+DRUG_TALK_SHOWN = [
+    "stoned", "reefer", "ganja", "spliff", "bong hit", "kush", "stoner", "pothead", "toke",
+    "high as a kite", "wake and bake", "nose candy", "booger sugar", "crackhead", "cokehead",
+    "freebase", "lines of coke", "junkie", "dope fiend", "oxy", "OxyContin and Percocet (only when misused)",
+    "percs", "hillbilly heroin", "black tar heroin", "sizzurp", "purple drank", "speedball",
+    "shooting up", "track marks", "crystal meth", "meth head", "tweaker", "Xanax bars",
+    "xannies", "ludes", "roofies", "Rohypnol", "LSD", "shrooms", "magic mushrooms",
+    "angel dust", "k-hole", "tripping balls", "getting high", "high on drugs", "strung out", "jonesing"]
+# "stoned" high on drugs, not a stoning ("stoned to death", "they stoned him", "shall surely be stoned")
+# or pitted fruit ("stoned olives")
+STONED_NEXT = {"to", "by", "with", "him", "her", "them", "us", "the", "a", "an", "his", "their",
+               "our", "its", "prophets", "prophet", "stephen", "paul", "until", "till", "olives",
+               "cherries", "dates", "plums", "prunes", "apricots", "fruit"}
+STONED_BEFORE2 = {"shall", "surely", "must"}
+# Percocet and OxyContin only when misused (the owner there: "only misusing")
+PERCOCET_MISUSE = {"pop", "pops", "popped", "popping", "popper", "poppers", "buy", "buys",
+                   "buying", "bought", "sell", "sells", "selling", "sold", "deal", "deals",
+                   "dealing", "dealt", "dealer", "dealers", "score", "scored", "scoring", "high",
+                   "hooked", "addicted", "addict", "addicts", "addiction", "snort", "snorted",
+                   "snorting", "crush", "crushed", "crushing", "stash", "steal", "stole",
+                   "stolen", "stealing", "street", "junkie", "junkies", "fix", "abuse", "abused",
+                   "abusing", "overdose", "overdosed", "odd", "habit", "withdrawal", "dope",
+                   "doped", "strung", "candy", "party", "recreational", "wasted", "fiend"}
+PERCOCET_REACH = 10
+JUNKIE_NOT = {"adrenaline", "news", "sugar", "political", "politics", "coffee", "caffeine",
+              "sports", "info", "information", "data", "science", "history", "thrill", "gadget",
+              "tech", "fitness", "gym", "health", "attention", "exercise", "movie", "tv",
+              "shopping", "chocolate", "crime", "trivia", "media", "power", "speed", "work"}
+# "got high marks", "get high ground", "the shooting up the street" (a gun), "strung out along"
+HIGH_NOT_NEXT = {"marks", "mark", "scores", "score", "grades", "hopes", "praise", "blood",
+                 "ground", "up", "enough", "above", "off", "fever", "fevers", "ratings",
+                 "points", "school", "pressure", "temperature", "temperatures"}
+SHOOT_UP_OK_NEXT = {"heroin", "drugs", "dope", "smack", "again", "in", "with", "together"}
+SHOOT_UP_THINGS = {"flames", "flame", "fire", "fires", "smoke", "sparks", "spark", "steam",
+                   "water", "geyser", "fountain", "lava", "dust", "rocket", "rockets", "fireworks",
+                   "prices", "price", "costs", "cost", "rates", "rate", "numbers", "sales",
+                   "stocks", "stock", "shares", "profits", "ratings", "polls", "demand", "crime",
+                   "rent", "taxes", "temperature", "temperatures", "fever", "pressure", "sugar",
+                   "levels", "level", "heart", "pulse", "pain", "plants", "plant", "weeds",
+                   "grass", "trees", "tree", "sprouts", "hand", "hands", "arm", "arms",
+                   "eyebrows", "eyebrow"}
+STRUNG_NOT_NEXT = {"along", "across", "over", "between", "behind", "like", "around", "in",
+                   "through", "from"}
+JONES_FOR = {"you", "me", "him", "her", "them", "us"}
+
+
+def drug_talk_innocent(words, i, j):
+    """Is the drug word at words[i:j] another meaning where it stands: a stoning, a doctor's Percocet,
+    an adrenaline junkie, the Hindu Kush, flames shooting up, got high marks, strung out along the
+    road, jonesing for you (CleanView's drugs_innocent)?"""
+    found = " ".join(words[i:j])
+    prev = words[i - 1] if i else ""
+    nxt = words[j] if j < len(words) else ""
+    if found == "stoned":
+        return nxt in STONED_NEXT or (i >= 2 and prev == "be" and words[i - 2] in STONED_BEFORE2)
+    if found.startswith(("percocet", "perkaset", "oxycontin")):
+        near = words[max(0, i - PERCOCET_REACH):i] + words[j:j + PERCOCET_REACH]
+        return not PERCOCET_MISUSE.intersection(near)
+    if found.startswith("junkie"):
+        return prev in JUNKIE_NOT
+    if found == "kush":
+        return prev == "hindu"
+    if found.startswith("shoot"):
+        if nxt and nxt not in SHOOT_UP_OK_NEXT:
+            return True
+        return bool(SHOOT_UP_THINGS.intersection(w[:-2] if w.endswith("'s") else w
+                                                  for w in words[max(0, i - 4):i]))
+    if found.endswith(" high"):
+        return nxt in HIGH_NOT_NEXT
+    if found == "strung out":
+        return nxt in STRUNG_NOT_NEXT
+    if found.startswith("jones"):
+        return nxt == "for" and (words[j + 1] if j + 1 < len(words) else "") in JONES_FOR
+    return False
+
+
+def drug_talk_spans(words):
+    """(i, j) spans of drug talk and slang to mute."""
+    return [(i, j) for i, j in term_spans(words, DRUG_TALK_RX) if not drug_talk_innocent(words, i, j)]
 # rude words: CleanListen's own box too, but not starred out like swears (so not in ALL_CATS,
 # which CleanRead uses for that)
 KID_CATS = {"rude": _c(RUDE)}
@@ -2190,6 +2295,7 @@ def _find_language(words, cats, breaks=()):
     fruit = fruit_slang(words, "sexual") if "sexual" in cats else set()
     crude_fruit = fruit_slang(words, "crude") if "crude" in cats else set()
     terms = dict(term_spans(words, SEXUAL_TERMS_RX)) if "sexual" in cats else {}
+    drug_talk = dict(drug_talk_spans(words)) if "drugtalk" in cats else {}     # (1.17.97)
     while i < n:
         found = None
         for cat in cats:
@@ -2247,6 +2353,10 @@ def _find_language(words, cats, breaks=()):
         if found:
             hits.append((i, i + len(found[0]), found[1]))
             i += len(found[0])
+            continue
+        if i in drug_talk:                                             # "stoned", "getting high"
+            hits.append((i, drug_talk[i], "drugtalk"))
+            i = drug_talk[i]
             continue
         if i in terms and not (words[i] in ("cuck", "cucks") and hen_sound(words, i)):   # a hen's "cuck-cuck"
             hits.append((i, terms[i], "sexual"))
@@ -3415,13 +3525,16 @@ AI_TYPES = {
     "medical": "a medical scene described in graphic detail: surgery or an operation, an autopsy or "
                "a body on a morgue table, a doctor, nurse or medic stitching or treating a bloody "
                "wound, or a needle going in (a shot, an injection, a blood draw, an IV being put "
-               "in, the dentist's needle, insulin); or a coroner's, medical examiner's, doctor's or "
-               "detective's case talk about a body or a victim: wounds and injuries, blood, organs, "
-               "cause or time of death, an autopsy or what was done to the body, or rape, sexual "
-               "assault, sex offenders or sexual evidence (a diagnosis, a doctor's visit, being in "
+               "in, the dentist's needle, insulin) (a diagnosis, a doctor's visit, being in "
                "hospital, or only mentioning pills, an IV bag or a pharmacy is NOT this; an attack "
                "or a crime scene is NOT this even with medics there; injecting illegal drugs is "
-               "drug use, NOT this)",
+               "drug use, NOT this; a coroner's or detective's case talk is a separate choice, NOT "
+               "this)",
+    # its own box since 1.17.97 (CleanView's "Coroner and doctor talk")
+    "forensic": "a coroner's, medical examiner's, doctor's or detective's case talk about a body or "
+                "a victim: wounds and injuries, blood, organs, cause or time of death, an autopsy or "
+                "what was done to the body, or rape, sexual assault, sex offenders or sexual evidence "
+                "(simply saying someone died, was killed or was found dead is NOT this)",
     "violence": "violence: a fight, a shooting, a stabbing, a beating or an attack, or a killing "
                 "heard or described by what follows (a gunshot, then someone or an animal is dead) "
                 "(saying someone died of illness or old age, or a weapon simply mentioned, is NOT "
@@ -3663,6 +3776,9 @@ LANGUAGE_DEFS = {
                    "('gay' meaning cheerful or bright is NOT this)",
     "rude": "a rude word kids copy such as stupid, dumb, idiot, moron, loser, jerk or butt, or "
             "'shut up' / 'you suck' said to someone",
+    "drugtalk": "drug talk or slang such as stoned, junkie, crackhead, shrooms, getting high, high on "
+                "drugs, strung out (not the drugs' own names said by police or doctors, nor 'stoned to "
+                "death', 'an adrenaline junkie', 'got high marks')",
     "crude": "drunk, drunken, drunkenly, drunkenness or drunkard (being drunk; 'he had drunk his tea' "
              "is NOT this), 'balls' meaning nerve ('has the balls to', 'grow some stones', ballsy), "
              "'kicked him in the nuts', or turd",
@@ -3758,17 +3874,17 @@ def _read():
 
 # CleanView's sentence filters for books (1.11.0): each is its own box, with CleanRead's word lists
 MORE_KINDS = ("sleeping", "unmarried", "nudity", "implied", "immodest", "violence", "disturbing",
-              "medical", "smoking", "drinking", "drugs", "gestures")
+              "medical", "forensic", "smoking", "drinking", "drugs", "gestures")
 MORE_LABELS = {"sleeping": "sleeping around", "unmarried": "unmarried couples living together",
                "nudity": "nudity", "implied": "implied nudity", "immodest": "immodest clothing",
                "violence": "violence", "disturbing": "disturbing violence", "smoking": "smoking",
                "drinking": "drinking", "drugs": "drug use", "gestures": "rude gestures",
-               "medical": "medical scene",
+               "medical": "medical scene", "forensic": "coroner and doctor talk",
                "graphic": "graphic violence", "kiss_ss": "same-sex kissing"}
 _MATCHERS = {"sleeping": "SLEEPING", "unmarried": "UNMARRIED", "nudity": "NUDITY",
              "implied": "IMPLIED", "immodest": "IMMODEST", "violence": "VIOLENCE",
              "disturbing": "DISTURBING", "smoking": "SMOKING", "drinking": "DRINKING",
-             "drugs": "DRUGS", "gestures": "GESTURES", "medical": "MEDICAL"}
+             "drugs": "DRUGS", "gestures": "GESTURES", "medical": "MEDICAL", "forensic": "FORENSIC"}
 
 
 def sentence_hit(kind, words):
@@ -4109,6 +4225,7 @@ AI_GATES = {"violence": lambda near: any(violence_sign(w) for w in near),
             "rebellion": _disrespect_ok,        # CleanRead's content check calls it rebellion
             "bully": lambda near: any(bully_sign(w) for w in near),
             "medical": lambda near: any(medical_sign(w) for w in near),
+            "forensic": lambda near: any(sentence_hit("forensic", w) for w in near),
             "relationship": lambda near: any(romance_sign(w) for w in near)}
 
 
@@ -6335,6 +6452,7 @@ WORD_KIND_LABELS = [("strong", "Strong swearing (the f-word and the like)"), ("m
                     ("mild", "Mild swearing"), ("deity", "God's name used as a swear"),
                     ("minced", "Minced oaths (gosh, darn, heck...)"), ("sexual", "Sexual words"),
                     ("crude", "Crude words"), ("rude", "Rude words kids copy (stupid, shut up...)"),
+                    ("drugtalk", "Drug talk and slang"),
                     ("orientation", "Same-sex words"), ("mine", "Your own words"),
                     ("ai", "Other words the AI found")]
 
