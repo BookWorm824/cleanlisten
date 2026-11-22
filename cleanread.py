@@ -1031,7 +1031,9 @@ def romance_spans(words, near=None):
 _CASUAL = Matcher(
     words=[r"adulter(y|ous|er|ers|ess)", r"infidelit(y|ies)", r"adulterers?"],
     phrases=["one night stand|stands",
-             "cheated|cheating|cheats|cheat on " + P(["her", "him", "his", "my", "your", "their"]),
+             "cheated|cheating|cheats|cheat on " + P(["her", "him", "his", "my", "your", "their"]) +
+             # not "cheated on his taxes", "cheating on her test" (CleanView 1.18.161's test)
+             " !taxes|tax|test|tests|exam|exams|quiz|quizzes|diet|homework|cards|game|games|score|scores",
              "having|had|has|have an affair", "an|the|their|his|her|secret|torrid affair with",
              # a lone "the affair" / "an affair" too, as CleanView 1.18.51 (Castle: "How long was the
              # affair?"); not "quite an affair", "what an affair", "the affair of the necklace",
@@ -1065,7 +1067,7 @@ COURTSHIP_WORDS = {"an", "the", "their", "his", "her", "my", "your", "love", "af
 
 def old_sleeping_hit(words, old_style):
     """Sleeping around; in an older book not for courtship words alone."""
-    sp = SLEEPING(words)
+    sp = SLEEPING(words, old_style=old_style)
     if old_style:
         sp = [(i, j) for i, j in sp if not set(words[i:j]) <= COURTSHIP_WORDS]
     return bool(sp)
@@ -1129,12 +1131,19 @@ def undressed_for_bed(words, around):
     return bool(BEDTIME & (set(words) | set(around))) and not BED_COMPANY & set(words)
 
 
-def SLEEPING(words, near=None):
+def SLEEPING(words, near=None, old_style=False):
     """Sleeping around: casual sex, affairs, cheating (and CleanView 1.18.127's researched words:
-    womanizer, philanderer, wife-swapping, a booty call...). Not "hooked up with ATF" (teamed up)."""
+    womanizer, philanderer, wife-swapping, a booty call...). Not "hooked up with ATF" (teamed up).
+    old_style: an older book, without CleanView 1.18.161's someone's affair and "wouldn't sleep with
+    her" (cleanlisten.MODERN_CASUAL_RX)."""
     sp = [(i, j) for i, j in _CASUAL(words)
           if not (words[j - 2:j] == ["up", "with"] and E.hookup_teamed(words, j))]
     sp += E.term_spans(words, E.CASUAL_TERMS_RX)
+    if not old_style:
+        sp += E.term_spans(words, E.MODERN_CASUAL_RX)
+    kin = E.term_spans(words, E.CHEAT_ON_KIN_RX)        # "cheat on my sister" (CleanView 1.18.161)
+    if kin:
+        return sp + kin
     return sp if sp and not NOT_A_COUPLE & set(words) else []
 
 

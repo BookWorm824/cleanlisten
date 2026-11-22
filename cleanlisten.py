@@ -1891,6 +1891,26 @@ def _terms_rx(pats):
 
 SEXUAL_TERMS_RX = _terms_rx(SEXUAL_TERMS)
 CASUAL_TERMS_RX = _terms_rx(CASUAL_TERMS)
+# Castle S2E10 (CleanView 1.18.161; the owner: "Yes, both" there, the words going to every app): "her
+# husband's affair", "Jeremy's affair", "her six-month affair", "because he wouldn't sleep with me", "I
+# didn't sleep with her". Someone's affair (not "it's/that's/no one's", nor "is/was the boy's affair":
+# his business), one that lasted a while, refusing to sleep with someone. Not in an older book, where
+# "the Rajah's affair", "the boy's affair" are someone's business and "Jerry refused to sleep with him" is
+# two boys sharing a bed (The Secret Garden, Little Women, Rainbow Valley: cleanread.old_sleeping_hit).
+# Hyphens are gone in the words ("sixmonth", "longterm"). Not "cheating on Helen" (a name): the words
+# here have no capital letters to tell it from "cheating on Monday"; "cheat on my sister" was found already.
+_SPAN = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|few|"
+         r"several|many|\d+)(?:months?|years?|weeks?|days?|nights?)(?:long)?")
+MODERN_CASUAL_RX = _terms_rx([
+    r"(?:the|an?|his|her|their|secret|[a-z]+'s) (?:" + _SPAN + r"|longterm|ongoing|office) affair(?! of)",
+    r"(?<!is )(?<!was )(?<!be )(?<!not )(?<!of )(?!(?:it|that|what|let|there|here|who|he|she|one)'s )"
+    r"[a-z]+'s affair(?! of)",
+    r"(?:wouldn't|won't|didn't|doesn't|refused to|refuses to|never would|would never|will never) sleep with "
+    r"(?:me|him|her|you|them)"])
+# "the freedom to cheat on my sister" (Castle S2E10, CleanView 1.18.161): a sister, a friend... cheated on
+# counts even though cleanread.SLEEPING leaves family words alone otherwise (NOT_A_COUPLE)
+CHEAT_ON_KIN_RX = _terms_rx([r"cheat(?:s|ed|ing)? on (?:his|her|my|your|their|our) (?:sisters?|brothers?|"
+                             r"daughters?|sons?|mom|mum|mother|dad|father|best friends?|friends?)"])
 FORENSIC_TERMS_RX = _terms_rx(FORENSIC_TERMS)
 # Case talk an AI called a sexual reference (CleanView 1.18.152, Criminal Minds S1E20, coroner talk off:
 # "That sounds like statutory rape. I'm not surprised. You talk to Hotch?" was muted whole; the owner:

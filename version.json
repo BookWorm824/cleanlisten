@@ -1,5 +1,5 @@
 {
- "version": "1.17.97",
+ "version": "1.17.98",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -61,7 +61,7 @@
   "readaloud_voices.npz"
  ],
  "sha256": {
-  "cleanlisten.py": "f90c71cd1591548d770603a23ce1b1d44c800c0ed5edc08cebd0dd64d33ab4ae",
+  "cleanlisten.py": "912c501c3f56028a0910fe1526ca27c66065e46871ee792f481ced545fa33e73",
   "CleanListen.pyw": "49290d5c1a32da7579546b1eb892ebebe98ca2cda2e6dd6f8a6f4a007ecfc3c3",
   "cleanlisten_claude.py": "07c3030915a8e09a79b0dbdb51c448f9bc6fdf9b68f9a78ddfa9ce335c544715",
   "shared_learned.json": "9eaac90b12aa6a9da8741d0335c6235ecfe29751e224b194eb6f351eaaa565d8",
@@ -84,7 +84,7 @@
   "ollama_care.py": "dfb2a7e47f7cf56c4ab19cbce1e6d52eda9e8e3d9768fd46ca5e2fd8f0a66ccc",
   "bookqueue.py": "86067dc7538d40ba817da844f0c8f617ea7a8a2f6306b027977db4919793f881",
   "shortcuts.py": "8b6709fa744169fd2493a3862ff20b18d08d4d4f32057f39db81119250fa40a3",
-  "cleanread.py": "b32fcaeb68526e51ce0d7053575fa3c2dcd995a9df43054c6190d169318de905",
+  "cleanread.py": "347591e024967ab53c0404d17f6ea8b221183e7ece8dab809aff94aa71f3bb28",
   "pdfbook.py": "487bb95511c6d858e1eb5271c3bf7439d1a0a4e3af15dec115dac080863bc563",
   "CleanRead.pyw": "074679803b3316abf6280bcad1320aebbf49c30340d7783edc1fbd4fc69cfa13",
   "cleanread.ico": "07262f5f296d2542d3c1d5d900274f31a1173a72f5824cbc222988d579e32c63",
