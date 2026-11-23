@@ -47,3 +47,13 @@ def test_a_tryst_in_an_older_book_is_a_meeting(line):
 
 def test_two_times_three():
     assert not R.SLEEPING(w("Two times three is six."))
+
+
+@pytest.mark.parametrize("line, found", [
+    ("So now all we have is a cheating husband.", True), ("Your cheating husband's STD.", True),
+    ("Her cheating fiancée left town.", True), ("My cheating ex-boyfriend.", False),
+    ("He was caught cheating at cards.", False), ("Cheating death again.", False),
+])
+def test_a_cheating_husband(line, found):
+    # CleanView 1.18.166: "cheating" before a husband, wife, partner... is sleeping around
+    assert bool(R.SLEEPING(w(line))) == found, line

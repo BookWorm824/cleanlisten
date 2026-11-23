@@ -1898,6 +1898,10 @@ CASUAL_TERMS = [
     r"unfaithful(?:ness)?(?! servants?\b)", r"infidelit(?:y|ies)",
     # two-timing (CleanView 1.18.162): the hyphen is gone in the words ("twotiming"); not "two times three"
     r"twotim(?:e|es|ed|ing|er|ers)", r"two tim(?:ing|ed|er|ers)",
+    # "a cheating husband", "your cheating husband's STD" (CleanView 1.18.166): only "cheating"; not "cheating
+    # at cards", "cheating death". ("fiancée" is "fiance" in the words, "fiancé" is "fianc")
+    r"cheating(?= (?:husbands?|wife|wives|boyfriends?|girlfriends?|spouses?|partners?|fianc(?:e|es)?)"
+    r"(?:'s)?(?![a-z0-9']))",
 ]
 
 # graphic case talk (with rape and the rest, 1.18.125)
