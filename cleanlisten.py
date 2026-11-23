@@ -1867,7 +1867,17 @@ SEXUAL_TERMS = [
     # my nose?"; "bang" alone, and "banged her pots", "bang their noses together" stay
     r"bang(?:s|ed|ing)? (?:my|his|your|her|their|our) (?:daughters?|wife|wives|sisters?|mom|mum|mother|"
     r"girlfriends?|boyfriends?|husbands?|secretar(?:y|ies)|assistants?)",
+    # handcuffs as innuendo (CleanView 1.18.163; the owner: "add handcuffs to the list when used as
+    # inuendo"): furry cuffs, "cuff me to the bed", "handcuffs for the bedroom" (and "kinky" near them:
+    # KINKY_CUFFS in _find_language). Not police cuffing someone, nor a patient cuffed to a bed.
+    r"(?:furry|fuzzy|fluffy|novelty|leopard ?print|leopardprint|feathered) (?:hand)?cuffs",
+    r"(?:pink|velvet|satin|silk) handcuffs",       # (not "her silk cuffs were frayed": a shirt's)
+    r"(?:hand)?cuff(?:s|ed|ing)? (?:me|you) to (?:the|my|your) bed(?:post|posts|frame)?",
+    r"(?:hand)?cuffs (?:in|for) (?:the|my|your) bedroom",
 ]
+# "kinky", "naughty", "frisky" within 6 words of handcuffs, in the same sentence: the cuffs word is muted
+KINKY_WORDS = {"kinky", "naughty", "frisky"}
+CUFF_WORDS = {"cuff", "cuffs", "cuffed", "handcuff", "handcuffs", "handcuffed"}
 # "I would've done her", "I would maybe do her", "but I'd do her" (CleanView 1.18.162): only at the end of
 # a sentence (_find_language), so not "I'd do her hair", "would have done him good", "done her in"
 DO_HER_RX = None        # filled in below (needs _terms_rx)
@@ -2336,6 +2346,12 @@ def _find_language(words, cats, breaks=()):
     terms = dict(term_spans(words, SEXUAL_TERMS_RX)) if "sexual" in cats else {}
     if "sexual" in cats:        # "I would've done her": only at the end of a sentence (CleanView 1.18.162)
         terms.update({i: j for i, j in term_spans(words, DO_HER_RX) if j == n or j in breaks})
+        for k, w in enumerate(words):     # "something kinky with the handcuffs" (CleanView 1.18.163)
+            if w in CUFF_WORDS and k not in terms:
+                near = range(max(0, k - 6), min(n, k + 7))
+                if any(words[x] in KINKY_WORDS and not any(min(x, k) < b <= max(x, k) for b in breaks)
+                       for x in near):
+                    terms[k] = k + 1
     drug_talk = dict(drug_talk_spans(words)) if "drugtalk" in cats else {}     # (1.17.97)
     while i < n:
         found = None
