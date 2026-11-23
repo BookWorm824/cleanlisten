@@ -226,7 +226,7 @@ def test_slurs_have_their_own_box():
 # --- rude words kids copy: only when that box is ticked --------------------------------
 @pytest.mark.parametrize("text, found", [
     ("You stupid jerk, shut up!", ["stupid", "jerk", "shut up"]),
-    ("That sucks.", ["that sucks"]),
+    ("You sucker!", ["you sucker"]),          # ("that sucks" is a mild word since CleanView 1.18.163)
     ("What a dummy.", ["dummy"]),
 ])
 def test_rude_words(text, found):
@@ -614,11 +614,13 @@ def test_dumdum_bullets_left_alone():
 
 @pytest.mark.parametrize("text, phrase", [
     ("That really sucks", "sucks"), ("Life sucks", "sucks"), ("He sucks at math", "sucks"),
-    ("That sucked", "sucked"), ("What a sucky day", "sucky"), ("You sucker!", "you sucker"),
+    ("That sucked", "sucked"), ("What a sucky day", "sucky"),
     ("This sucks big time", "this sucks"), ("Man, that sucks.", "that sucks"),
 ])
-def test_suck_meaning_bad_is_rude(text, phrase):
-    assert hits(text, ["rude"]) == [(phrase, "rude")]
+def test_suck_meaning_bad_is_mild(text, phrase):
+    # a mild word, muted at every age (CleanView 1.18.163; the owner: "Move to Mild words")
+    assert hits(text, ["mild"]) == [(phrase, "mild")]
+    assert hits(text, ["rude"]) == []
 
 
 @pytest.mark.parametrize("text", [
@@ -823,3 +825,11 @@ def test_the_same_sex_sentence_check_and_gay_meaning_happy(text, same_sex):
 def test_fruit_innuendo_said_whole_is_a_sexual_phrase(text):
     # CleanView 1.18.127's researched phrases: the whole innuendo is muted (a sexual reference in CleanRead)
     assert [c for _, c in hits(text)] == ["sexual"]
+
+
+def test_you_sucker_stays_rude():
+    # (CleanView 1.18.163: "sucks" meaning bad went to the mild words, "you sucker" stayed)
+    assert hits("You sucker!", ["rude"]) == [("you sucker", "rude")]
+    assert hits("You sucker!", ["mild"]) == []
+    for text in ("Suck it up.", "The vacuum sucks up dirt.", "He was sucking his thumb.", "a sucker punch"):
+        assert hits(text, ["mild", "rude"]) == [], text

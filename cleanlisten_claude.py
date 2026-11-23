@@ -235,9 +235,10 @@ CAT_RULES = {
     "slurs": "Slurs: hateful names for groups of people - racial and ethnic slurs, 'retarded' "
              "(even said as a description), anti-gay slurs - always mute.",
     "mild": "Mild words: damn, hell used as a curse, crap, bloody used as a curse, 'screw you' / "
-            "'screw it', and 'bull' meaning bullshit ('that's bull', 'cut the bull'). 'Hell' as "
-            "the place in religious talk, 'bloody' meaning covered in blood, screwing something "
-            "in, or a real bull, are fine.",
+            "'screw it', 'bull' meaning bullshit ('that's bull', 'cut the bull'), and 'sucks' meaning "
+            "bad ('that sucks', 'life sucks', 'you suck', sucky). 'Hell' as the place in religious "
+            "talk, 'bloody' meaning covered in blood, screwing something in, a real bull, or sucking "
+            "something ('suck it up', a thumb, a straw), are fine.",
     "deity": "God's name as a swear: 'Oh my God', 'Jesus Christ', 'good Lord', 'God knows (what)', "
              "'God, I hope not' as exclamations. "
              "'Thank God' is FINE (the family keeps it), as are prayers and sincere talk about God.",
@@ -245,7 +246,7 @@ CAT_RULES = {
               "good grief, for Pete's sake, holy cow, holy moly, son of a gun, 'you don't know "
               "squat'.",
     "rude": "Rude words kids copy: stupid, dumb, idiot, moron, loser, jerk, fool, butt, and 'shut "
-            "up' / 'you suck' / 'this sucks' - mute the word or phrase. The same words in an "
+            "up', 'you sucker' - mute the word or phrase. The same words in an "
             "everyday sense are fine ('he jerked the door open', 'shut up in the attic', "
             "'cigarette butts', 'deaf and dumb').",
     "crude": "Drunk words (with crude humor): drunk, drunks, drunken, drunkenly, drunkenness, "

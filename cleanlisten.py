@@ -440,7 +440,7 @@ MILD = [r"damn", r"damned", r"damnit", r"damns", r"dammit", r"goddamn.*", r"godd
         r"hell", r"hellhole", r"crap", r"crappy", r"craps", r"craphole", r"bullcrap", r"crapper",
         r"sod", r"sodding", r"bloody", r"hella",
         r"crap(pier|piest|ped|ping|pers|holes|loads?|tastic|ola)", r"day+um+n?",   # "dayum"
-        r"verdammt"]
+        r"verdammt", r"sucky", r"suckage", r"sucktastic"]       # (sucky: CleanView 1.18.163, SUCK_PHRASES)
 # ("turds" is with crude humor; "hussy", "floozy", "trollop", "strumpet" with the sexual words since
 # CleanView 1.18.150)
 MINCED = [r"frigg?in[g']?", r"freakin[g']?", r"frickin[g']?", r"frick(ed|s)?", r"jeeze?", r"geeze?",
@@ -1354,17 +1354,20 @@ RUDE = [r"stupid(er|est)?", r"stupidity", r"dumb(er|est)?", r"dumbo", r"idiots?"
         r"wuss(es)?", r"wussy", r"sissy", r"sissies", r"crybab(y|ies)", r"scaredy(cats?)?",
         r"fatsos?", r"putz(es)?", r"schmucks?", r"ignoramus(es)?", r"brats?", r"dumbdumbs?",
         r"dumdums?", r"fatheads?",   # "dum-dum" is joined to "dumdum"
-        r"sucky", r"suckage", r"sucktastic",
         r"skeevy"]       # creepy (from Swearing, CleanView 1.18.150)
 RUDE_PHRASES = [("shut", "up"), ("shut", "your", "mouth"), ("shut", "your", "trap"),
-                ("shut", "your", "face"), ("shut", "it"), ("you", "suck"), ("it", "sucks"),
-                ("this", "sucks"), ("that", "sucks"), ("shut", "your", "pie", "hole"),
+                ("shut", "your", "face"), ("shut", "it"), ("shut", "your", "pie", "hole"),
                 ("shut", "your", "piehole"), ("shut", "your", "cake", "hole"),
                 ("shut", "your", "cakehole"), ("shut", "your", "yap"),
                 ("shut", "your", "big", "mouth"), ("shut", "your", "big", "fat", "mouth"),
                 ("buzz", "off"), ("i", "hate", "you"), ("talk", "to", "the", "hand"),
-                ("eat", "my", "shorts"), ("suck", "it"), ("sucks", "to", "be", "you"),
-                ("you", "sucker"), ("you", "suckers")]
+                ("eat", "my", "shorts"), ("you", "sucker"), ("you", "suckers")]
+# "sucks" meaning "is bad" is a mild word, muted at every age (CleanView 1.18.163; the owner: "sucks - its
+# not picking this word out", "Move to Mild words"): it was a rude word kids copy, off for Teens and
+# Adults. "You sucker" stays a rude word; sucking something is left alone (SUCK_NOT_NEXT, suck_food).
+SUCK_PHRASES = [("you", "suck"), ("it", "sucks"), ("this", "sucks"), ("that", "sucks"), ("suck", "it"),
+                ("sucks", "to", "be", "you")]
+# (sucky, suckage, sucktastic are in MILD)
 # (not "bug off": "get that bug off me")
 NOT_RUDE_NEXT = {"down", "off", "in", "into", "on", "onto", "up", "out", "together", "tight",
                  "tightly", "shut", "back", "open", "closed", "loose", "tighter", "away",
@@ -1393,8 +1396,9 @@ SHUT_UP_SAFE_NEXT = {"in", "inside", "shop", "house", "the", "his", "her", "my",
                      "with", "within", "together", "tight", "tightly", "alone", "for", "here",
                      "there", "like"}
 PHRASES["rude"] = RUDE_PHRASES
-# "Suck" meaning "is bad" ("life sucks", "he sucks at math", "that sucked"), with the rude words
-# (the owner, 2026-10-29). Not sucking something ("suck it up", "sucking his thumb", "the vacuum
+PHRASES["mild"] = PHRASES["mild"] + SUCK_PHRASES          # (CleanView 1.18.163)
+# "Suck" meaning "is bad" ("life sucks", "he sucks at math", "that sucked"), with the mild words since
+# CleanView 1.18.163 (with the rude words before: the owner, 2026-10-29). Not sucking something ("suck it up", "sucking his thumb", "the vacuum
 # sucks up dirt"). ("Sucking" is left out: "the baby keeps sucking".) Same as CleanView's
 # cvcore.suck_swear.
 SUCK_WORDS = {"suck", "sucks", "sucked"}
@@ -2345,7 +2349,7 @@ def _find_language(words, cats, breaks=()):
                         continue  # "the meanest screw that ever lived" (a prison guard)
                     if ph[0] in SCREW_FORMS[1:] and ph[1] in SCREW_WHO and nxt in SCREWED_WHO_SAFE_NEXT:
                         continue  # "he screwed him up good", "screws them in tight"
-                    if cat == "rude" and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
+                    if (cat == "rude" or ph in SUCK_PHRASES) and (ph[-1] == "it" and nxt in NOT_RUDE_NEXT or
                                           ph == ("shut", "up") and (nxt in SHUT_UP_SAFE_NEXT or
                                                                     shut_up_closed(words[i - 1] if i else "")) or
                                           ph[-1] in SUCK_WORDS and nxt in SUCK_NOT_NEXT or
@@ -2431,8 +2435,8 @@ def _find_language(words, cats, breaks=()):
             hits.append((i, i + 1, "minced"))
             i += 1
             continue
-        if "rude" in cats and suck_swear(words, i):                       # "life sucks"
-            hits.append((i, i + 1, "rude"))
+        if "mild" in cats and suck_swear(words, i):                       # "life sucks" (mild: 1.18.163)
+            hits.append((i, i + 1, "mild"))
             i += 1
             continue
         base = contracted_base(words[i])
@@ -3801,6 +3805,7 @@ LANGUAGE_DEFS = {
     "slurs": "a slur: a hateful name for a group of people (racial and ethnic slurs, 'retarded' even "
              "said as a description, anti-gay slurs)",
     "mild": "a mild swear word such as damn, hell used as a curse, crap, bloody used as a curse, "
+            "'that sucks' / 'life sucks' meaning bad (not sucking something), "
             "'that's bull' (short for bullshit, not the animal), "
             "or 'screw you' / 'screw it' as an insult ('screw it into the wall' is NOT this)",
     "deity": "God's or Jesus's name used as a swear or exclamation (not in a prayer or sincere "
@@ -3812,7 +3817,7 @@ LANGUAGE_DEFS = {
     "orientation": "a word about sexual orientation such as gay, lesbian, homosexual or bisexual "
                    "('gay' meaning cheerful or bright is NOT this)",
     "rude": "a rude word kids copy such as stupid, dumb, idiot, moron, loser, jerk or butt, or "
-            "'shut up' / 'you suck' said to someone",
+            "'shut up' said to someone",
     "drugtalk": "drug talk or slang such as stoned, junkie, crackhead, shrooms, getting high, high on "
                 "drugs, strung out (not the drugs' own names said by police or doctors, nor 'stoned to "
                 "death', 'an adrenaline junkie', 'got high marks')",
