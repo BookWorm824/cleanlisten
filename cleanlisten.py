@@ -1859,7 +1859,14 @@ SEXUAL_TERMS = [
     r"impoten(?:t|ce|cy)(?! (?:against|rage|fury|anger|frustration|in the face|to stop|to do)\b)", r"girls gone wild", r"baby[- ]making",
     r"shaved beaver", r"beaver shots?", r"escort (?:services?|agenc(?:y|ies))",
     r"lead in (?:his|your|my) pencil", r"intimate (?:areas?|parts)",
+    # Castle S2E19-24 (CleanView 1.18.162; the owner: "Yes, both"): "He was banging my daughter right under
+    # my nose?"; "bang" alone, and "banged her pots", "bang their noses together" stay
+    r"bang(?:s|ed|ing)? (?:my|his|your|her|their|our) (?:daughters?|wife|wives|sisters?|mom|mum|mother|"
+    r"girlfriends?|boyfriends?|husbands?|secretar(?:y|ies)|assistants?)",
 ]
+# "I would've done her", "I would maybe do her", "but I'd do her" (CleanView 1.18.162): only at the end of
+# a sentence (_find_language), so not "I'd do her hair", "would have done him good", "done her in"
+DO_HER_RX = None        # filled in below (needs _terms_rx)
 
 # sleeping around
 CASUAL_TERMS = [
@@ -1875,6 +1882,8 @@ CASUAL_TERMS = [
     # with infidelity"; the owner: "All of them", here "Yes, both"); not "the unfaithful servant". The
     # one use in the free classics' books means an affair too (A Girl of the Limberlost)
     r"unfaithful(?:ness)?(?! servants?\b)", r"infidelit(?:y|ies)",
+    # two-timing (CleanView 1.18.162): the hyphen is gone in the words ("twotiming"); not "two times three"
+    r"twotim(?:e|es|ed|ing|er|ers)", r"two tim(?:ing|ed|er|ers)",
 ]
 
 # graphic case talk (with rape and the rest, 1.18.125)
@@ -1891,6 +1900,8 @@ def _terms_rx(pats):
 
 SEXUAL_TERMS_RX = _terms_rx(SEXUAL_TERMS)
 CASUAL_TERMS_RX = _terms_rx(CASUAL_TERMS)
+DO_HER_RX = _terms_rx([r"(?:i'd|i would|i'd have|i would have|i would've|would've|would have)"
+                       r"(?: (?:totally|maybe|so|definitely|still|never|not))? (?:do|done) (?:her|him)"])
 # Castle S2E10 (CleanView 1.18.161; the owner: "Yes, both" there, the words going to every app): "her
 # husband's affair", "Jeremy's affair", "her six-month affair", "because he wouldn't sleep with me", "I
 # didn't sleep with her". Someone's affair (not "it's/that's/no one's", nor "is/was the boy's affair":
@@ -1906,7 +1917,11 @@ MODERN_CASUAL_RX = _terms_rx([
     r"(?<!is )(?<!was )(?<!be )(?<!not )(?<!of )(?!(?:it|that|what|let|there|here|who|he|she|one)'s )"
     r"[a-z]+'s affair(?! of)",
     r"(?:wouldn't|won't|didn't|doesn't|refused to|refuses to|never would|would never|will never) sleep with "
-    r"(?:me|him|her|you|them)"])
+    r"(?:me|him|her|you|them)",
+    # Castle S2E19-24 (CleanView 1.18.162): a tryst (in the classics an innocent meeting: "kept a silent
+    # tryst with old memories", "the trysting tree"), sleeping with everyone
+    r"trysts?", r"trysted", r"trysting",
+    r"sleep(?:s|ing)? with (?:everyone|everybody|every (?:girl|woman|guy|man))"])
 # "the freedom to cheat on my sister" (Castle S2E10, CleanView 1.18.161): a sister, a friend... cheated on
 # counts even though cleanread.SLEEPING leaves family words alone otherwise (NOT_A_COUPLE)
 CHEAT_ON_KIN_RX = _terms_rx([r"cheat(?:s|ed|ing)? on (?:his|her|my|your|their|our) (?:sisters?|brothers?|"
@@ -2315,6 +2330,8 @@ def _find_language(words, cats, breaks=()):
     fruit = fruit_slang(words, "sexual") if "sexual" in cats else set()
     crude_fruit = fruit_slang(words, "crude") if "crude" in cats else set()
     terms = dict(term_spans(words, SEXUAL_TERMS_RX)) if "sexual" in cats else {}
+    if "sexual" in cats:        # "I would've done her": only at the end of a sentence (CleanView 1.18.162)
+        terms.update({i: j for i, j in term_spans(words, DO_HER_RX) if j == n or j in breaks})
     drug_talk = dict(drug_talk_spans(words)) if "drugtalk" in cats else {}     # (1.17.97)
     while i < n:
         found = None
