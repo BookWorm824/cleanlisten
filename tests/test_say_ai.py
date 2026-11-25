@@ -80,7 +80,7 @@ def test_cleanlistens_window_says_ai_and_names_it_only_for_setting_up():
                  '"Undo the AI\'s last change"', '"Open the AI\'s findings for this book (spreadsheet)"',
                  'f"Ask {N} about this…"', '"The AI is reading the book\\u2026"',
                  '"The AI can read the whole book', '"Tip: the AI looks over the whole book',
-                 'engine.AI + ": " + sc["claude_reason"]', 'messagebox.showerror("AI check"',
+                 'engine.AI + ": " + engine.hide_words(sc["claude_reason"])', 'messagebox.showerror("AI check"',
                  'engine.plain_ai(sc["ai_note"])', 'engine.plain_ai(m["note"])',
                  'engine.plain_ai(a.get("claude_note"))'):
         assert said in src, said

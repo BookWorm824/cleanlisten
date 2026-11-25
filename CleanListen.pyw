@@ -2173,7 +2173,7 @@ class App(tk.Tk):
             return
         self.chat_log.configure(state="normal")
         prefix = {"me": "You: ", "them": self._ai_name() + ": ", "info": ""}[who]
-        self.chat_log.insert("end", prefix + text.strip() + "\n\n", who)
+        self.chat_log.insert("end", prefix + engine.hide_words(text).strip() + "\n\n", who)     # swears starred
         self.chat_log.configure(state="disabled")
         self.chat_log.see("end")
 
@@ -3098,7 +3098,7 @@ class App(tk.Tk):
             tk.Label(box, text="⚠ Heads up: this book may not be enjoyable once it's cleaned", bg=YELLOW,
                      fg=YELLOW_INK, font=(FONT, 11, "bold"), anchor="w").pack(anchor="w")
             for h in hu:
-                tk.Label(box, text="• " + h["text"], bg=YELLOW, fg=YELLOW_INK, font=(FONT, 10),
+                tk.Label(box, text="• " + engine.hide_words(h["text"]), bg=YELLOW, fg=YELLOW_INK, font=(FONT, 10),
                          anchor="w", justify="left", wraplength=F.wrap(700)).pack(anchor="w")
             tk.Label(box, text=engine.HEADS_UP_SO, bg=YELLOW, fg=YELLOW_INK, font=(FONT, 9), anchor="w",
                      justify="left", wraplength=F.wrap(700)).pack(anchor="w", pady=(2, 0))
@@ -3120,7 +3120,7 @@ class App(tk.Tk):
             CL.fit_text(said, warn, margin=200)
             ttk.Button(warn, text=f"Check with {P}", style="Go.TButton",
                        command=self.claude_check).pack(side="right", padx=8, pady=6)
-        notes = [n for n in (None if unchecked else engine.plain_ai(a.get("claude_note")),
+        notes = [engine.hide_words(n) for n in (None if unchecked else engine.plain_ai(a.get("claude_note")),
                              a.get("learn_note"), a.get("ai_note"), a.get("ebook_note")) if n]
         if notes:
             nrow = tk.Frame(p, bg=BG)
@@ -3310,22 +3310,22 @@ class App(tk.Tk):
                 link(top, "▶ Play", CARD, lambda l, it=sc: self._play(it, l)).pack(side="left", padx=(16, 0))
                 if sc.get("ai_note"):
                     good = _yellow(sc["ai_note"])
-                    tk.Label(top, text=engine.plain_ai(sc["ai_note"]), bg=YELLOW if good else TINT,
+                    tk.Label(top, text=engine.hide_words(engine.plain_ai(sc["ai_note"])), bg=YELLOW if good else TINT,
                              fg=YELLOW_INK if good else ACCENT_DK, font=(FONT, 9),
                              padx=6).pack(side="right")
                 if sc.get("claude_reason"):
-                    tk.Label(card, text=engine.AI + ": " + sc["claude_reason"], bg=CARD,
+                    tk.Label(card, text=engine.AI + ": " + engine.hide_words(sc["claude_reason"]), bg=CARD,
                              fg=MUTED, font=(FONT, 9, "italic"), wraplength=F.wrap(680), justify="left"
                              ).pack(anchor="w", pady=(4, 0))
                 txt = tk.Text(card, wrap="word", width=20, height=min(8, 1 + len(sc["text"]) // 95),
                               font=(FONT, 10), bg=QUOTE, fg=INK, relief="flat",
                               padx=8, pady=6, borderwidth=0)
-                txt.insert("1.0", sc["text"])
+                txt.insert("1.0", engine.hide_words(sc["text"]))       # swears starred (the owner, 2026-11-25)
                 txt.configure(state="disabled")
                 txt.pack(fill="x", pady=(6, 0))
                 txt.bind("<Configure>", lambda e, t=txt: fit(t))
                 if sc.get("chat_answer"):
-                    said = tk.Label(card, text=f"{N}: " + sc["chat_answer"], bg=TINT,
+                    said = tk.Label(card, text=f"{N}: " + engine.hide_words(sc["chat_answer"]), bg=TINT,
                                     fg=ACCENT_DK, font=(FONT, 9), wraplength=F.wrap(680), justify="left",
                                     padx=8, pady=4, anchor="w")
                     said.pack(fill="x", pady=(6, 0))
@@ -3368,7 +3368,7 @@ class App(tk.Tk):
                 link(row, "▶ Play", rbg, lambda l, it=m: self._play(it, l), padx=4).pack(side="right")
                 if m.get("note"):
                     good = _yellow(m["note"])
-                    tk.Label(row, text=engine.plain_ai(m["note"]), bg=YELLOW if good else TINT,
+                    tk.Label(row, text=engine.hide_words(engine.plain_ai(m["note"])), bg=YELLOW if good else TINT,
                              fg=YELLOW_INK if good else ACCENT_DK, font=(FONT, 8),
                              padx=4).pack(side="right")
                 elif m.get("src", "audio") != "audio":

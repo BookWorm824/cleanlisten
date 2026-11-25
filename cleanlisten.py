@@ -3255,6 +3255,39 @@ def mask(word):
     return word if len(core) <= 1 else core[0] + "*" * (len(core) - 1)
 
 
+_HIDE_WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*")
+_HIDE_KEEP = {"the", "you", "your", "and", "for", "off", "out", "who", "what", "him", "her", "his",
+              "them", "that", "this", "all", "are", "was", "get", "got", "give", "gave", "make",
+              "yourself", "himself", "herself", "myself", "themselves"}
+
+
+def hide_words(text):
+    """Any text for the screen with every word on the lists starred, punctuation and spacing kept
+    (the owner, 2026-11-25, of CleanView: "I NEVER want to see the words spelled out!! the whole
+    point is not see it"): the AI's notes and reasons, its chat answers, a passage's text. Only
+    "Show" writes a word out."""
+    text = str(text or "")
+    toks = list(_HIDE_WORD.finditer(text))
+    if not toks:
+        return text
+    normed = [norm(m.group()) for m in toks]
+    bad = set()
+    for i, j, _ in find_language(normed, ALL_CATS):
+        # in a phrase, the word that's bad on its own ("son of a b****", "oh my G**"); else the
+        # phrase's longer words
+        inner = [k for k in range(i, j) if find_language([normed[k]], ALL_CATS)]
+        bad.update(inner or [k for k in range(i, j) if normed[k] not in LEAD_WORDS and
+                             len(normed[k]) > 2 and normed[k] not in _HIDE_KEEP])
+    if not bad:
+        return text
+    out, last = [], 0
+    for k, m in enumerate(toks):
+        if k in bad:
+            out.append(text[last:m.start()] + mask(m.group()))
+            last = m.end()
+    return "".join(out) + text[last:]
+
+
 def shown(raw, normed):
     """A muted span as the review screen shows it: swears starred, "what the" left readable."""
     return " ".join(w if n_ in LEAD_WORDS else mask(w) for w, n_ in zip(raw, normed))
