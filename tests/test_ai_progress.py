@@ -28,6 +28,7 @@ def test_cleanlisten_ai_double_check_counts(monkeypatch):
     monkeypatch.setattr(E, "_learned_examples", lambda title="": "")
     said = []
     E.ai_assist(asr, [], ["crude"], to_sentences, E.span_times, progress=lambda f, m: said.append(m))
-    checks = [m for m in said if m.startswith("AI is double-checking what it found")]
-    assert checks == ["AI is double-checking what it found · 1 of 2",
-                      "AI is double-checking what it found · 2 of 2"]
+    checks = [m for m in said if "making sure its own finds" in m]
+    assert checks == ["Step 2 of 2 · The AI is making sure its own finds are right · 1 of 2",
+                      "Step 2 of 2 · The AI is making sure its own finds are right · 2 of 2"]
+    assert any(m.startswith("Step 1 of 2 · The AI is reading the book · ") for m in said)

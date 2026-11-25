@@ -4405,6 +4405,41 @@ def _learned_examples(title=""):
         return ""
 
 
+# The AI's steps, numbered under the progress bar (the owner, 2026-11-25: "double checking what it
+# read and then after that it says double checking ... to the general people it can seem to be
+# redundant or not working"): each says what it's for, and "Step 2 of 4" shows it's moving on.
+# Only the steps this check will run are counted. Shared by CleanRead.
+STEP_TEXT = {"read": "The AI is reading the book",
+             "found": "The AI is making sure its own finds are right",
+             "innuendo": "The AI is listening for innuendo",
+             "flagged": "The AI is checking what the word lists found",
+             "words": "The AI is checking words that can have an innocent meaning",
+             "missed": "The AI is making sure the words it found are right"}
+
+
+class Steps:
+    """Steps(["read", "found", None, "flagged"]) -> steps("found", "3 of 9") is
+    "Step 2 of 3 · The AI is making sure its own finds are right · 3 of 9". A step that isn't
+    counted (or Steps() with none) is just its words."""
+
+    def __init__(self, keys=()):
+        self.keys = [k for k in keys if k]
+
+    def __call__(self, key, more=""):
+        text = STEP_TEXT.get(key, key) + (f" · {more}" if more else "")
+        if key in self.keys and len(self.keys) > 1:
+            return f"Step {self.keys.index(key) + 1} of {len(self.keys)} · {text}"
+        return text
+
+
+def _innocent_checkable(mutes, asr):
+    """The muted words the AI gets a say on: ones with an innocent meaning too (hell, bloody, ass,
+    Jesus, gay...). Clear swear words are never unticked."""
+    return [m for m in mutes if m.get("i") is not None and
+            (m.get("cat") == "deity" or
+             any(norm(asr[x]["t"]) in INNOCENT_WORDS for x in range(m["i"], m["j"])))]
+
+
 def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cancel=None,
               chunk=40, overlap=6, mutes=None, cats=(), parts=None, title="", defs_for=None):
     """Checks every filter both ways: adds what the word lists missed (passages
@@ -4462,10 +4497,15 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     cands, word_cands = set(), set()
     chunk = 25
     starts = list(range(0, len(sents), chunk - 3)) if types else []
+    checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai") and not sc.get("strict")]
+    checkable = _innocent_checkable(mutes, asr)
+    steps = Steps(["read" if starts else None, "found" if read_kinds else None,
+                   "innuendo" if "ref" in kinds else None, "flagged" if checks else None,
+                   "words" if checkable else None, "missed" if lang and starts else None])
     for n, a in enumerate(starts):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(starts), 1), f"AI is reading the book · {100 * n // max(len(starts), 1)}%")
+        say(n / max(len(starts), 1), steps("read", f"{100 * n // max(len(starts), 1)}%"))
         part = sents[a:a + chunk]
         listing = "\n".join(f"- {t}" for _, _, t in part)
         prompt = _learned_examples(title) + ("You help a family decide which sentences of an audiobook to cut. Here are "
@@ -4529,11 +4569,13 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
                      else ai_gate(kind, near)):
             todo.add((i, kind))
     todo = sorted(todo)
+    if not todo and read_kinds:
+        say(1.0, steps("found"))        # (nothing to check: the step still shows, so none is skipped)
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt
         say(n / max(len(todo), 1),          # "14 of 150" (the owner, 2026-11-09)
-            f"AI is double-checking what it found · {n + 1} of {len(todo)}")
+            steps("found", f"{n + 1} of {len(todo)}"))
         conf = verify(f"Does the marked sentence clearly contain {T[kind]}?", i)
         if conf:
             found.setdefault(kind, {})[i] = conf
@@ -4541,17 +4583,16 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         # innuendo, a conversation at a time; for you to decide (unticked), and a line with a word
         # on the list stays "just the word"
         for i in sexual_talk([t for _, _, t in sents], lambda p, s, t: ai.chat(p, schema=s, timeout=t),
-                             T["ref"], cancel, say):
+                             T["ref"], cancel, lambda f, m: say(f, steps("innuendo", m.rsplit(" · ", 1)[-1]))):
             if not find_language(sent_norm[i], ["sexual"]):
                 found.setdefault("ref", {}).setdefault(i, "medium")
 
     # ---- 3. second opinion on what the word lists flagged
-    checks = [sc for sc in scenes if sc.get("kind") in AI_TYPES and not sc.get("ai") and not sc.get("strict")]
     yes_no = {"type": "object", "properties": {"fits": {"type": "boolean"}}, "required": ["fits"]}
     for n, sc in enumerate(checks):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(checks), 1), f"AI is double-checking what was flagged · {n + 1} of {len(checks)}")
+        say(n / max(len(checks), 1), steps("flagged", f"{n + 1} of {len(checks)}"))
         try:
             res = ai.chat("Here is a passage from an audiobook:\n\n" + sc["text"][:4000] +
                           "\n\nDoes it contain " + T[sc["kind"]] +
@@ -4567,16 +4608,13 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
 
     # ---- 4. muted words: the AI only gets a say on words with an innocent meaning
     # too (hell, bloody, ass, Jesus, gay...). Clear swear words are never unticked.
-    checkable = [m for m in mutes if m.get("i") is not None and
-                 (m.get("cat") == "deity" or
-                  any(norm(asr[x]["t"]) in INNOCENT_WORDS for x in range(m["i"], m["j"])))]
     fine_schema = {"type": "object", "properties": {"fine": {"type": "array", "items": {
         "type": "integer"}}}, "required": ["fine"]}
     for b0 in range(0, len(checkable), 20):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(b0 / max(len(checkable), 1), "AI is double-checking the muted words · "
-            f"{b0 + 1}–{min(b0 + 20, len(checkable))} of {len(checkable)}")
+        say(b0 / max(len(checkable), 1),
+            steps("words", f"{b0 + 1}–{min(b0 + 20, len(checkable))} of {len(checkable)}"))
         batch = checkable[b0:b0 + 20]
         rows = []
         for q, m in enumerate(batch):
@@ -4617,8 +4655,7 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
         if any(m["part"] == part and not (asr[j - 1]["e"] < m["s"] or asr[i]["s"] > m["e"])
                for m in mutes):
             continue
-        say(n / max(len(word_cands), 1),
-            f"AI is double-checking words it found · {n + 1} of {len(word_cands)}")
+        say(n / max(len(word_cands), 1), steps("missed", f"{n + 1} of {len(word_cands)}"))
         conf = verify(f'Is the word "{word}" in the marked sentence used as ' +
                       "; or as ".join(LANGUAGE_DEFS[c] for c in lang) + "?", li)
         if not conf:
@@ -4720,7 +4757,7 @@ def sexual_talk(texts, ask, ref_def, cancel=None, progress=None, chunk=SEXUAL_TA
     for n, a in enumerate(starts):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / max(len(starts), 1), f"AI is listening for innuendo \u00b7 {n + 1} of {len(starts)}")
+        say(n / max(len(starts), 1), f"{STEP_TEXT['innuendo']} \u00b7 {n + 1} of {len(starts)}")
         part = [" ".join(str(t).split()) for t in texts[a:a + chunk]]
         listing = "\n".join(f"{k + 1}. {t}" for k, t in enumerate(part))
         try:

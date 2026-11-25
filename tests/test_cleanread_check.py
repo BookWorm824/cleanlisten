@@ -105,6 +105,6 @@ def test_ai_double_check_shows_a_counter(book, monkeypatch):
     # a word of blood nearby since 1.17.84, nor kissing: a word of kissing since 1.17.104)
     found = R.ai_find(book, {"crude": "crude humor"}, progress=lambda f, m: said.append(m))
     assert len(found) == 2
-    checks = [m for m in said if m.startswith("AI is double-checking what it found")]
-    assert checks == ["AI is double-checking what it found · 1 of 2",
-                      "AI is double-checking what it found · 2 of 2"]
+    checks = [m for m in said if "making sure its own finds" in m]
+    assert checks == ["The AI is making sure its own finds are right · 1 of 2",
+                      "The AI is making sure its own finds are right · 2 of 2"]

@@ -2672,7 +2672,7 @@ class AIStopped(RuntimeError):
     pass
 
 
-def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=None):
+def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=None, steps=None):
     """The AI reads numbered sentences and names the ones that fit a type, quoting the words
     that show it (a find whose words aren't in that sentence is dropped); then each find is
     double-checked one at a time. Returns {(sentence index, type): 'high'|'medium'}.
@@ -2681,6 +2681,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
     info (a dict) gets "unread": how many sentences the AI couldn't read."""
     ai = _ai()
     say = progress or (lambda f, m: None)
+    steps = steps or E.Steps()          # "Step 1 of 4 · ..." when part of a whole check (2026-11-25)
     ai.ensure_ai(lambda f, m: say(f, m))
     types = [t for t in defs if t not in E.AI_NOT_READ]    # not sexual references (2026-11-15)
     if not defs:
@@ -2781,7 +2782,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
             left = f" · about {per * (P - pos) / 60:.0f} min left"
         elif run["resumed"]:
             left = " · picking up where it left off"
-        say(0.75 * pos / max(P, 1), f"AI is reading the book · {100 * pos // max(P, 1)}%{left}")
+        say(0.75 * pos / max(P, 1), steps("read", f"{100 * pos // max(P, 1)}%{left}"))
         if not read(pos, end):
             size = max(10, size // 2)   # this PC needs smaller parts: keep them smaller
         if end >= P:
@@ -2820,11 +2821,13 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
             gated[was] = gated.get(was, 0) + 1
     if info is not None:
         info["gated"] = gated
+    if not todo and types:
+        say(0.75, steps("found"))       # (nothing to check: the step still shows, so none is skipped)
     for n, (i, kind) in enumerate(todo):
         if cancel and cancel():
             raise KeyboardInterrupt
         say(0.75 + 0.25 * n / max(len(todo), 1),       # "14 of 150" (the owner, 2026-11-09)
-            f"AI is double-checking what it found · {n + 1} of {len(todo)}")
+            steps("found", f"{n + 1} of {len(todo)}"))
         prev = " ".join(book.sent_text(i - 1).split()) if i > 0 else ""
         nxt = " ".join(book.sent_text(i + 1).split()) if i + 1 < S else ""
         ex = f"{prev}\n>>> {' '.join(book.sent_text(i).split())} <<<\n{nxt}".strip()
@@ -2848,7 +2851,7 @@ def ai_find(book, defs, progress=None, cancel=None, chunk=40, notes="", info=Non
         # decide, and a line with a word on the list stays "just the word"
         for i in E.sexual_talk([book.sent_text(i) for i in range(S)],
                                lambda p, s, t: answers.ask(ai, p, s, t), defs["ref"], cancel,
-                               lambda f, m: say(0.75 + 0.25 * f, m)):
+                               lambda f, m: say(0.75 + 0.25 * f, steps("innuendo", m.rsplit(" · ", 1)[-1]))):
             if not E.find_language(book.sent_words(i), ["sexual"]):
                 found.setdefault((i, "ref"), "medium")
     return found
@@ -3713,8 +3716,15 @@ AMBIGUOUS = {"hell", "bloody", "ass", "asses", "arse", "dick", "dicks", "prick",
 def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""):
     ai = _ai()
     info = {}
+    checks = [c for c in cuts if not c.get("ai") and c["kind"] in kinds]
+    checkable = [m for m in mutes if m["cat"] in ("deity", "orientation") or
+                 any(nrm(w) in AMBIGUOUS for w in m["word_raw"].split())]
+    read = [t for t in kinds if t not in E.AI_NOT_READ]
+    steps = E.Steps(["read" if read else None, "found" if read else None,
+                     "innuendo" if "ref" in kinds else None, "flagged" if checks else None,
+                     "words" if checkable else None])
     found = ai_find(book, kinds, progress=lambda f, m: say(0.7 * f, m), cancel=cancel,
-                    notes=notes, info=info) if kinds else {}
+                    notes=notes, info=info, steps=steps) if kinds else {}
     answers = _answers_for(book)
     sugg = off = 0
     # verified finds become sentence cuts, always unticked for you to decide: the AI on this PC
@@ -3738,12 +3748,11 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
             taken.update(run_)
             sugg += 1
     # second opinion on what the word lists flagged
-    checks = [c for c in cuts if not c.get("ai") and c["kind"] in kinds]
     for n, c in enumerate(checks):
         if cancel and cancel():
             raise KeyboardInterrupt
         say(0.7 + 0.15 * n / max(1, len(checks)),
-            f"AI is double-checking what was flagged · {n + 1} of {len(checks)}")
+            steps("flagged", f"{n + 1} of {len(checks)}"))
         fits = ai_second_opinion(" ".join(x for x in (c.get("before"), c["text"], c.get("after"))
                                           if x), kinds[c["kind"]], notes, answers)
         if fits is False:
@@ -3752,16 +3761,14 @@ def _ai_clean(book, cuts, mutes, kinds, taken, in_passage, say, cancel, notes=""
             off += 1
         elif fits is True:
             c["ai_note"] = "AI agrees"
-    # words with an innocent meaning too (hell, bloody, ass, gay, Jesus...)
-    checkable = [m for m in mutes if m["cat"] in ("deity", "orientation") or
-                 any(nrm(w) in AMBIGUOUS for w in m["word_raw"].split())]
+    # words with an innocent meaning too (hell, bloody, ass, gay, Jesus...): checkable, above
     schema = {"type": "object", "properties": {"fine": {"type": "array", "items": {"type": "integer"}}},
               "required": ["fine"]}
     for b0 in range(0, len(checkable), 20):
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(0.85 + 0.15 * b0 / max(1, len(checkable)), "AI is double-checking the marked-out words · "
-            f"{b0 + 1}–{min(b0 + 20, len(checkable))} of {len(checkable)}")
+        say(0.85 + 0.15 * b0 / max(1, len(checkable)),
+            steps("words", f"{b0 + 1}–{min(b0 + 20, len(checkable))} of {len(checkable)}"))
         batch = checkable[b0:b0 + 20]
         rows = [f"{k}: ...{m['ctx_raw']} [[{m['word_raw']}]] {m['ctx_after_raw']}..." for k, m in enumerate(batch)]
         try:
