@@ -18,6 +18,36 @@ WORKING_LOGO = 384      # the logo on the working page, pixels (128 until 2026-1
                         # icon's 256-px picture, so it's enlarged smoothly (_resize).
 
 
+ICON_AGAIN = (0.5, 3.0)       # seconds after the window is made that its logo is set again
+
+
+def set_icon(win, ico, again=ICON_AGAIN):
+    """The program's logo on a window and its taskbar button, not Tk's own feather (the owner,
+    2026-11-25, of ReadAloud: "the logo in start bar turning into a feather"; CleanView's set_icon,
+    2026-11-13). The logo is made the one every window of the program gets (a window without its own
+    shows the feather), it's set on this window, and set again once the window is up, in case the
+    first time came too early or the file had only just been written by an update. Returns whether
+    the first try worked."""
+    path = str(HERE / ico)
+
+    def put():
+        try:
+            if not win.winfo_exists():
+                return True
+            win.iconbitmap(default=path)
+            win.iconbitmap(path)
+            return True
+        except Exception:
+            return False
+    ok = put()
+    for secs in again:
+        try:
+            win.after(int(secs * 1000), put)
+        except Exception:
+            pass
+    return ok
+
+
 def logo_png(ico, px=128):
     """(PNG bytes, width) of the .ico's picture that is the smallest one at least px wide (else
     the biggest), or (None, 0) if it can't be read."""

@@ -208,10 +208,9 @@ class App(tk.Tk):
         except Exception:
             use_theme("light")
         self.configure(bg=BG)
-        try:
-            self.iconbitmap(str(HERE / "readaloud.ico"))
-        except Exception:
-            pass
+        # ReadAloud's logo on every window and on its taskbar button, set again once it's up (the
+        # owner, 2026-11-25: "the logo in start bar turning into a feather", as CleanView's set_icon)
+        LOGO.set_icon(self, "readaloud.ico")
         self.q = queue.Queue()
         self.settings = load_json(SETTINGS)
         self.book = None
@@ -615,8 +614,9 @@ class App(tk.Tk):
             ("Make audiobook", self.start), done=lambda i: i == 1 and bool(self.book),
             scroll_area=self._scroll_area, start=step, theme=(self._theme_var(), self._set_theme),
             links=[(self._upd_default(), self.check_updates, "refresh"),
-                   (f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")],
-            main_on_first=True)     # not a Start cleaning: it stays on step 1 (CleanView 1.18.135)
+                   (f"Text size: {self.text_size}", lambda: self._text_size_menu(), "text")])
+        # step 1 leads on to the voice first, then Make audiobook (the owner, 2026-11-25: "it should
+        # lead to voices only then make book so people choose the voice")
         self.size_link = sp.links[f"Text size: {self.text_size}"]
         self.upd_link = sp.links[self._upd_default()]
         self.footer = sp.nav
@@ -1402,7 +1402,9 @@ class App(tk.Tk):
                f"Reading {n} chapter{'s' if n > 1 else ''} at a time.")
         tk.Label(p, text=how, bg=BG, fg=MUTED, font=(FONT, 11), wraplength=X(740),     # The tester: "bigger"
                  justify="left").pack(anchor="w", pady=(X(16), 0))
-        self._logo(p, sweeper=True)
+        # no little cleaner here: ReadAloud reads, it doesn't clean (the owner, 2026-11-25: "it
+        # doent clean just read. he needs gone")
+        self._logo(p)
         self.stop_btn = ttk.Button(self.footer, text="Stop for now", style="Plain.TButton", command=self.stop)
         self.stop_btn.pack(side="right")
         # Pause beside it (the owner, 2026-11-12): the reading freezes where it is until Resume

@@ -52,9 +52,10 @@ def test_readaloud_keeps_its_button_on_step_one(root):
 
 
 def test_which_apps():
-    for app in ("CleanListen.pyw", "CleanRead.pyw"):
+    # ReadAloud too since 1.17.108: step 1 leads to the voice first (the owner, 2026-11-25: "it should
+    # lead to voices only then make book so people choose the voice")
+    for app in ("CleanListen.pyw", "CleanRead.pyw", "ReadAloud.pyw"):
         assert "main_on_first" not in (ROOT / app).read_text(encoding="utf8"), app
-    assert "main_on_first=True" in (ROOT / "ReadAloud.pyw").read_text(encoding="utf8")
 
 
 def test_cleanread_starts_on_the_ticks(root):

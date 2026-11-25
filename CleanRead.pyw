@@ -155,10 +155,9 @@ class App(tk.Tk):
         self.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 2 - 20)}")
         self.minsize(min(w, int(640 * scale)), min(h, int(480 * scale)))
         self.configure(bg=BG)
-        try:
-            self.iconbitmap(str(HERE / "cleanread.ico"))
-        except Exception:
-            pass
+        # the logo on every window and the taskbar button, set again once it's up: never Tk's feather
+        # (the owner, 2026-11-25, of ReadAloud; CleanView's set_icon)
+        LOGO.set_icon(self, "cleanread.ico")
         self.q = queue.Queue()
         self.job = 0              # the check/find being worked on; Cancel moves on (2026-11-09)
         self.paused = False       # Pause on the working page (2026-11-12)
