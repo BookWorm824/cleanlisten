@@ -1,5 +1,5 @@
 {
- "version": "1.17.106",
+ "version": "1.17.107",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -86,7 +86,7 @@
   "shortcuts.py": "8b6709fa744169fd2493a3862ff20b18d08d4d4f32057f39db81119250fa40a3",
   "cleanread.py": "25fca7ce92aefb7591fd4662c35067426234eadd255aecd17bef6481bb9ed891",
   "pdfbook.py": "487bb95511c6d858e1eb5271c3bf7439d1a0a4e3af15dec115dac080863bc563",
-  "CleanRead.pyw": "074679803b3316abf6280bcad1320aebbf49c30340d7783edc1fbd4fc69cfa13",
+  "CleanRead.pyw": "9f0c0b16e84732d5d1d09ba355c6b38d86a645b6aed62da3e4e2aa4a833b646e",
   "cleanread.ico": "07262f5f296d2542d3c1d5d900274f31a1173a72f5824cbc222988d579e32c63",
   "cleanlisten_logo.png": "1b0db5569d32f91cbda43f8ceb6a4ec94442f3ee4c0bcf4a37161dfc6886ce04",
   "cleanread_logo.png": "6b7b20b35fd64b1fa6b7ba7ebc42c99cda783c0e0562ef94681f97ccd6933fa3",

@@ -743,6 +743,11 @@ class App(tk.Tk):
         self.pause_btn = ttk.Button(self.footer, text="Pause", style="Plain.TButton",
                                     command=self.toggle_pause)
         self.pause_btn.pack(side="right", padx=(0, 10))
+        # and Back beside them (the owner, 2026-11-25: "it should have a back button", "put it down by
+        # pause cancel"): back to the start page, the same as Cancel
+        self.back_btn = ttk.Button(self.footer, text="← Back", style="Plain.TButton",
+                                   command=self.cancel)
+        self.back_btn.pack(side="right", padx=(0, 10))
         # the empty space (the tester, 2026-11-07), 50% bigger (2026-11-15), with CleanView's little cleaner
         # sweeping it (the owner, 2026-11-15: "Yes, all apps")
         LOGO.put_logo(p, "cleanread.ico", BG, LOGO.WORKING_LOGO, sweeper=True,
