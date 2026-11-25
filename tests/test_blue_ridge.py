@@ -95,7 +95,7 @@ def test_a_section_that_fails_is_tried_again_and_noted(monkeypatch):
     assert sum("section 2 of" in c for c in calls) == 2       # tried twice, still failed
     (u,) = st["claude_unchecked"]                # part 2's sentence, with the usual padding
     assert u["part"] == 1 and u["s"] <= 3.0 and u["e"] >= 5.5
-    assert "1 of 2 sections couldn't be checked" in st["claude_note"]
+    assert "About 50% of the book couldn't be checked" in st["claude_note"]
 
 
 def test_a_book_claude_couldnt_read_at_all_is_a_failed_check(monkeypatch):

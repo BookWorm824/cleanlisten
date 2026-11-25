@@ -17,6 +17,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "CleanListen"
@@ -116,6 +118,105 @@ def strict(schema):
     return s
 
 
+LOG = APP_DATA / "chatgpt" / "chatgpt_log.txt"     # what ChatGPT said, to see why one failed
+
+
+def _log(cmd, started, code, out, err, size):
+    """A few lines per request (never the book's words): how long, how it ended, the kinds of
+    messages it sent and any error. Kept short: the newest ~200 KB."""
+    try:
+        kinds, notes = [], []
+        for line in (out or "").splitlines():
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            k = str(ev.get("type", "?"))
+            if not kinds or kinds[-1] != k:
+                kinds.append(k)
+            if k in ("error", "turn.failed"):
+                notes.append(str(ev.get("message") or (ev.get("error") or {}).get("message") or "")[:300])
+        args = [a for a in cmd[1:] if not str(a).endswith((".json",))]
+        text = (time.strftime("%Y-%m-%d %H:%M:%S") + f" · {time.time() - started:.0f} s · " +
+                ("TIMED OUT" if code is None else f"exit {code}") + f" · sent {size} chars · " +
+                " ".join(map(str, args[:8])) + "\n  messages: " + (" > ".join(kinds) or "(none)") +
+                ("\n  errors: " + " | ".join(notes) if notes else "") +
+                ("\n  its own words: " + " ".join((err or "").split())[-600:]
+                 if (err or "").strip() else "") + "\n")
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        old = LOG.read_text("utf8", errors="replace")[-200000:] if LOG.exists() else ""
+        LOG.write_text(old + text, encoding="utf8")
+    except Exception:
+        pass
+
+
+START_WAIT = 120    # seconds for Codex to start (it does in ~2 s); a stuck one costs 2 minutes
+NOT_STARTED = ("ChatGPT didn't start on this PC. Sign in to ChatGPT again (the Sign in button), "
+               "then try again. If it still doesn't start, restart the PC.")
+
+
+def _stop(p):
+    """Stop Codex and what it started (an npm codex.cmd runs node under it)."""
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True,
+                           timeout=30, **_NOWIN)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    try:
+        p.kill()
+    except OSError:
+        pass
+
+
+def _run(cmd, stdin, timeout, cwd):
+    """Run Codex: (stdout, stderr, exit code, or None when it was stopped). It's stopped after
+    START_WAIT if it hasn't started (no "thread.started" yet), or after `timeout` in all.
+    Every run goes in the log (CleanView 1.18.169's guard, 2026-11-25)."""
+    started = time.time()
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, encoding="utf8", errors="replace", cwd=str(cwd), env=_env(),
+                         **_NOWIN)
+    outs, errs, began = [], [], threading.Event()
+
+    def feed():
+        try:
+            p.stdin.write(stdin)
+            p.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+    def read(stream, into, watch):
+        try:
+            for line in stream:
+                into.append(line)
+                if watch and '"thread.started"' in line:
+                    began.set()
+        except (OSError, ValueError):
+            pass
+    threads = [threading.Thread(target=feed, daemon=True),
+               threading.Thread(target=read, args=(p.stdout, outs, True), daemon=True),
+               threading.Thread(target=read, args=(p.stderr, errs, False), daemon=True)]
+    for t in threads:
+        t.start()
+    code = None
+    end = started + timeout
+    while True:
+        if p.poll() is not None:
+            code = p.returncode
+            break
+        now = time.time()
+        if now >= end or (not began.is_set() and now - started >= START_WAIT):
+            _stop(p)
+            break
+        began.wait(0.2) if not began.is_set() else time.sleep(0.2)
+    for t in threads[1:]:
+        t.join(30)          # what it had said by then (the log shows where it got stuck)
+    out, err = "".join(outs), "".join(errs)
+    _log(cmd, started, code, out, err, len(stdin))
+    return out, err, code
+
+
 def ask(prompt, schema, stdin_text="", system=None, session=None, keep=False, timeout=600,
         folder=None):
     """One request to ChatGPT. Returns (answer_dict, session_id). With folder, it may
@@ -149,12 +250,14 @@ def ask(prompt, schema, stdin_text="", system=None, session=None, keep=False, ti
             cmd.append("--ephemeral")
         cmd.append("-")
         stdin = full if not stdin_text else full + "\n\n<stdin>\n" + stdin_text + "\n</stdin>"
-    try:
-        r = subprocess.run(cmd, input=stdin, capture_output=True, text=True, encoding="utf8",
-                           errors="replace", timeout=timeout, cwd=str(empty), env=_env(),
-                           **_NOWIN)
-    except subprocess.TimeoutExpired:
+    out, err, code = _run(cmd, stdin, timeout, empty)
+    if code is None:
+        shutil.rmtree(tmp, ignore_errors=True)
+        if '"thread.started"' not in out:
+            # (Riley + Sam, 2026-11-25: it never answered, every section, on the owner's other PC)
+            raise GptError(NOT_STARTED)
         raise GptError("ChatGPT took too long to answer. Try again.")
+    r = subprocess.CompletedProcess(cmd, code, out, err)
     sid, errs = None, []
     for line in (r.stdout or "").splitlines():
         try:

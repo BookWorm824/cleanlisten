@@ -1,5 +1,5 @@
 {
- "version": "1.17.102",
+ "version": "1.17.103",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -63,9 +63,9 @@
  "sha256": {
   "cleanlisten.py": "a3e57fc9e43a4c733c2954af15b77cffac8d019ad60c0da53dc2c2f9c5fa6706",
   "CleanListen.pyw": "49290d5c1a32da7579546b1eb892ebebe98ca2cda2e6dd6f8a6f4a007ecfc3c3",
-  "cleanlisten_claude.py": "594492435c208b044d4dd537032a39cd53e1bdd94c1790f7a4f928210284f401",
+  "cleanlisten_claude.py": "de89f5158edc9401a705b498a191ea44a120c9acc344d04bf15fe51547497550",
   "shared_learned.json": "9eaac90b12aa6a9da8741d0335c6235ecfe29751e224b194eb6f351eaaa565d8",
-  "cleanlisten_gpt.py": "d88b9f7d6f77a7a79eba9cb78efdde616e847bc9119c4227b1a2dadf035d2636",
+  "cleanlisten_gpt.py": "11f578522d30e0465d459d7973437c1ea4d7150b1b3de24f3b6facaa31c7e7ff",
   "cleanlisten_gemini.py": "669d470cbd36cd089297d1416cb3cb4b6273abe08dda6a6c132b1e0be88bb322",
   "cleanlisten_learn.py": "678d41f7cc2a0e6b228d5a72e80bdbc8cef625f5ecb410e8133a1acc3e203173",
   "launcher.pyw": "9452f060633691bd6d728d3f4b9a902c5ffb442487910165674d4c361343fdee",

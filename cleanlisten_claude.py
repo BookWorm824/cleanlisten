@@ -730,6 +730,16 @@ CLEAR_SWEARS = {"strong", "moderate"}
 # Applying Claude's answers
 # ---------------------------------------------------------------------------
 RETRY_WAIT = 10       # seconds before a failed section is tried again
+HALF_TIMEOUT = 900     # seconds for each half of a section that got no answer in 20 minutes
+
+
+def _stops(err):
+    """An error that every later section would hit too: stop the check there."""
+    return any(k in err for k in ("signed in", "limit", "didn't start"))
+
+
+def _too_slow(err):
+    return "too long" in err
 
 
 def _spans(st, asr, a, b):
@@ -953,11 +963,16 @@ def review(st, asr, progress=None, cancel=None):
     secs = _sections(texts)
     counts = {"agree": 0, "off": 0, "unsure": 0, "on": 0, "found": 0, "suggested": 0, "word": 0,
               "trim": 0}
-    errors, unread = [], []
-    for n, (a, b) in enumerate(secs):
+    errors, unread, read_any = [], [], False
+    # a section that gets no answer in time is split in two and tried once more; if a half gets
+    # none either, the check stops there and says so, instead of waiting ~40 minutes on every
+    # section (Riley + Sam, a 10-hour book, 2026-11-25)
+    todo = [(a, b, str(n + 1), n) for n, (a, b) in enumerate(secs)]
+    while todo:
+        a, b, label, n = todo.pop(0)
         if cancel and cancel():
             raise KeyboardInterrupt
-        say(n / len(secs), f"{E.THE_AI} is reading the book · section {n + 1} of {len(secs)}")
+        say(n / len(secs), f"{E.THE_AI} is reading the book · section {label} of {len(secs)}")
         ctx0 = max(0, a - CONTEXT_SENTS)
         lines = []
         if ctx0 < a:
@@ -966,28 +981,35 @@ def review(st, asr, progress=None, cancel=None):
             lines.append("(Section to check starts here:)")
         lines += [f"S{k + 1}: {texts[k]}" for k in range(a, b + 1)]
         finds = findings_lines(st, asr, only=(a, b))
-        prompt = (f"BOOK TEXT - section {n + 1} of {len(secs)} (sentences S{a + 1} to S{b + 1}):\n\n"
+        prompt = (f"BOOK TEXT - section {label} of {len(secs)} (sentences S{a + 1} to S{b + 1}):\n\n"
                   + "\n".join(lines) + "\n\nFINDINGS IN THIS SECTION:\n" +
                   ("\n".join(finds) if finds else "(none)") +
                   "\n\nGive a decision for every finding ID above, then list anything missed in "
                   "sentences S%d to S%d." % (a + 1, b + 1))
         data, err = None, ""
+        half = "half" in label
         for attempt in (1, 2):      # once more after a failure ("stopped without an answer")
             try:
-                data = run(prompt, system, schema=REVIEW_SCHEMA)["data"]
+                data = run(prompt, system, schema=REVIEW_SCHEMA,
+                           **({"timeout": HALF_TIMEOUT} if half else {}))["data"]
                 break
             except ClaudeError as ex:
                 err = str(ex)
-                if "signed in" in err or "limit" in err or attempt == 2:
+                if _stops(err) or _too_slow(err) or attempt == 2:
                     break
                 time.sleep(RETRY_WAIT)
         if data is None:
+            if _too_slow(err) and not half and b - a >= 20:
+                mid = (a + b) // 2
+                todo[:0] = [(a, mid, f"{label} (first half)", n), (mid + 1, b, f"{label} (second half)", n)]
+                continue
             errors.append(err)
             unread.append((a, b))
-            if "signed in" in err or "limit" in err:
-                unread += secs[n + 1:]
+            if _stops(err) or _too_slow(err):
+                unread += [(x, y) for x, y, _, _ in todo]
                 break
             continue
+        read_any = True
         apply_review(st, data, counts, asr)
         for p in data.get("missed_passages", []):
             k = _norm_kind(p.get("type"), kinds)
@@ -1018,12 +1040,13 @@ def review(st, asr, progress=None, cancel=None):
             + (f" It trimmed {counts['trim']} long passage(s) down to just the part that needs cutting."
                if counts["trim"] else "")
             + (f" {counts['unsure']} it wasn't sure about are marked “{N} unsure”." if counts["unsure"] else ""))
-    if unread and len(unread) == len(secs):
+    if unread and not read_any:
         raise ClaudeError(errors[0] if errors else f"{E.THE_AI} couldn't read the book.")
     # the parts it couldn't read: there the word lists and the AI on this PC decide (_merge_ai)
     st["claude_unchecked"] = [sp for a, b in unread for sp in _spans(st, asr, a, b)]
     if errors:
-        note += (f" {len(unread)} of {len(secs)} sections couldn't be checked ({errors[0]}); "
+        left = sum(y - x + 1 for x, y in unread) / max(1, len(texts))
+        note += (f" About {max(1, round(left * 100))}% of the book couldn't be checked ({errors[0]}); "
                  "there the word lists and the AI on this PC decide.")
     E.apply_hard_rule(st, asr)          # fart, condom, semen stay muted whatever it said (2026-11-13)
     E.apply_case_talk(st, asr)          # case talk it called a sexual reference (CleanView 1.18.152)
