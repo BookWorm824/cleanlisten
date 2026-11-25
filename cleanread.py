@@ -198,8 +198,9 @@ def _attr(tag, name):
     return m.group(1) if m else None
 
 
-def _toc_entries(z, opf_dir, manifest_items, opf):
-    """[(zip path of document, fragment or '', title)] in reading order."""
+def _toc_entries(z, opf_dir, manifest_items, opf, pages=None):
+    """[(zip path of document, fragment or '', title)] in reading order. pages (a set) gets the
+    positions of the entries that are the printed book's page numbers."""
     out = []
     nav = next((it for it in manifest_items if "nav" in (it.get("properties") or "").split()), None)
     if nav:
@@ -228,11 +229,16 @@ def _toc_entries(z, opf_dir, manifest_items, opf):
             path = _zip_path(opf_dir, ncx["href"])
             text = z.read(path).decode("utf8", "ignore")
             ndir = path.rsplit("/", 1)[0] if "/" in path else ""
+            # the printed book's page numbers ("8", "9", "10"... in a pageList) aren't chapters
+            # (the owner, Truth Be Told, 2026-11-25: 'it says in "50". i think that means page fifty')
+            plist = [(p.start(), p.end()) for p in re.finditer(r"<pageList\b.*?</pageList>", text, re.S)]
             for m in re.finditer(r"<navLabel>\s*<text>(.*?)</text>\s*</navLabel>\s*<content\b([^>]*)/?>",
                                  text, re.S):
                 href = _attr(m.group(2), "src")
                 if href:
                     frag = href.split("#", 1)[1] if "#" in href else ""
+                    if pages is not None and any(a <= m.start() < b for a, b in plist):
+                        pages.add(len(out))
                     out.append((_zip_path(ndir, href), frag, " ".join(html.unescape(m.group(1)).split())))
         except KeyError:
             pass
@@ -305,7 +311,8 @@ class Book:
                 if d["id"] and d["href"]:
                     items.append(d)
             manifest = {it["id"]: it for it in items}
-            toc = _toc_entries(z, opf_dir, items, opf)
+            page_entries = set()
+            toc = _toc_entries(z, opf_dir, items, opf, page_entries)
             spine = []
             for tag in re.findall(r"<itemref\b[^>]*>", opf):
                 it = manifest.get(_attr(tag, "idref") or "")
@@ -316,9 +323,12 @@ class Book:
             # chapters from the table of contents
             self.chapters = []
             doc_start, anchors = {}, {}
-            for path, frag, title in toc:
+            self.page_marks = set()         # the "chapters" that are page numbers (where())
+            for n, (path, frag, title) in enumerate(toc):
                 ci = len(self.chapters)
                 self.chapters.append(title or None)
+                if n in page_entries and title:
+                    self.page_marks.add(ci)
                 if frag:
                     anchors.setdefault(path, {})[frag] = ci
                 else:
@@ -449,14 +459,38 @@ class Book:
         return self.masked(q, a, b)
 
     def chapter_of_para(self, q):
-        return self.chapters[self.paras[q].chapter] if self.chapters else ""
+        if not self.chapters:
+            return ""
+        ci = self.real_chapter(q)
+        return " ".join(str(self.chapters[ci] or "").split()) if ci is not None else ""
+
+    def real_chapter(self, q):
+        """The chapter paragraph q is in. A page number of the printed book (an epub's page list:
+        "8", "9", "10"...) isn't a chapter: it belongs to the chapter it's in (Truth Be Told,
+        2026-11-25). None before the first real chapter."""
+        marks = getattr(self, "page_marks", None)
+        if not marks:
+            return self.paras[q].chapter
+        if getattr(self, "_real_ch", None) is None or len(self._real_ch) != len(self.paras):
+            last, self._real_ch = None, []
+            for p in self.paras:
+                if p.chapter is not None and p.chapter not in marks:
+                    last = p.chapter
+                self._real_ch.append(last)
+        return self._real_ch[q]
 
     def where(self, q):
         """Where it is, in plain words (the tester, 2026-11-03: "What do the percents mean?" - and
         some books name their chapters with just a number, so "45 · 16%" meant nothing)."""
         pct = int(100 * q / max(1, len(self.paras)))
         place = f"{pct}% of the way through the book"
-        ch = " ".join(self.chapter_of_para(q).split())
+        ch = self.chapter_of_para(q)
+        if self.chapters and self.paras[q].chapter in (getattr(self, "page_marks", None) or ()):
+            # a page number of the printed book: "Chapter 4, page 50" (the owner, 2026-11-25:
+            # 'it says in "50". i think that means page fifty')
+            page = " ".join(str(self.chapters[self.paras[q].chapter]).split())
+            ch = (f"{ch}, page {page}" if ch else f"Page {page}") if page else ch
+            return (ch + " · " + place) if ch else place[:1].upper() + place[1:]
         if not ch:
             return place[:1].upper() + place[1:]
         return (ch if ch[:1].isalpha() else f"In “{ch}”") + " · " + place
@@ -863,15 +897,59 @@ LOVE_NEAR = re.compile(
     r"blush(es|ed|ing)?|attract(ed|ion|ive)|longing|smitten|came out|coming out)\b", re.I)
 
 
+# What the small AI calls same-sex is, nearly always, a man and a woman or friends talking (Camp Club
+# Girls 43, Blue Ridge Sunrise 902, two audiobooks 677 and 721, Truth Be Told 61 (the owner,
+# 2026-11-24: "fix the reasons why so much is ticked"), none ticked). It ignores who is who. So a
+# suggestion is kept only with a plain sign of a same-sex or non-traditional couple nearby (the word
+# lists' relationship test, "gay", "two moms", "throuple", "more than friends"...), or with a word of
+# romance in the suggested line itself and no man and woman in it ("he" and "she", "Mr." and
+# "Miss", "a husband" and "women") or in the lines around it ("he" and "she"). A quiet line next to
+# a kiss is no longer offered on its own; the kiss itself still is.
+SAME_SEX_SIGN = re.compile(
+    r"\b(gay|lesbians?|queer|bisexual|homosexual|trans(gender)?|non-?binary|throuple|polyam\w*|"
+    r"polygam\w*|swingers?|open marriage|moms|mums|mommies|dads|daddies|husbands|wives|"
+    r"more than (just )?friends)\b", re.I)          # ("came out as": rel_hit; not "came out here")
+# romance in the line itself: not "lips" ("Clara's lips spread in a wide grin")
+LOVE_SELF = re.compile(LOVE_NEAR.pattern.replace("lips|", ""), re.I)
+HE_PRONOUNS = {"he", "him", "his", "himself", "he's", "he'd", "he'll"}
+SHE_PRONOUNS = {"she", "her", "hers", "herself", "she's", "she'd", "she'll"}
+HE_WORDS = HE_PRONOUNS | {"mr", "sir", "man", "men", "gentleman", "gentlemen", "father", "papa", "dad",
+                          "son", "brother", "uncle", "grandfather", "stepfather", "boy", "king",
+                          "husband", "groom", "bridegroom"}
+SHE_WORDS = SHE_PRONOUNS | {"mrs", "miss", "ms", "madam", "ma'am", "woman", "women", "lady", "ladies",
+                            "mother", "mama", "mom", "daughter", "sister", "aunt", "grandmother",
+                            "stepmother", "girl", "queen", "wife", "bride"}
+
+
+def couple_ok(near, texts=None, old_style=False, at=None):
+    """Keep a same-sex suggestion? near: the normalised words of the suggested sentence and of the
+    one before and after it; texts: the same sentences as written (else the words are used); at:
+    which of them is the suggested one (else the middle one, or the only one)."""
+    if texts is None:
+        texts = [" ".join(w) for w in near]
+    if at is None:
+        at = 1 if len(near) == 3 else 0
+    pairs = [(list(w or []), str(t).replace("’", "'")) for w, t in zip(near, texts)]
+    if any(w and (rel_hit(w, old_style) or SAME_SEX_SIGN.search(t)) for w, t in pairs):
+        return True
+    if not 0 <= at < len(pairs):
+        return False
+    me, text = pairs[at]
+    if not me or not LOVE_SELF.search(text):
+        return False
+    mine = set(me)
+    if mine & HE_WORDS and mine & SHE_WORDS:
+        return False
+    every = {x for w, _ in pairs for x in w}
+    return not (every & HE_PRONOUNS and every & SHE_PRONOUNS)
+
+
 def romance_near(book, i):
     """A word of romance or of a couple in sentence i or the one before or after it (or the word
-    lists' own relationship test)."""
-    for k in (i - 1, i, i + 1):
-        if 0 <= k < len(book.sents):
-            if LOVE_NEAR.search(book.sent_text(k).replace("\u2019", "'")) or \
-                    rel_hit(book.sent_words(k), book.old_style):
-                return True
-    return False
+    lists' own relationship test), and not plainly a man and a woman (couple_ok)."""
+    ks = [k for k in (i - 1, i, i + 1) if 0 <= k < len(book.sents)]
+    return couple_ok([book.sent_words(k) for k in ks], [book.sent_text(k) for k in ks],
+                     book.old_style, ks.index(i))
 
 
 def explicit_sentences(book):
@@ -1741,12 +1819,30 @@ GUNSHOT_DISTANCE_PREV = {"within", "of", "out", "half", "a", "beyond", "musket"}
 GUNSHOT_DISTANCE_NEXT = {"reach", "range", "distance", "of"}
 
 
+FEELING_SUBJECT = {"thought", "thoughts", "pain", "headache", "ache", "guilt", "fear", "memory",
+                   "memories", "words", "realization", "realisation", "panic", "sorrow", "grief",
+                   "regret", "doubt", "doubts", "jealousy", "envy", "shame", "longing", "loneliness",
+                   "smell", "odor", "odour", "stench", "noise", "sound", "light", "sunlight", "glare",
+                   "wind", "cold", "question", "accusation", "remorse", "dread", "worry", "anxiety"}
+SELF_SENSES = {"temples", "senses", "nostrils", "ears", "eyes", "nose", "conscience", "mind", "pride",
+               "feelings", "dignity"}
+FIGURE_NOT = {"knife", "knives", "dagger", "daggers", "sword", "swords", "blade", "bayonet", "spear",
+              "fist", "fists", "gun", "pistol", "rifle", "attacker", "attackers", "blood", "bleeding"}
+
+
 def figure_of_speech(words, i):
     """Little Women (the night run's report, 2026-11-17): "as if she had murdered some innocent thing",
     "as if she had stabbed her dearest friend" (a feeling), "a pair of killing boots" (stylish), "I always
     wanted to do the killing part" (in a play), "in a fair way to be killed by kindness" (a saying)."""
     before = words[max(0, i - 6):i]
     if any(before[k:k + 2] in (["as", "if"], ["as", "though"]) for k in range(len(before))):
+        return True
+    # Truth Be Told (the owner, 2026-11-24): "The thought stabbed at her heart", "The headache she'd
+    # been fighting since midmorning assaulted her temples" (a feeling, a pain, a smell)
+    if words[i].startswith(("stab", "assault", "pummel")) and not FIGURE_NOT & set(words) and \
+            (FEELING_SUBJECT & set(before[-3:]) or
+             words[i + 1:i + 2] in (["her"], ["his"], ["my"], ["their"], ["your"]) and
+             (words[i + 2] if i + 2 < len(words) else "") in SELF_SENSES):
         return True
     # The Swiss Family Robinson (the night run's report, 2026-11-17): "within gunshot", "out of gunshot
     # reach" (a distance); "prevent its being strangled", "as they might be strangled" (saving animals);

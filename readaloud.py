@@ -812,10 +812,12 @@ def load_book(path, progress=None, cancel=None, language="en"):
             raise BookError(str(ex))
         title, author = book.title or title, book.author
         by_ch = {}
-        for p in book.paras:
-            by_ch.setdefault(p.chapter, []).append(p)
-        for ci in sorted(by_ch):
-            name = book.chapters[ci] if ci < len(book.chapters) else ""
+        for q, p in enumerate(book.paras):
+            # (a printed page number in an epub's page list belongs to the chapter it's in: Truth Be
+            # Told, 2026-11-25, had 351 "chapters" named 8, 9, 10...)
+            by_ch.setdefault(book.real_chapter(q), []).append(p)
+        for ci in sorted(by_ch, key=lambda c: -1 if c is None else c):
+            name = book.chapters[ci] if ci is not None and ci < len(book.chapters) else ""
             chapters.append({"title": " ".join((name or "").split()),
                              "paras": [["h" if p.heading else "p", p.text] for p in by_ch[ci]]})
         if fmt == ".epub":

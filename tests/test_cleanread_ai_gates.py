@@ -183,7 +183,7 @@ def test_medical_gate():
 
 
 def test_other_kinds_are_not_gated():
-    for kind in ("drinking", "smoking", "religion", "kiss", "crude", "holiday"):
+    for kind in ("religion", "crude", "holiday", "sex"):
         assert E.ai_gate(kind, [words("The bus was late again.")])
 
 

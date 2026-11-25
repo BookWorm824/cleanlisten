@@ -81,7 +81,9 @@ def si_of(book, text):
 def test_plain_lines_between_friends_are_not_relationship_finds(book, fake):
     found = R.ai_find(book, {"relationship": R.SCAN_AI["relationship"], "bully": R.SCAN_AI["bully"]})
     kept = {book.sent_text(i) for i, kind in found if kind == "relationship"}
-    assert REAL in kept and QUIET in kept          # the kiss, and the line right after it
+    # the kiss; the quiet line after it isn't offered on its own since 1.17.104 (Truth Be Told: a
+    # line next to a word of romance was how most of the 61 wrong ones got in)
+    assert REAL in kept and QUIET not in kept
     assert FRIENDS not in kept and GIGGLE not in kept
     assert (si_of(book, BULLY), "bully") in found  # other filters as before
     # the dropped ones aren't even double-checked (less waiting)

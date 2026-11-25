@@ -1,5 +1,5 @@
 {
- "version": "1.17.103",
+ "version": "1.17.104",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -61,7 +61,7 @@
   "readaloud_voices.npz"
  ],
  "sha256": {
-  "cleanlisten.py": "a3e57fc9e43a4c733c2954af15b77cffac8d019ad60c0da53dc2c2f9c5fa6706",
+  "cleanlisten.py": "069a28c71becc3d296cbcd55e358b181ddc5fe5ddea0b08e4c99ddd5cadbcf8f",
   "CleanListen.pyw": "49290d5c1a32da7579546b1eb892ebebe98ca2cda2e6dd6f8a6f4a007ecfc3c3",
   "cleanlisten_claude.py": "de89f5158edc9401a705b498a191ea44a120c9acc344d04bf15fe51547497550",
   "shared_learned.json": "9eaac90b12aa6a9da8741d0335c6235ecfe29751e224b194eb6f351eaaa565d8",
@@ -84,14 +84,14 @@
   "ollama_care.py": "dfb2a7e47f7cf56c4ab19cbce1e6d52eda9e8e3d9768fd46ca5e2fd8f0a66ccc",
   "bookqueue.py": "86067dc7538d40ba817da844f0c8f617ea7a8a2f6306b027977db4919793f881",
   "shortcuts.py": "8b6709fa744169fd2493a3862ff20b18d08d4d4f32057f39db81119250fa40a3",
-  "cleanread.py": "347591e024967ab53c0404d17f6ea8b221183e7ece8dab809aff94aa71f3bb28",
+  "cleanread.py": "ff41b7f547312bb8dbff52286c45824d32e834bcf05144194342fa6dfb5021cb",
   "pdfbook.py": "487bb95511c6d858e1eb5271c3bf7439d1a0a4e3af15dec115dac080863bc563",
   "CleanRead.pyw": "074679803b3316abf6280bcad1320aebbf49c30340d7783edc1fbd4fc69cfa13",
   "cleanread.ico": "07262f5f296d2542d3c1d5d900274f31a1173a72f5824cbc222988d579e32c63",
   "cleanlisten_logo.png": "1b0db5569d32f91cbda43f8ceb6a4ec94442f3ee4c0bcf4a37161dfc6886ce04",
   "cleanread_logo.png": "6b7b20b35fd64b1fa6b7ba7ebc42c99cda783c0e0562ef94681f97ccd6933fa3",
   "update.json": "c1b41ea93743b2a35aaaa1586189f94d9daeef73e9e43b15719cc04e8edd73ea",
-  "readaloud.py": "53b6da8b80bf27417a9cc830ae1c1d7d77912c9f415e0f93b8356b79758997d3",
+  "readaloud.py": "b114426b7d7d9538a329549a1b403c26eb2f94925db08c617b7838eaff079e83",
   "ReadAloud.pyw": "afae692255655b7e929c563532198caa7e8b77fdfc4bd3d9d7378b8885d60198",
   "readaloud.ico": "c0fc299697a8745bf5db3bbcbbf1038a85dc25ddcc2399d8314d00fc9fd89bbb",
   "readaloud_logo.png": "77f2168599aca3666c0f7d17e5cd80f9de6cf71c773ac102ca9e5e65dd78b06a",

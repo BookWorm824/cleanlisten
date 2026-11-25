@@ -4279,6 +4279,91 @@ def ai_gore_kind(kind, near, kinds):
     return "graphic" if "graphic" in kinds else None
 
 
+# The kinds that had no gate (the owner, Truth Be Told, 2026-11-24: "there was a lot tagged and not
+# cut ... if it doesn't need cut why tag so much"): the small AI offered 181 lines and she ticked
+# none, "Amelia sprang to her feet." and "Chapter 14" as nudity, "Merrick took a step forward." as
+# living together, "Merrick drummed his fingers on the desk." as a rude gesture. Now a suggestion of
+# these kinds also needs a word of the thing in the sentence or the one before or after (generous on
+# purpose: a sign doesn't make it shown, it only lets the AI's double-check see it), or the word
+# lists' own test for that kind.
+_NUDE = (r"naked\w*", r"nude\w*", r"nudity", r"bare", r"bared", r"undress\w*", r"unclothed",
+         r"disrob\w*", r"strip(s|ped|ping)?", r"topless", r"bottomless", r"shirtless", r"breasts?",
+         r"buttocks?", r"butt", r"nipples?", r"genitals?", r"groin", r"crotch", r"privates", r"skin",
+         r"skinnydipp\w*", r"buff", r"towels?", r"bath(e|ed|es|ing|s|tub)?", r"shower(s|ed|ing)?",
+         r"clothes", r"clothing", r"clothed", r"nothing", r"sheets?", r"robe")
+GATE_WORDS = {
+    "nudity": _gw(*_NUDE),
+    "implied": _gw(*_NUDE, r"blankets?", r"bed", r"covers", r"back"),
+    "immodest": _gw(*_NUDE, r"swimsuits?", r"bikinis?", r"bathing", r"underwear", r"lingerie",
+                    r"bras?", r"panties", r"knickers", r"briefs", r"boxers", r"thong", r"corsets?",
+                    r"chemises?", r"petticoats?", r"negligees?", r"nightgowns?", r"nighties?",
+                    r"dress(es)?", r"skirts?", r"neckline", r"lowcut", r"revealing", r"tight",
+                    r"shorts", r"cleavage", r"danc(e|ed|es|er|ers|ing)", r"wore", r"wear(s|ing)?",
+                    r"outfits?", r"sexy", r"skimpy", r"sheer"),
+    "kiss": _gw(r"kiss\w*", r"lips", r"mouth", r"smooch\w*", r"necking", r"makeout"),
+    "flirt": _gw(r"flirt\w*", r"wink(s|ed|ing)?", r"teas(e|ed|es|ing)", r"sweettalk\w*",
+                 r"charm(s|ed|ing)?", r"compliment\w*", r"pretty", r"handsome", r"beautiful",
+                 r"lovely", r"gorgeous", r"cute", r"attractive", r"admir\w*", r"blush\w*",
+                 r"darling", r"sweetheart", r"honey", r"babe", r"baby", r"dat(e|es|ed|ing)",
+                 r"crush(es)?", r"ogl\w*", r"leer\w*", r"seduc\w*", r"court(ing|ed|ship)?",
+                 r"romanc\w*", r"lov(e|es|ed|ely|er|ers)", r"kiss\w*", r"hot", r"sexy",
+                 r"pickup", r"eyeing", r"eyed", r"comely", r"nicer", r"fancy"),
+    "unmarried": _gw(r"together", r"mov(e|ed|es|ing)", r"shack\w*", r"mistress(es)?",
+                     r"lovers?", r"girlfriends?", r"boyfriends?", r"partners?", r"unwed",
+                     r"unmarried", r"wedlock", r"illegitimate", r"bastards?", r"pregnant",
+                     r"slept", r"sleep(s|ing)?", r"bed", r"sin", r"commonlaw", r"roommates?",
+                     r"cohabit\w*", r"ex", r"exes", r"fianc\w*", r"engaged", r"apartment",
+                     r"place", r"kicked"),
+    "sleeping": _gw(r"affairs?", r"cheat\w*", r"unfaithful\w*", r"adulter\w*", r"infidelit\w*",
+                    r"mistress(es)?", r"lovers?", r"flings?", r"onenight", r"hook(s|ed|ing)?",
+                    r"hookups?", r"slept", r"sleep(s|ing)?", r"bed", r"tryst", r"twotim\w*",
+                    r"betray\w*", r"seduc\w*", r"rendezvous", r"motel", r"hotel", r"sex\w*",
+                    r"fool(ing)?", r"around", r"carry(ing)?", r"carried"),
+    "gestures": _gw(r"flip(s|ped|ping)?", r"gesture\w*", r"obscene\w*", r"vulgar\w*",
+                    r"rude\w*", r"crude\w*", r"middlefinger", r"bird", r"crotch", r"thumb(s|ed|ing)?"),
+    "drinking": _gw(r"drink\w*", r"drank", r"drunk\w*", r"booz\w*", r"beers?", r"wines?",
+                    r"whiske?y", r"whiskeys", r"liquor\w*", r"alcohol\w*", r"bottles?", r"rum",
+                    r"gin", r"vodka", r"brandy", r"bourbon", r"scotch", r"champagne", r"ale",
+                    r"lager", r"mead", r"cider", r"tequila", r"cocktails?", r"martinis?",
+                    r"saloons?", r"bars?", r"pubs?", r"taverns?", r"bartenders?", r"barkeep\w*",
+                    r"hangover", r"hungover", r"sober\w*", r"intoxicat\w*", r"tipsy", r"toast\w*",
+                    r"shots?", r"pints?", r"kegs?", r"flasks?", r"wasted", r"buzzed", r"sips?",
+                    r"sipp(ed|ing)", r"glass(es)?", r"cups?", r"spirits", r"moonshine", r"sherry",
+                    r"port", r"punch", r"tipple", r"inebriat\w*", r"binge\w*", r"cheers"),
+    "smoking": _gw(r"smok\w*", r"cigar\w*", r"pipes?", r"tobacco", r"puff\w*", r"vap(e|es|ed|ing)",
+                   r"lighters?", r"ash(es|tray)?", r"nicotine", r"snuff", r"stogies?", r"cheroots?",
+                   r"joints?", r"weed", r"lit", r"light(ed)?", r"matches", r"inhal\w*", r"exhal\w*"),
+    "drugs": _gw(r"drugs?", r"drugged", r"pills?", r"opium", r"morphine", r"laudanum", r"cocaine",
+                 r"coke", r"heroin", r"marijuana", r"weed", r"pot", r"high", r"stoned", r"needles?",
+                 r"inject\w*", r"dos(e|es|ed|ing)", r"overdos\w*", r"meth\w*", r"crack", r"dope",
+                 r"narcotics?", r"addict\w*", r"junk(ie|y|ies)", r"dealers?", r"dealing", r"powder",
+                 r"lsd", r"acid", r"ecstasy", r"molly", r"hash", r"joints?", r"smok\w*", r"snort\w*",
+                 r"fentanyl", r"oxy\w*", r"opioids?", r"prescription", r"tripp(ing|ed)", r"sniff\w*",
+                 r"syringes?", r"bong", r"stash"),
+}
+GATE_WORDS["kiss_ss"] = GATE_WORDS["kiss"]
+GATE_PHRASE = {"gestures": re.compile(r"\b(the|his|her|a) finger\b|\bmiddle finger\b|\bthe bird\b|"
+                                      r"\bthumb(s|ed|ing)? (his|her|their|my|your) nose\b|\bup yours\b"),
+               "flirt": re.compile(r"\bhit(s|ting)? on\b|\bmade a pass\b|\bmaking eyes\b"),
+               "unmarried": re.compile(r"\bliv(e|ed|es|ing) with\b|\bnot married\b")}
+
+
+def _word_gate(kind):
+    pat, phrase = GATE_WORDS[kind], GATE_PHRASE.get(kind)
+
+    def test(near):
+        for w in near:
+            if any(pat.match(x) for x in w) or (phrase and phrase.search(" ".join(w))):
+                return True
+            try:
+                if kind in _MATCHERS and sentence_hit(kind, w):
+                    return True
+            except Exception:
+                return True
+        return False
+    return test
+
+
 AI_GATES = {"violence": lambda near: any(violence_sign(w) for w in near),
             "gore": lambda near: any(gory_sign(w) for w in near),
             "graphic": lambda near: any(gory_sign(w) for w in near),
@@ -4288,7 +4373,15 @@ AI_GATES = {"violence": lambda near: any(violence_sign(w) for w in near),
             "bully": lambda near: any(bully_sign(w) for w in near),
             "medical": lambda near: any(medical_sign(w) for w in near),
             "forensic": lambda near: any(sentence_hit("forensic", w) for w in near),
-            "relationship": lambda near: any(romance_sign(w) for w in near)}
+            "relationship": lambda near: _read_couple_ok(near),
+            **{k: _word_gate(k) for k in GATE_WORDS}}
+
+
+def _read_couple_ok(near):
+    try:
+        return _read().couple_ok(near)
+    except Exception:
+        return any(romance_sign(w) for w in near)
 
 
 def ai_gate(kind, near):
@@ -4430,7 +4523,10 @@ def ai_assist(asr, scenes, kinds, to_sentences, span_times, progress=None, cance
     for i, kind in sorted(cands):
         near = [sent_norm[k] for k in (i - 1, i, i + 1) if 0 <= k < len(sents)]
         kind = ai_gore_kind(kind, near, kinds)      # blood without insides is graphic (2026-11-20)
-        if kind and ai_gate(kind, near):
+        # (same-sex: which line is the suggested one matters, so the three in place, gaps empty)
+        if kind and (_read_couple_ok([sent_norm[k] if 0 <= k < len(sents) else []
+                                      for k in (i - 1, i, i + 1)]) if kind == "relationship"
+                     else ai_gate(kind, near)):
             todo.add((i, kind))
     todo = sorted(todo)
     for n, (i, kind) in enumerate(todo):
@@ -4577,6 +4673,33 @@ SEXUAL_TALK_EXTRA = ("Innuendo counts too: a suggestive remark with a sexual mea
                      "invitation to undress or to have sex, a line that hints at sex), talk of sleeping "
                      "with someone to get ahead, naked photos.")
 SEXUAL_TALK_CHUNK = 30
+# A line it offers needs some sign of sex, the body or undressing in it (the owner, Truth Be Told,
+# 2026-11-24: 34 lines offered, nearly all an ordinary kiss, longing, "Don't let me down." or
+# "Or away from me."; the real ones, a man "eyeing her as though looking through her dress", "His
+# eyes traveled down the front of her bodice", "suggestive words", all have one). Kissing and
+# romance words on purpose don't count.
+INNUENDO_WORDS = _gw(
+    r"sex\w*", r"naked\w*", r"nude\w*", r"undress\w*", r"strip(s|ped|ping|per|pers)?", r"beds?",
+    r"bedroom\w*", r"bedded", r"slept", r"sleep(ing|s)?", r"pants", r"trousers", r"underwear",
+    r"panties", r"knickers", r"bras?", r"bodice", r"dress", r"shirt", r"skirt", r"clothes",
+    r"bod(y|ies)", r"breasts?", r"boobs?", r"hips", r"thighs?", r"legs", r"lap", r"butt",
+    r"privates", r"crotch", r"groin", r"hot", r"horny", r"aroused", r"suggestive\w*",
+    r"intima\w*", r"desir\w*", r"lust\w*", r"seduc\w*", r"tempt\w*", r"naughty", r"dirty",
+    r"kinky", r"frisky", r"lucky", r"bang\w*", r"screw\w*", r"hookup", r"nudes", r"condoms?",
+    r"viagra", r"spank\w*", r"stud", r"virgin\w*", r"prostitut\w*", r"brothels?", r"whor\w*",
+    r"harlot\w*", r"mistress", r"fling", r"affair", r"orgasm\w*", r"climax\w*", r"erect\w*",
+    r"aphrodisiac\w*", r"wink\w*", r"ogl\w*", r"leer\w*", r"skin", r"grop\w*", r"fondl\w*",
+    r"tonight", r"alone", r"favors?", r"favours?", r"lick\w*", r"suck\w*", r"cum")
+INNUENDO_PHRASE = re.compile(r"\b(make|making|made) love\b|\bturn(s|ed)? (me|you|him|her) on\b|"
+                             r"\bget(ting)? lucky\b|\bspend the night\b|\bstay the night\b|"
+                             r"\bdo(ing)? (me|it)\b|\bdid it\b|\bcome (up|over|inside|to bed)\b|"
+                             r"\bhook(ed|ing)? up\b|\btake (it|them|that|those|everything) off\b")
+
+
+def innuendo_sign(words):
+    """Some sign of sex, the body, undressing or a come-on in a line (generous on purpose: it only
+    lets the AI's own check see the line)."""
+    return any(INNUENDO_WORDS.match(w) for w in words) or bool(INNUENDO_PHRASE.search(" ".join(words)))
 
 
 def sexual_talk(texts, ask, ref_def, cancel=None, progress=None, chunk=SEXUAL_TALK_CHUNK):
@@ -4615,6 +4738,8 @@ def sexual_talk(texts, ask, ref_def, cancel=None, progress=None, chunk=SEXUAL_TA
             k = f.get("n", 0) - 1 if isinstance(f, dict) and isinstance(f.get("n"), int) else -1
             q = plain(f.get("words", "")) if k >= 0 else ""
             if not 0 <= k < len(part) or not q or q not in plain(part[k]) or a + k in out:
+                continue
+            if not innuendo_sign(plain(part[k]).split()):
                 continue
             ex = "\n".join(x for x in (part[k - 1] if k else "", ">>> " + part[k] + " <<<",
                                         part[k + 1] if k + 1 < len(part) else "") if x)
