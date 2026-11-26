@@ -1,5 +1,5 @@
 {
- "version": "1.17.108",
+ "version": "1.17.109",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -95,7 +95,7 @@
   "ReadAloud.pyw": "b62f8ad6c50f96ec0e05c170e7a938f70a8da1843d1b5e2b5d1b1fc1d61171d8",
   "readaloud.ico": "c0fc299697a8745bf5db3bbcbbf1038a85dc25ddcc2399d8314d00fc9fd89bbb",
   "readaloud_logo.png": "77f2168599aca3666c0f7d17e5cd80f9de6cf71c773ac102ca9e5e65dd78b06a",
-  "readaloud_ai.py": "b14aeb91db7ab4980b2a0a8b52eed79957fac48fbd24eef054092ade8d473372",
+  "readaloud_ai.py": "6fbe40986356c5ada3c4b61ad11b0b60e4ee22bd4a6b97bccf847400b5c0f9ab",
   "readaloud_gpu.py": "17e541c46bedcd65627904a710d5501df46d2a1a0aa62ba540d36ef9da9e1977",
   "readaloud_gpu_req.txt": "e7917c27c7236a7f6657303bf84d86f04f86f6956497652d3152ace85ff0fbcc",
   "rv_grace.flac": "e2e665c61775278507a0fd1e28c57dd633a3db4dd808af0a5029dc6c2f07526f",

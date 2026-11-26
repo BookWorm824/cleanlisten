@@ -200,7 +200,7 @@ def _ask(prompt, schema, timeout=1200):
     try:
         return lib.run(prompt, SYSTEM, schema=schema, timeout=timeout)["data"]
     except lib.ClaudeError as ex:
-        raise RuntimeError(f"{lib.name()} couldn't go through the book: {ex}")
+        raise RuntimeError(f"The AI couldn't go through the book: {ex}")
 
 
 def cast(job, chapters, cache):
@@ -318,7 +318,7 @@ def names(job, chapters, cast_data, cache):
         data = lib.run(prompt, SYSTEM, schema=NAMES_SCHEMA, timeout=1800,
                        tools="WebSearch" if web else "")["data"]
     except lib.ClaudeError as ex:
-        raise RuntimeError(f"{lib.name()} couldn't look up the names: {ex}")
+        raise RuntimeError(f"The AI couldn't look up the names: {ex}")
     f.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf8")
     return data
 
@@ -430,7 +430,7 @@ def direct(jobdir, progress=None, stop=None, paused=None):
     lib = cc()
     if job.get("director") in lib.NAMES:     # for this book only (not saved as CleanListen's choice)
         lib.PROVIDER = job["director"]
-    who = lib.name()
+    who = "The AI"     # on screen just "the AI", never Claude/ChatGPT/Gemini by name (the owner, 2026-11-26)
     cache = direction_dir() / book_key(job, chapters)
     cache.mkdir(parents=True, exist_ok=True)
     say(0.0, f"{who} is getting to know the book…")
@@ -662,7 +662,7 @@ def voice_name(v):
 
 
 def write_report(jobdir, job, cast_data, rep):
-    who = provider_name(job.get("director"))
+    who = "the AI"
     lines = [f"{job['title']} — what {who} changed before ReadAloud read it", "",
              f"Told {'in the first person by ' + cast_data.get('narrator_name', '') if cast_data.get('first_person') else 'by a narrator'}.",
              cast_data.get("notes", ""), ""]
