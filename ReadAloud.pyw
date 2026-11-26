@@ -55,6 +55,8 @@ def voice_labels(lang):
     return [f"{name}  ·  {desc}" for _, _, name, desc, _ in engine.voices_for(lang)]
 GPU_LABELS = [gpu.GPU_VOICES[v][0].replace(" - ", "  ·  ") for v in gpu.NARRATORS]
 AI_NAMES = {"claude": "Claude", "chatgpt": "ChatGPT", "gemini": "Gemini"}
+ACTING_NOTE = ("Takes much longer to make than the other voices. On a laptop, a long book can "
+               "take a day or more.")
 KINDS = {"m4b": "M4B", "mp3": "MP3"}
 KIND_NOTES = {
     "m4b": "The audiobook is one M4B file with chapters and the book's cover. It plays in "
@@ -710,6 +712,14 @@ class App(tk.Tk):
                                    desc + ("" if r == "kokoro" else "  On the graphics card."),
                                    icon="pc" if r == "kokoro" else "music")
             card.sub.config(wraplength=X(200))
+            if r == "acting":
+                # a note one size smaller that it's slow (the owner, 2026-11-26: Truth Be Told
+                # with the acting voice on the laptop said 12 hours and took over 30)
+                card.note = tk.Label(card.sub.master, text=ACTING_NOTE, bg=card.sub.cget("bg"),
+                                     fg=card.sub.cget("fg"), font=(FONT, 8), anchor="w",
+                                     justify="left", wraplength=X(200), cursor="hand2")
+                card.note.pack(anchor="w", pady=(X(3), 0))
+                look.on_click(card.note, lambda e, r=r: self.reader_var.set(r))
             self.reader_cards[r] = card
         self.reader_var.trace_add("write", lambda *_: self.after_idle(self._reader_picked))
         # the chosen reader's voice choices open right under its own row, not under all four (as

@@ -1,5 +1,5 @@
 {
- "version": "1.17.109",
+ "version": "1.17.110",
  "files": [
   "cleanlisten.py",
   "CleanListen.pyw",
@@ -92,7 +92,7 @@
   "cleanread_logo.png": "6b7b20b35fd64b1fa6b7ba7ebc42c99cda783c0e0562ef94681f97ccd6933fa3",
   "update.json": "c1b41ea93743b2a35aaaa1586189f94d9daeef73e9e43b15719cc04e8edd73ea",
   "readaloud.py": "b114426b7d7d9538a329549a1b403c26eb2f94925db08c617b7838eaff079e83",
-  "ReadAloud.pyw": "b62f8ad6c50f96ec0e05c170e7a938f70a8da1843d1b5e2b5d1b1fc1d61171d8",
+  "ReadAloud.pyw": "d995c5cd650b0dcff3d22cc0a350b21c75e863d1b43f07ae19043266d379f43f",
   "readaloud.ico": "c0fc299697a8745bf5db3bbcbbf1038a85dc25ddcc2399d8314d00fc9fd89bbb",
   "readaloud_logo.png": "77f2168599aca3666c0f7d17e5cd80f9de6cf71c773ac102ca9e5e65dd78b06a",
   "readaloud_ai.py": "6fbe40986356c5ada3c4b61ad11b0b60e4ee22bd4a6b97bccf847400b5c0f9ab",
