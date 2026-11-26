@@ -232,6 +232,14 @@ class App(tk.Tk):
         self.job = 0
         self.ending = []              # (worker thread, stopping thread) of books told to stop
         threading.Thread(target=lambda: self.q.put(("gpu_check", gpu.gpu_check())), daemon=True).start()
+
+        def learn():
+            try:
+                engine.learn_from_old_books()
+            except Exception:
+                return
+            self.q.put(("speeds",))
+        threading.Thread(target=learn, daemon=True, name="how fast this computer is").start()
         self._style()
         self.page = None
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -712,6 +720,11 @@ class App(tk.Tk):
                                    desc + ("" if r == "kokoro" else "  On the graphics card."),
                                    icon="pc" if r == "kokoro" else "music")
             card.sub.config(wraplength=X(200))
+            # how long this book takes with it on this computer (the owner, 2026-11-26)
+            card.time = tk.Label(card.sub.master, text="", bg=card.sub.cget("bg"), fg=INK,
+                                 font=(FONT, 9), anchor="w", justify="left", wraplength=X(200),
+                                 cursor="hand2")
+            look.on_click(card.time, lambda e, r=r: self.reader_var.set(r))
             if r == "acting":
                 # a note one size smaller that it's slow (the owner, 2026-11-26: Truth Be Told
                 # with the acting voice on the laptop said 12 hours and took over 30)
@@ -934,14 +947,15 @@ class App(tk.Tk):
         self._refresh_steps()
 
     def _show_reader(self):
+        self._card_times()
         if not (getattr(self, "reader_lbl", None) and self.reader_lbl.winfo_exists()):
             return
         r = self._reader()
         self.setup_btn.pack_forget()
+        speed = self._make_text(r)
         if not gpu.is_gpu(r):
-            self.reader_lbl.config(text="The quickest: about 2 hours for a 10-hour book.", fg=MUTED)
+            self.reader_lbl.config(text="The quickest.  " + speed, fg=MUTED)
             return
-        speed = f"About {10 / gpu.READERS[r][2]:.0f} hours for a 10-hour book (start it at night)."
         if self.installing:
             return                                          # the setup is showing its progress
         if self.gpu_ok is None:
@@ -1259,13 +1273,40 @@ class App(tk.Tk):
     def _chosen(self):
         return [i for i, v in enumerate(self.chapter_vars) if v.get()]
 
+    def _book_words(self):
+        b = self.book
+        if not b or not getattr(self, "chapter_vars", None):
+            return 0
+        return sum(b["chapters"][i]["words"] for i in self._chosen())
+
+    def _make_text(self, reader, words=None):
+        """How long making takes with this voice here: this book, or a 10-hour book."""
+        words = self._book_words() if words is None else words
+        what = "this book" if words else "a 10-hour book"
+        hrs, measured = engine.make_hours(words or engine.WORDS_PER_SEC * 36000, reader)
+        took = f"{round(hrs)} hours" if hrs >= 3 else hours_text(hrs)   # 51 hours, not 51 hours 7 minutes
+        return (f"About {took} to make {what}" +
+                (" on this computer." if measured else "."))
+
+    def _card_times(self, words=None):
+        """Each voice card says how long it takes (measured here, or the guess), under its words."""
+        for r, card in getattr(self, "reader_cards", {}).items():
+            t = getattr(card, "time", None)
+            if not (t and t.winfo_exists()):
+                continue
+            t.config(text=self._make_text(r, words), bg=card.sub.cget("bg"))
+            if not t.winfo_ismapped():
+                note = getattr(card, "note", None)
+                t.pack(anchor="w", pady=(4, 0), **({"before": note} if note else {}))
+
     def _book_text(self):
         b = self.book
         if not b or not self.book_lbl.winfo_exists():
             return
         words = sum(b["chapters"][i]["words"] for i in self._chosen())
         hrs = engine.estimate_hours(words, engine.SPEEDS.get(self.speed_box.get(), 1.0))
-        make = gpu.hours_to_make(hrs, self._reader())
+        make = engine.make_hours(words, self._reader())[0]
+        self._show_reader()
         by = f"\nby {b['author']}" if b.get("author") else ""
         series = f"\n{b['series']}" + (f", book {b['number']}" if b.get("number") else "") if b.get("series") else ""
         self.book_lbl.config(text=f"{b['title']}{by}{series}\n\nAbout {hours_text(hrs)} of listening; "
@@ -1585,7 +1626,9 @@ class App(tk.Tk):
                 return                      # it still says Paused until Resume
             self.status.config(text=msg[2])
             if msg[3] is not None:
-                self.left_lbl.config(text=engine.fmt_left(msg[3]).capitalize())
+                guess = getattr(self.maker, "left_guess", False)
+                self.left_lbl.config(text=engine.fmt_left(msg[3]).capitalize() +
+                                     (" (a first guess)" if guess else ""))
             if getattr(self, "watch", None):
                 self.watch.doing["status"] = msg[2]
         elif kind == "book":
@@ -1639,6 +1682,8 @@ class App(tk.Tk):
                 self.ai_status.config(text=f"{name} isn't set up on this computer yet." if st == "missing"
                                       else f"{name} isn't signed in.", fg=FAIL)
                 self.ai_btn.pack(side="left", padx=self._px(10))
+        elif kind == "speeds":
+            self._book_text()
         elif kind == "gpu_check":
             self.gpu_ok = msg[1]
             # no graphics card for the new voices (the owner's sister?): start on the Quick one, unless

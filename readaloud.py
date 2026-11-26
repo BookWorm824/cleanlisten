@@ -26,6 +26,7 @@ Command line (for testing):
 """
 import hashlib
 import html
+import collections
 import json
 import os
 import re
@@ -1243,6 +1244,11 @@ def workers_for_pc():
     return n, max(2, min(4, cores // n))
 
 
+RECENT_SECS = 30 * 60      # the time left follows the speed of the last half hour
+TRUST_SECS = 15 * 60       # after 15 minutes of reading it's all the measured speed
+GUESS_SECS = 10 * 60       # until then it says it's a first guess
+
+
 class Maker:
     """Reads a job's chapters, several at once, each in its own worker process (a crash in one
     never takes the window down). progress(fraction, message, seconds_left or None)."""
@@ -1258,6 +1264,7 @@ class Maker:
         self._frozen = []
         self._paused_at = None
         self._paused_for = 0.0
+        self.left_guess = True        # the time left is still a first guess (says so on screen)
 
     @property
     def paused(self):
@@ -1344,6 +1351,12 @@ class Maker:
         todo.sort(key=lambda i: -words[i])
         done_words = sum(words[i] for i in range(len(chapters)) if i not in todo)
         start_words, first = done_words, None
+        reader = job.get("reader", "kokoro")
+        guess_wps = making_speed(reader)[0]
+        base_w, base_s = speed_of_book(self.jobdir.name)
+        recent = collections.deque()          # (clock, words): the last half hour
+        wall = time.time()
+        saved_at = 0.0
         partial = {}
         lock = threading.Lock()
         errors = []
@@ -1394,23 +1407,45 @@ class Maker:
             t.start()
         while any(t.is_alive() for t in threads):
             time.sleep(0.5)
+            gap = time.time() - wall
+            wall = time.time()
+            if gap > 30 and not self.paused:     # the computer was asleep: that isn't reading time
+                with self._plock:
+                    self._paused_for += gap - 0.5
             with lock:
                 have = [chapter_file(self.jobdir, i).exists() for i in range(len(chapters))]
                 now = sum(words[i] if have[i] else min(words[i], partial.get(i, 0)) for i in range(len(chapters)))
                 left_ch = len(chapters) - sum(have)
-            # time left: measured from the first words read (the voices take a while to start),
-            # and only once there's a fair sample, so it never says "4 hours" for a 12-minute job
+            # time left: a first guess at once (from how fast this computer was before), then
+            # more and more the speed of the last half hour, measured from the first words read
+            # (the voices take a while to start)
             clock = self._clock()
             if first is None and now > start_words:
                 first = (clock, now)
-            left = None
-            if first and clock - first[0] > 45 and now - first[1] > 0.02 * total and not self.paused:
-                rate = (now - first[1]) / (clock - first[0])
-                left = (total - now) / rate
+            left, self.left_guess = None, True
+            if not self.paused:
+                rate = guess_wps
+                if first and clock - first[0] > 0:
+                    if not recent or clock - recent[-1][0] >= 5:
+                        recent.append((clock, now))
+                    while len(recent) > 2 and clock - recent[1][0] >= RECENT_SECS:
+                        recent.popleft()
+                    span = clock - recent[0][0]
+                    if span >= 120 and now > recent[0][1]:
+                        trust = min(1.0, (clock - first[0]) / TRUST_SECS)
+                        rate = trust * (now - recent[0][1]) / span + (1 - trust) * guess_wps
+                        self.left_guess = clock - first[0] < GUESS_SECS
+                    if clock - saved_at >= 120 and clock - first[0] >= SPEED_MIN_SECS:
+                        saved_at = clock
+                        remember_speed(self.jobdir.name, reader, base_w + now - first[1],
+                                       base_s + clock - first[0])
+                left = (total - now) / max(rate, 1e-6)
             msg = f"Reading the book aloud… {len(chapters) - left_ch} of {len(chapters)} chapters done"
             if self.status:
                 msg = self.status
             self.say(base + (0.95 - base) * now / total, msg, left)
+        if first and self._clock() - first[0] >= SPEED_MIN_SECS:
+            remember_speed(self.jobdir.name, reader, base_w + now - first[1], base_s + self._clock() - first[0])
         if errors:
             raise errors[0]
         if self._stop.is_set():
@@ -1844,6 +1879,131 @@ def fmt_left(sec):
 def estimate_hours(words, speed=1.0):
     """How long the audiobook will be (Kokoro reads about 165 words a minute at normal speed)."""
     return words / (165.0 * speed) / 60.0
+
+
+# ---------------------------------------------------------------------------
+# How fast this computer really makes a book, with each voice (the owner, 2026-11-26: Truth Be
+# Told with the acting voice on her laptop said 12 hours at midnight and 20 hours left ten hours
+# later; the 12 was a guess made for the PC's graphics card). Each book's measured reading speed
+# is kept in APP_DATA (this computer's own), and the guesses come from it.
+# ---------------------------------------------------------------------------
+SPEEDS_FILE = APP_DATA / "readaloud_speeds.json"
+WORDS_PER_SEC = 165.0 / 60.0          # one second of audio at normal speed
+SPEED_BOOKS = 5                       # the newest books of each voice count
+SPEED_MIN_SECS = 300                  # under 5 minutes of reading is no sample
+SPEED_GAP = 3 * 3600                  # chapters finished further apart: stopped (or asleep) between
+_speeds_lock = threading.Lock()
+
+
+def _factor(reader):
+    import readaloud_gpu as G
+    return G.READERS.get(reader or "kokoro", G.READERS["kokoro"])[2]
+
+
+def default_wps(reader):
+    """Words a second the voice makes on a computer like the owner's PC (READERS' guess)."""
+    return WORDS_PER_SEC * _factor(reader)
+
+
+def load_speeds():
+    try:
+        d = json.loads(SPEEDS_FILE.read_text(encoding="utf8"))
+        return d if isinstance(d, dict) and isinstance(d.get("books"), dict) else {"books": {}}
+    except (OSError, ValueError):
+        return {"books": {}}
+
+
+def _save_speeds(d):
+    try:
+        SPEEDS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SPEEDS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(d, indent=1), encoding="utf8")
+        os.replace(tmp, SPEEDS_FILE)
+    except OSError:
+        pass
+
+
+def remember_speed(key, reader, words, secs, source="live"):
+    """Keep what one book measured (all its runs together). A measured run replaces a guess
+    from file times; file times never replace a measured run."""
+    if secs <= 0 or words <= 0:
+        return
+    with _speeds_lock:
+        d = load_speeds()
+        old = d["books"].get(key)
+        if old and old.get("source") == "live" and source != "live":
+            return
+        d["books"][key] = {"reader": reader or "kokoro", "words": int(words), "secs": round(secs, 1),
+                           "source": source, "when": time.strftime("%Y-%m-%d %H:%M")}
+        _save_speeds(d)
+
+
+def speed_of_book(key):
+    """(words, secs) measured for this book so far, or (0, 0)."""
+    b = load_speeds()["books"].get(key) or {}
+    if b.get("source") != "live":
+        return 0, 0.0
+    return int(b.get("words", 0)), float(b.get("secs", 0.0))
+
+
+def learn_from_old_books():
+    """Books made before this was kept still tell how fast this computer is: when each chapter
+    was finished. A run of chapters finished less than 3 hours apart counts, without the first
+    one in it (when it started isn't known)."""
+    if not JOBS.exists():
+        return
+    known = load_speeds()["books"]
+    for d in JOBS.iterdir():
+        if d.name in known or not (d / "job.json").exists():
+            continue
+        try:
+            job = json.loads((d / "job.json").read_text(encoding="utf8"))
+            words = [c["words"] for c in json.loads((d / "chapters.json").read_text(encoding="utf8"))]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        done = sorted((chapter_file(d, i).stat().st_mtime, w) for i, w in enumerate(words)
+                      if chapter_file(d, i).exists())
+        got_w = got_s = 0.0
+        run = done[:1]
+        for t, w in done[1:] + [(float("inf"), 0)]:
+            if t - run[-1][0] <= SPEED_GAP:
+                run.append((t, w))
+                continue
+            if len(run) >= 2:
+                got_w += sum(x[1] for x in run[1:])
+                got_s += run[-1][0] - run[0][0]
+            run = [(t, w)]
+        if got_s >= SPEED_MIN_SECS and got_w > 0:
+            remember_speed(d.name, job.get("reader", "kokoro"), got_w, got_s, source="files")
+
+
+def making_speed(reader):
+    """(words a second, measured) for this voice on this computer. Not measured yet: the
+    guess, made faster or slower by how the other graphics-card voices really did here."""
+    reader = reader or "kokoro"
+    books = sorted(load_speeds()["books"].values(), key=lambda b: b.get("when", ""), reverse=True)
+
+    def measured(r):
+        mine = [b for b in books if b.get("reader") == r][:SPEED_BOOKS]
+        w, s = sum(b["words"] for b in mine), sum(b["secs"] for b in mine)
+        return w / s if s >= SPEED_MIN_SECS and w > 0 else None
+
+    got = measured(reader)
+    if got:
+        return got, True
+    guess = default_wps(reader)
+    if reader != "kokoro":
+        ratios = [m / default_wps(r) for r in {b.get("reader") for b in books} - {"kokoro", reader}
+                  if r and (m := measured(r))]
+        if ratios:
+            guess *= sum(ratios) / len(ratios)
+    return guess, False
+
+
+def make_hours(words, reader):
+    """(hours to make this many words with this voice here, measured on this computer)."""
+    wps, measured = making_speed(reader)
+    return words / wps / 3600.0, measured
 
 
 # ---------------------------------------------------------------------------
